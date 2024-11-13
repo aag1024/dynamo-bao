@@ -1,0 +1,2 @@
+AWS_REGION=us-west-2
+TABLE_NAME=raftjs-dynamo-dev

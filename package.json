@@ -1,0 +1,23 @@
+{
+    "name": "raftjs-dynamo",
+    "version": "1.0.0",
+    "description": "DynamoDB single table pattern library for JavaScript",
+    "main": "src/index.js",
+    "scripts": {
+        "test": "node scripts/check-table.js && node test/test.js",
+        "test:unique": "node test/unique.test.js",
+        "test:capacity": "node test/capacity.test.js",
+        "deploy": "serverless deploy",
+        "remove": "serverless remove",
+        "check-table": "node scripts/check-table.js"
+    },
+    "dependencies": {
+        "@aws-sdk/client-dynamodb": "^3.521.0",
+      "@aws-sdk/lib-dynamodb": "^3.521.0",
+      "dotenv": "^16.4.5",
+      "ulid": "^2.3.0"
+    },
+    "devDependencies": {
+      "serverless": "^3.38.0"
+    }
+}

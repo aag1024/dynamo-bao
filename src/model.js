@@ -53,13 +53,13 @@ class BaseModel {
     });
     const endTime = Date.now();
     
-    return {
+    return result.Item ? {
       ...result.Item,
       _response: {
         ConsumedCapacity: result.ConsumedCapacity,
         duration: endTime - startTime
       }
-    };
+    } : null;  // Return null if no item found
   }
 
   static async findAll() {
@@ -342,12 +342,13 @@ class BaseModel {
   static async delete(id) {
     const startTime = Date.now();
     const responses = [];
-    
+  
+    // Get the current item
     const currentItemResponse = await this.find(id);
-    responses.push(currentItemResponse._response);
-    const currentItem = currentItemResponse;
+    if (!currentItemResponse) return null;  // Return null if item doesn't exist
     
-    if (!currentItem) return;
+    const currentItem = currentItemResponse;
+    responses.push(currentItemResponse._response);
   
     let response;
     const hasUniqueConstraints = this.uniqueFields && 
@@ -356,6 +357,7 @@ class BaseModel {
     if (hasUniqueConstraints) {
       const transactItems = [];
   
+      // Remove unique constraints
       for (const field of this.uniqueFields) {
         if (currentItem[field]) {
           transactItems.push({
@@ -375,6 +377,7 @@ class BaseModel {
         }
       }
   
+      // Delete the main item
       transactItems.push({
         Delete: {
           TableName: this.table,
@@ -387,7 +390,6 @@ class BaseModel {
         TransactItems: transactItems,
         ReturnConsumedCapacity: 'TOTAL'
       });
-      responses.push(response);
     } else {
       response = await this.documentClient.delete({
         TableName: this.table,
@@ -395,16 +397,16 @@ class BaseModel {
         ReturnValues: 'ALL_OLD',
         ReturnConsumedCapacity: 'TOTAL'
       });
-      responses.push(response);
     }
+    responses.push(response);
   
     const endTime = Date.now();
-    const allCapacity = this.accumulateCapacity(responses);
-  
+    
+    // Return null to indicate the item no longer exists
     return {
-      ...currentItem,
+      deleted: true,
       _response: {
-        ConsumedCapacity: allCapacity,
+        ConsumedCapacity: response.ConsumedCapacity,
         duration: endTime - startTime
       }
     };

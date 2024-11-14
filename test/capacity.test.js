@@ -1,166 +1,108 @@
 // test/capacity.test.js
-const { BaseModel, User } = require('../src');
+const { 
+  User, 
+  Post,
+  GSI_INDEX_ID1, 
+  GSI_INDEX_ID2, 
+  GSI_INDEX_ID3 
+} = require('../src');
 const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
 const { DynamoDBDocument } = require('@aws-sdk/lib-dynamodb');
+const { cleanupTestData, verifyCleanup } = require('./utils/test-utils');
 const { verifyCapacityUsage } = require('./dynamoTestUtils');
 require('dotenv').config();
 
-async function cleanupTestData(docClient, tableName) {
-  console.log('\nCleaning up test data...');
+let docClient;
 
-  try {
-    // First get all test users using GSI1
-    const userResult = await docClient.query({
-      TableName: tableName,
-      IndexName: 'gsi1',
-      KeyConditionExpression: '#pk = :prefix',
-      ExpressionAttributeNames: {
-        '#pk': 'gsi1pk'
-      },
-      ExpressionAttributeValues: {
-        ':prefix': 'user'
-      }
+beforeAll(async () => {
+  const client = new DynamoDBClient({ region: process.env.AWS_REGION });
+  docClient = DynamoDBDocument.from(client);
+  
+  console.log('AWS Region:', process.env.AWS_REGION);
+  console.log('Table Name:', process.env.TABLE_NAME);
+  
+  User.initTable(docClient, process.env.TABLE_NAME);
+});
+
+beforeEach(async () => {
+  await cleanupTestData(docClient, process.env.TABLE_NAME);
+  await verifyCleanup(docClient, process.env.TABLE_NAME);
+});
+
+afterEach(async () => {
+  await cleanupTestData(docClient, process.env.TABLE_NAME);
+  await verifyCleanup(docClient, process.env.TABLE_NAME);
+});
+
+describe('Capacity Usage Tests', () => {
+  test('should create user with expected capacity', async () => {
+    const result = await verifyCapacityUsage(
+      async () => await User.create({
+        name: 'Test User 1',
+        email: 'test1@example.com'
+      }),
+      0,    // Expected RCU - transactWrite doesn't count as read
+      10.0  // Expected WCU - 2 writes at 5 WCU each in transaction
+    );
+    expect(result).toBeDefined();
+    expect(result.email).toBe('test1@example.com');
+  });
+
+  test('should update user without unique field change', async () => {
+    // Create a user with all required fields
+    const user = await User.create({
+      name: 'Test User 1',
+      email: 'test1@example.com',
+      status: 'active'
     });
 
-    // Get all unique constraints using begins_with on PK
-    const constraintResult = await docClient.scan({
-      TableName: tableName,
-      FilterExpression: 'begins_with(#pk, :prefix)',
-      ExpressionAttributeNames: {
-        '#pk': 'pk'
-      },
-      ExpressionAttributeValues: {
-        ':prefix': '_raft_uc##user:email:'
-      }
+    // Wait a moment to ensure timestamps are different
+    await new Promise(resolve => setTimeout(resolve, 100));
+
+    const result = await verifyCapacityUsage(
+      async () => await User.update(user.id, {
+        name: 'Updated Name',
+        createdAt: user.createdAt
+      }),
+      0.5,  // Expected RCU - eventually consistent read for current state
+      5.0   // Expected WCU - single write with GSI updates (5 WCU)
+    );
+    expect(result.name).toBe('Updated Name');
+  });
+
+  test('should update user with unique field change', async () => {
+    // Create a user with all required fields
+    const user = await User.create({
+      name: 'Test User 1',
+      email: 'test1@example.com',
+      status: 'active'
     });
 
-    const deleteRequests = [];
+    // Wait a moment to ensure timestamps are different
+    await new Promise(resolve => setTimeout(resolve, 100));
 
-    // Add user deletions to requests
-    if (userResult.Items && userResult.Items.length > 0) {
-      console.log(`Found ${userResult.Items.length} test users to clean up`);
-      userResult.Items.forEach(item => {
-        deleteRequests.push({
-          DeleteRequest: {
-            Key: {
-              pk: item.pk,
-              sk: item.sk
-            }
-          }
-        });
-      });
-    }
+    const result = await verifyCapacityUsage(
+      async () => await User.update(user.id, {
+        email: 'new-email@example.com',
+        createdAt: user.createdAt
+      }),
+      0.5,   // Expected RCU - eventually consistent read for current state
+      14.0   // Expected WCU - transaction with 3 operations (delete old unique, create new unique, update item)
+    );
+    expect(result.email).toBe('new-email@example.com');
+  });
 
-    // Add constraint deletions to requests
-    if (constraintResult.Items && constraintResult.Items.length > 0) {
-      console.log(`Found ${constraintResult.Items.length} unique constraints to clean up`);
-      constraintResult.Items.forEach(item => {
-        deleteRequests.push({
-          DeleteRequest: {
-            Key: {
-              pk: item.pk,
-              sk: item.sk
-            }
-          }
-        });
-      });
-    }
-
-    // Process delete requests in batches of 25 (DynamoDB limit)
-    if (deleteRequests.length > 0) {
-      for (let i = 0; i < deleteRequests.length; i += 25) {
-        const batch = deleteRequests.slice(i, i + 25);
-        await docClient.batchWrite({
-          RequestItems: {
-            [tableName]: batch
-          }
-        });
-      }
-      console.log(`Cleaned up ${deleteRequests.length} items`);
-    } else {
-      console.log('No test data to clean up');
-    }
-  } catch (error) {
-    console.error('Error during cleanup:', error);
-    throw error;
-  }
-}
-
-
-async function testCapacityUsage() {
-    console.log('Starting capacity usage tests...');
-    
-    const client = new DynamoDBClient({
-      region: process.env.AWS_REGION,
+  test('should delete user with expected capacity', async () => {
+    const user = await User.create({
+      name: 'Test User 1',
+      email: 'test1@example.com'
     });
-    const docClient = DynamoDBDocument.from(client);
-    
-    try {
-      console.log('Initializing table...');
-      BaseModel.initTable(docClient, process.env.TABLE_NAME);
-  
-      // Clean up any existing test data
-      await cleanupTestData(docClient, process.env.TABLE_NAME);
-  
-      let userId;
-  
-      // Test 1: Create user with unique email
-      console.log('\nTest 1: Creating user with unique email');
-      const user = await verifyCapacityUsage(
-        async () => await User.create({
-          name: 'Test User 1',
-          email: 'test1@example.com'
-        }),
-        0,    // Expected RCU - transactWrite doesn't count as read
-        6.0   // Expected WCU - 2 writes at 3 WCU each in transaction
-      );
-      userId = user.id;
-  
-      // Test 2: Update user without changing unique field
-      console.log('\nTest 2: Updating user without changing unique field');
-      await verifyCapacityUsage(
-        async () => await User.update(userId, {
-          name: 'Updated Name'
-        }),
-        0.5,  // Expected RCU - eventually consistent read for current state
-        2     // Expected WCU - standard update operation
-      );
-  
-      // Test 3: Update user with unique field change
-      console.log('\nTest 3: Updating user with unique field change');
-      await verifyCapacityUsage(
-        async () => await User.update(userId, {
-          email: 'new-email@example.com'
-        }),
-        0.5,  // Expected RCU - eventually consistent read for current state
-        8     // Expected WCU - transaction with 3 operations at ~2.67 WCU each
-      );
-  
-      // Test 4: Delete user with unique constraints
-      console.log('\nTest 4: Deleting user with unique constraints');
-      await verifyCapacityUsage(
-        async () => await User.delete(userId),
-        0.5,  // Expected RCU - eventually consistent read for current state
-        6     // Expected WCU - transaction with 2 operations at 3 WCU each
-      );
-  
-      // Final cleanup
-      await cleanupTestData(docClient, process.env.TABLE_NAME);
-  
-      console.log('\nAll capacity tests completed successfully!');
-    } catch (error) {
-      console.error('Test error:', error);
-  
-      // Attempt cleanup even if tests fail
-      try {
-        await cleanupTestData(docClient, process.env.TABLE_NAME);
-      } catch (cleanupError) {
-        console.error('Error during cleanup after test failure:', cleanupError);
-      }
-  
-      process.exit(1);
-    }
-  }
 
-// Run the tests
-testCapacityUsage();
+    const result = await verifyCapacityUsage(
+      async () => await User.delete(user.id),
+      0.5,  // Expected RCU - eventually consistent read for current state
+      10    // Expected WCU - transaction with 2 operations at 5 WCU each
+    );
+    expect(result.id).toBe(user.id);
+  });
+});

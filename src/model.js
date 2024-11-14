@@ -1,37 +1,138 @@
+// src/model.js
+
 const { ulid } = require('ulid');
+
+// Constants for GSI indexes
+const GSI_INDEX_ID1 = 'gsi1';
+const GSI_INDEX_ID2 = 'gsi2';
+const GSI_INDEX_ID3 = 'gsi3';
+
+// Constants for unique constraints
+const UNIQUE_CONSTRAINT_ID1 = '_uc1';
+const UNIQUE_CONSTRAINT_ID2 = '_uc2';
+const UNIQUE_CONSTRAINT_ID3 = '_uc3';
+
+class IndexConfig {
+  constructor(pk, sk, indexId) {
+    this.pk = pk;
+    this.sk = sk;
+    this.indexId = indexId;
+  }
+
+  getIndexName() {
+    return this.indexId;
+  }
+
+  getPkFieldName() {
+    return `_${this.indexId}_pk`;
+  }
+
+  getSkFieldName() {
+    return `_${this.indexId}_sk`;
+  }
+}
+
+class PrimaryKeyConfig {
+  constructor(pk, sk = 'model_id') {
+    this.pk = pk;
+    this.sk = sk;
+  }
+
+  getPkFieldName() {
+    return '_pk';
+  }
+
+  getSkFieldName() {
+    return '_sk';
+  }
+}
+
+class UniqueConstraintConfig {
+  constructor(field, constraintId) {
+    this.field = field;
+    this.constraintId = constraintId;
+  }
+}
 
 class BaseModel {
   static table = null;
   static documentClient = null;
+  
+  // These should be overridden by child classes
+  static prefix = null;  // This replaces model_id in the Python version
+  static fields = {};
+  static primaryKey = null;
+  static indexes = [];
+  static uniqueConstraints = [];
 
   static initTable(documentClient, tableName) {
     if (!this.table) {
       this.documentClient = documentClient;
       this.table = tableName;
+      this.validateConfiguration();
     }
     return this.table;
   }
 
-  static getCapacityFromResponse(response) {
-    if (!response) return [];
-    
-    const consumed = response.ConsumedCapacity;
-    if (!consumed) return [];
-  
-    if (Array.isArray(consumed)) {
-      return consumed;
+  static validateConfiguration() {
+    if (!this.prefix) {
+      throw new Error(`${this.name} must define a prefix`);
     }
-  
-    return [consumed];
+
+    if (!this.primaryKey) {
+      throw new Error(`${this.name} must define a primaryKey`);
+    }
+
+    // Validate that index IDs are valid
+    const validIndexIds = [GSI_INDEX_ID1, GSI_INDEX_ID2, GSI_INDEX_ID3];
+    this.indexes.forEach(index => {
+      if (!validIndexIds.includes(index.indexId)) {
+        throw new Error(`Invalid index ID ${index.indexId} in ${this.name}`);
+      }
+    });
+
+    // Validate that constraint IDs are valid
+    const validConstraintIds = [UNIQUE_CONSTRAINT_ID1, UNIQUE_CONSTRAINT_ID2, UNIQUE_CONSTRAINT_ID3];
+    this.uniqueConstraints.forEach(constraint => {
+      if (!validConstraintIds.includes(constraint.constraintId)) {
+        throw new Error(`Invalid constraint ID ${constraint.constraintId} in ${this.name}`);
+      }
+    });
   }
 
-  static createPrefixedKey(prefix, value) {
-    return `${prefix}##${value}`;
+  static encodeDateToSortableString(date) {
+    // Convert date to ISO string and pad year to ensure proper sorting
+    // Format: YYYY-MM-DDTHH:mm:ss.sssZ
+    const isoString = (typeof date === 'number' ? new Date(date) : date).toISOString();
+    return isoString;
+  }
+
+  static getIndexKeys(data, id) {
+    return {
+      gsi1pk: `${this.prefix}#gsi1#${data.external_platform || ''}`,
+      gsi1sk: id,
+      gsi2pk: `${this.prefix}#gsi2#${data.role || ''}`,
+      gsi2sk: id,
+      gsi3pk: `${this.prefix}#gsi3#${data.status || ''}`,
+      gsi3sk: new Date(data.createdAt).toISOString()
+    };
+  }
+
+  static getCapacityFromResponse(response) {
+    if (!response) return [];
+    const consumed = response.ConsumedCapacity;
+    if (!consumed) return [];
+    return Array.isArray(consumed) ? consumed : [consumed];
+  }
+
+  static createPrefixedKey(prefix, value, isGsi = false) {
+    const separator = isGsi ? '#' : '##';
+    return `${prefix}${separator}${value}`;
   }
 
   static getKeyForId(id) {
     return {
-      pk: this.createPrefixedKey(this.prefix, id),
+      pk: `${this.prefix}##${id}`,
       sk: this.prefix
     };
   }
@@ -40,8 +141,44 @@ class BaseModel {
     const allCapacity = responses
       .filter(r => r && r.ConsumedCapacity)
       .flatMap(r => Array.isArray(r.ConsumedCapacity) ? r.ConsumedCapacity : [r.ConsumedCapacity]);
-      
     return allCapacity.length ? allCapacity : null;
+  }
+
+  static async _createUniqueConstraint(field, value, relatedId, constraintId = UNIQUE_CONSTRAINT_ID1) {
+    return {
+      Put: {
+        TableName: this.table,
+        Item: {
+          pk: `_raft_uc##${constraintId}#${this.prefix}#${field}:${value}`,
+          sk: '_raft_uc',
+          uniqueValue: `${this.prefix}:${field}:${value}`,
+          relatedId: relatedId,
+          relatedModel: this.name
+        },
+        ConditionExpression: 'attribute_not_exists(pk) OR (relatedId = :relatedId AND relatedModel = :modelName)',
+        ExpressionAttributeValues: {
+          ':relatedId': relatedId,
+          ':modelName': this.name
+        }
+      }
+    };
+  }
+
+  static async _removeUniqueConstraint(field, value, relatedId, constraintId = UNIQUE_CONSTRAINT_ID1) {
+    return {
+      Delete: {
+        TableName: this.table,
+        Key: {
+          pk: `_raft_uc##${constraintId}#${this.prefix}#${field}:${value}`,
+          sk: '_raft_uc'
+        },
+        ConditionExpression: 'relatedId = :relatedId AND relatedModel = :modelName',
+        ExpressionAttributeValues: {
+          ':relatedId': relatedId,
+          ':modelName': this.name
+        }
+      }
+    };
   }
 
   static async find(id) {
@@ -59,20 +196,27 @@ class BaseModel {
         ConsumedCapacity: result.ConsumedCapacity,
         duration: endTime - startTime
       }
-    } : null;  // Return null if no item found
+    } : null;
   }
 
   static async findAll() {
     const startTime = Date.now();
+    // Find the first global secondary index that uses model_id as PK
+    const globalIndex = this.indexes.find(index => index.pk === 'model_id');
+    
+    if (!globalIndex) {
+      throw new Error(`${this.name} must define a global secondary index with model_id as PK to use findAll`);
+    }
+
     const result = await this.documentClient.query({
       TableName: this.table,
-      IndexName: 'gsi1',
+      IndexName: globalIndex.getIndexName(),
       KeyConditionExpression: '#pk = :prefix',
       ExpressionAttributeNames: {
-        '#pk': 'gsi1pk'
+        '#pk': globalIndex.getPkFieldName()
       },
       ExpressionAttributeValues: {
-        ':prefix': this.prefix
+        ':prefix': this.createPrefixedKey(this.prefix, this.prefix)
       },
       ReturnConsumedCapacity: 'TOTAL'
     });
@@ -87,125 +231,140 @@ class BaseModel {
     };
   }
 
-  static async _createUniqueConstraint(uniqueValue, relatedId, modelName) {
-    return {
-      Put: {
+  static async queryByIndex(indexNumber, pkValue, options = {}) {
+    const indexName = `gsi${indexNumber}`;
+    const params = {
         TableName: this.table,
-        Item: {
-          pk: `_raft_uc##${uniqueValue}`,
-          sk: '_raft_uc',
-          uniqueValue,
-          relatedId,
-          relatedModel: modelName
+        IndexName: indexName,
+        KeyConditionExpression: options.skValue 
+            ? '#pk = :pkValue AND #sk >= :startDate' 
+            : '#pk = :pkValue',
+        ExpressionAttributeNames: {
+            '#pk': `gsi${indexNumber}pk`,
+            ...(options.skValue && { '#sk': `gsi${indexNumber}sk` })
         },
-        ConditionExpression: 'attribute_not_exists(pk) OR (relatedId = :relatedId AND relatedModel = :modelName)',
         ExpressionAttributeValues: {
-          ':relatedId': relatedId,
-          ':modelName': modelName
-        }
-      }
+            ':pkValue': `${this.prefix}#gsi${indexNumber}#${pkValue}`,
+            ...(options.skValue && { ':startDate': options.skValue })
+        },
+        ScanIndexForward: true,
+        ReturnConsumedCapacity: 'TOTAL'
     };
-  }
 
-  static async _removeUniqueConstraint(uniqueValue, relatedId, modelName) {
+    console.log('Query params:', JSON.stringify(params, null, 2));
+
+    const result = await this.documentClient.query(params);
+    const endTime = Date.now();
+
     return {
-      Delete: {
-        TableName: this.table,
-        Key: {
-          pk: `_raft_uc##${uniqueValue}`,
-          sk: '_raft_uc'
-        },
-        ConditionExpression: 'relatedId = :relatedId AND relatedModel = :modelName',
-        ExpressionAttributeValues: {
-          ':relatedId': relatedId,
-          ':modelName': modelName
-        }
-      }
+        Items: result.Items,
+        Count: result.Count,
+        ScannedCount: result.ScannedCount,
+        ConsumedCapacity: result.ConsumedCapacity,
+        duration: endTime - Date.now()
     };
-  }
+}
 
   static async create(data) {
-    const startTime = Date.now();
     const itemToCreate = {
       ...data,
       id: data.id || ulid(),
       createdAt: Date.now()
     };
-  
-    let response;
-    const hasUniqueFields = this.uniqueFields && 
-      this.uniqueFields.some(field => itemToCreate[field] !== undefined);
-  
-    if (hasUniqueFields) {
-      const transactItems = [];
-  
-      // Add unique constraint operations
-      for (const field of this.uniqueFields) {
-        if (itemToCreate[field]) {
-          transactItems.push({
-            Put: {
-              TableName: this.table,
-              Item: {
-                pk: `_raft_uc##${this.prefix}:${field}:${itemToCreate[field]}`,
-                sk: '_raft_uc',
-                uniqueValue: `${this.prefix}:${field}:${itemToCreate[field]}`,
-                relatedId: itemToCreate.id,
-                relatedModel: this.name
-              },
-              ConditionExpression: 'attribute_not_exists(pk)',
+
+    const transactItems = [];
+
+    // Add unique constraint operations
+    for (const constraint of this.uniqueConstraints) {
+      if (itemToCreate[constraint.field]) {
+        const constraintOp = {
+          Put: {
+            TableName: this.table,
+            Item: {
+              pk: `_raft_uc##${constraint.constraintId}#${this.prefix}#${constraint.field}:${itemToCreate[constraint.field]}`,
+              sk: '_raft_uc',
+              uniqueValue: `${this.prefix}:${constraint.field}:${itemToCreate[constraint.field]}`,
+              relatedId: itemToCreate.id,
+              relatedModel: this.name
+            },
+            ConditionExpression: 'attribute_not_exists(#pk)',
+            ExpressionAttributeNames: {
+              '#pk': 'pk'
             }
-          });
-        }
+          }
+        };
+        transactItems.push(constraintOp);
       }
-  
-      // Add the main item creation
-      transactItems.push({
-        Put: {
-          TableName: this.table,
-          Item: {
-            pk: this.createPrefixedKey(this.prefix, itemToCreate.id),
-            sk: this.prefix,
-            gsi1pk: this.prefix,
-            gsi1sk: itemToCreate.id,
-            ...itemToCreate
-          },
-          ConditionExpression: 'attribute_not_exists(pk)'
-        }
-      });
-  
-      try {
-        response = await this.documentClient.transactWrite({
-          TransactItems: transactItems,
-          ReturnConsumedCapacity: 'TOTAL'
-        });
-      } catch (error) {
-        if (error.name === 'TransactionCanceledException') {
-          throw new Error(`${this.uniqueFields[0]} must be unique`);
-        }
-        throw error;
-      }
-    } else {
-      response = await this.documentClient.put({
+    }
+
+    // Add the main item creation
+    const mainItem = {
+      pk: `${this.prefix}##${itemToCreate.id}`,
+      sk: this.prefix,
+      // Add GSI keys
+      gsi1pk: `${this.prefix}#gsi1#${itemToCreate.external_platform || ''}`,
+      gsi1sk: itemToCreate.id,
+      gsi2pk: `${this.prefix}#gsi2#${itemToCreate.role || ''}`,
+      gsi2sk: itemToCreate.id,
+      gsi3pk: `${this.prefix}#gsi3#${itemToCreate.status || ''}`,
+      gsi3sk: new Date(itemToCreate.createdAt).toISOString(),
+      // Add the rest of the item data
+      ...itemToCreate
+    };
+
+    transactItems.push({
+      Put: {
         TableName: this.table,
-        Item: {
-          pk: this.createPrefixedKey(this.prefix, itemToCreate.id),
-          sk: this.prefix,
-          gsi1pk: this.prefix,
-          gsi1sk: itemToCreate.id,
-          ...itemToCreate
-        },
-        ConditionExpression: 'attribute_not_exists(pk)',
+        Item: mainItem,
+        ConditionExpression: 'attribute_not_exists(#pk)',
+        ExpressionAttributeNames: {
+          '#pk': 'pk'
+        }
+      }
+    });
+
+    console.log('Transaction items:', JSON.stringify(transactItems, null, 2));
+
+    try {
+      const response = await this.documentClient.transactWrite({
+        TransactItems: transactItems,
         ReturnConsumedCapacity: 'TOTAL'
       });
+      
+      return {
+        ...itemToCreate,
+        _response: {
+          ConsumedCapacity: response.ConsumedCapacity,
+          duration: Date.now() - itemToCreate.createdAt
+        }
+      };
+    } catch (error) {
+      if (error.name === 'TransactionCanceledException') {
+        console.error('Transaction cancelled. Reasons:', error.CancellationReasons);
+        // Check which constraint failed
+        for (const constraint of this.uniqueConstraints) {
+          if (itemToCreate[constraint.field]) {
+            try {
+              const result = await this.documentClient.get({
+                TableName: this.table,
+                Key: {
+                  pk: `_raft_uc##${constraint.constraintId}#${this.prefix}#${constraint.field}:${itemToCreate[constraint.field]}`,
+                  sk: '_raft_uc'
+                }
+              });
+              if (result.Item) {
+                throw new Error(`${constraint.field} must be unique`);
+              }
+            } catch (innerError) {
+              if (innerError.message.includes('must be unique')) {
+                throw innerError;
+              }
+            }
+          }
+        }
+      }
+      throw error;
     }
-  
-    const endTime = Date.now();
-  
-    // Return the item and raw response
-    return {
-      ...itemToCreate,
-      _response: response // Return the raw response directly
-    };
   }
 
   static async update(id, data) {
@@ -213,73 +372,78 @@ class BaseModel {
     const responses = [];
   
     // Track the find operation capacity
-    const currentItemResponse = await this.find(id);
-    responses.push(currentItemResponse._response);
-    const currentItem = currentItemResponse;
-    
+    const currentItem = await this.find(id);
     if (!currentItem) {
       throw new Error('Item not found');
     }
+    responses.push(currentItem._response);
   
     let response;
-    const uniqueFieldsBeingUpdated = this.uniqueFields?.filter(
-      field => data[field] !== undefined && data[field] !== currentItem[field]
-    ) || [];
+    const uniqueFieldsBeingUpdated = this.uniqueConstraints
+      .filter(constraint => 
+        data[constraint.field] !== undefined && 
+        data[constraint.field] !== currentItem[constraint.field]
+      );
   
     if (uniqueFieldsBeingUpdated.length > 0) {
       const transactItems = [];
   
       // Handle unique constraints
-      for (const field of uniqueFieldsBeingUpdated) {
-        if (currentItem[field]) {
-          transactItems.push({
-            Delete: {
-              TableName: this.table,
-              Key: {
-                pk: `_raft_uc##${this.prefix}:${field}:${currentItem[field]}`,
-                sk: '_raft_uc'
-              },
-              ConditionExpression: 'relatedId = :relatedId AND relatedModel = :modelName',
-              ExpressionAttributeValues: {
-                ':relatedId': id,
-                ':modelName': this.name
-              }
-            }
-          });
+      for (const constraint of uniqueFieldsBeingUpdated) {
+        // Remove old constraint if it exists
+        if (currentItem[constraint.field]) {
+          transactItems.push(
+            await this._removeUniqueConstraint(
+              constraint.field,
+              currentItem[constraint.field],
+              id,
+              constraint.constraintId
+            )
+          );
         }
-        if (data[field]) {
-          transactItems.push({
-            Put: {
-              TableName: this.table,
-              Item: {
-                pk: `_raft_uc##${this.prefix}:${field}:${data[field]}`,
-                sk: '_raft_uc',
-                uniqueValue: `${this.prefix}:${field}:${data[field]}`,
-                relatedId: id,
-                relatedModel: this.name
-              },
-              ConditionExpression: 'attribute_not_exists(pk)'
-            }
-          });
+        // Add new constraint if value provided
+        if (data[constraint.field]) {
+          transactItems.push(
+            await this._createUniqueConstraint(
+              constraint.field,
+              data[constraint.field],
+              id,
+              constraint.constraintId
+            )
+          );
         }
       }
   
-      // Build update expression
-      const updateExpression = [];
+      // Build update expression for main item
+      const updateParts = [];
       const expressionAttributeNames = {};
       const expressionAttributeValues = {};
       
+      // Handle regular field updates
       Object.entries(data).forEach(([key, value]) => {
-        updateExpression.push(`#${key} = :${key}`);
+        updateParts.push(`#${key} = :${key}`);
         expressionAttributeNames[`#${key}`] = key;
         expressionAttributeValues[`:${key}`] = value;
       });
+
+      // Add index updates if needed
+      const indexKeys = this.getIndexKeys(data, id);
+      Object.entries(indexKeys).forEach(([key, value]) => {
+        updateParts.push(`#${key} = :${key}`);
+        expressionAttributeNames[`#${key}`] = key;
+        expressionAttributeValues[`:${key}`] = value;
+      });
+
+      // Add modifiedAt timestamp
+      updateParts.push('#modifiedAt = :modifiedAt');
+      expressionAttributeNames['#modifiedAt'] = 'modifiedAt';
+      expressionAttributeValues[':modifiedAt'] = Date.now();
   
       transactItems.push({
         Update: {
           TableName: this.table,
           Key: this.getKeyForId(id),
-          UpdateExpression: `SET ${updateExpression.join(', ')}`,
+          UpdateExpression: `SET ${updateParts.join(', ')}`,
           ExpressionAttributeNames: expressionAttributeNames,
           ExpressionAttributeValues: expressionAttributeValues,
           ConditionExpression: 'attribute_exists(pk)'
@@ -294,26 +458,41 @@ class BaseModel {
         responses.push(response);
       } catch (error) {
         if (error.name === 'TransactionCanceledException') {
-          throw new Error(`${uniqueFieldsBeingUpdated[0]} must be unique`);
+          const failedConstraint = uniqueFieldsBeingUpdated[0];
+          throw new Error(`${failedConstraint.field} must be unique`);
         }
         throw error;
       }
     } else {
-      // Build update expression
-      const updateExpression = [];
+      // Build update expression for non-unique update
+      const updateParts = [];
       const expressionAttributeNames = {};
       const expressionAttributeValues = {};
       
+      // Handle regular field updates
       Object.entries(data).forEach(([key, value]) => {
-        updateExpression.push(`#${key} = :${key}`);
+        updateParts.push(`#${key} = :${key}`);
         expressionAttributeNames[`#${key}`] = key;
         expressionAttributeValues[`:${key}`] = value;
       });
-  
+
+      // Add index updates if needed
+      const indexKeys = this.getIndexKeys(data, id);
+      Object.entries(indexKeys).forEach(([key, value]) => {
+        updateParts.push(`#${key} = :${key}`);
+        expressionAttributeNames[`#${key}`] = key;
+        expressionAttributeValues[`:${key}`] = value;
+      });
+
+      // Add modifiedAt timestamp
+      updateParts.push('#modifiedAt = :modifiedAt');
+      expressionAttributeNames['#modifiedAt'] = 'modifiedAt';
+      expressionAttributeValues[':modifiedAt'] = Date.now();
+
       response = await this.documentClient.update({
         TableName: this.table,
         Key: this.getKeyForId(id),
-        UpdateExpression: `SET ${updateExpression.join(', ')}`,
+        UpdateExpression: `SET ${updateParts.join(', ')}`,
         ExpressionAttributeNames: expressionAttributeNames,
         ExpressionAttributeValues: expressionAttributeValues,
         ConditionExpression: 'attribute_exists(pk)',
@@ -324,56 +503,49 @@ class BaseModel {
     }
   
     const endTime = Date.now();
-  
-    // Accumulate all capacity from read and write operations
     const allCapacity = this.accumulateCapacity(responses);
   
     return {
       ...currentItem,
       ...data,
+      modifiedAt: Date.now(),
       _response: {
         ConsumedCapacity: allCapacity,
         duration: endTime - startTime
       }
     };
   }
-  
-  // Similarly update the delete method
+
   static async delete(id) {
     const startTime = Date.now();
     const responses = [];
-  
-    // Get the current item
-    const currentItemResponse = await this.find(id);
-    if (!currentItemResponse) return null;  // Return null if item doesn't exist
     
-    const currentItem = currentItemResponse;
-    responses.push(currentItemResponse._response);
+    // Get the current item first to handle constraints
+    const currentItem = await this.find(id);
+    if (!currentItem) {
+      return null;
+    }
+    responses.push(currentItem._response);
   
     let response;
-    const hasUniqueConstraints = this.uniqueFields && 
-      this.uniqueFields.some(field => currentItem[field] !== undefined);
+    const hasUniqueConstraints = this.uniqueConstraints.filter(
+      constraint => currentItem[constraint.field] !== undefined
+    ).length > 0;
   
     if (hasUniqueConstraints) {
       const transactItems = [];
   
-      // Remove unique constraints
-      for (const field of this.uniqueFields) {
-        if (currentItem[field]) {
-          transactItems.push({
-            Delete: {
-              TableName: this.table,
-              Key: {
-                pk: `_raft_uc##${this.prefix}:${field}:${currentItem[field]}`,
-                sk: '_raft_uc'
-              },
-              ConditionExpression: 'relatedId = :relatedId AND relatedModel = :modelName',
-              ExpressionAttributeValues: {
-                ':relatedId': id,
-                ':modelName': this.name
-              }
-            }
-          });
+      // Remove all unique constraints
+      for (const constraint of this.uniqueConstraints) {
+        if (currentItem[constraint.field]) {
+          transactItems.push(
+            await this._removeUniqueConstraint(
+              constraint.field,
+              currentItem[constraint.field],
+              id,
+              constraint.constraintId
+            )
+          );
         }
       }
   
@@ -386,30 +558,54 @@ class BaseModel {
         }
       });
   
-      response = await this.documentClient.transactWrite({
-        TransactItems: transactItems,
-        ReturnConsumedCapacity: 'TOTAL'
-      });
+      try {
+        response = await this.documentClient.transactWrite({
+          TransactItems: transactItems,
+          ReturnConsumedCapacity: 'TOTAL'
+        });
+        responses.push(response);
+      } catch (error) {
+        if (error.name === 'TransactionCanceledException') {
+          throw new Error('Failed to delete item - transaction failed');
+        }
+        throw error;
+      }
     } else {
+      // Simple delete without constraints
       response = await this.documentClient.delete({
         TableName: this.table,
         Key: this.getKeyForId(id),
+        ConditionExpression: 'attribute_exists(pk)',
         ReturnValues: 'ALL_OLD',
         ReturnConsumedCapacity: 'TOTAL'
       });
+      responses.push(response);
     }
-    responses.push(response);
   
     const endTime = Date.now();
-    
-    // Return null to indicate the item no longer exists
+    const allCapacity = this.accumulateCapacity(responses);
+  
     return {
-      deleted: true,
+      ...currentItem,
       _response: {
-        ConsumedCapacity: response.ConsumedCapacity,
+        ConsumedCapacity: allCapacity,
         duration: endTime - startTime
       }
     };
   }
 }
-module.exports = { BaseModel };
+
+
+module.exports = {
+  BaseModel,
+  PrimaryKeyConfig,
+  IndexConfig,
+  UniqueConstraintConfig,
+  // Constants
+  GSI_INDEX_ID1,
+  GSI_INDEX_ID2,
+  GSI_INDEX_ID3,
+  UNIQUE_CONSTRAINT_ID1,
+  UNIQUE_CONSTRAINT_ID2,
+  UNIQUE_CONSTRAINT_ID3,
+};

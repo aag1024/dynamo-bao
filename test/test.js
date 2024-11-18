@@ -161,31 +161,31 @@ describe('GSI Queries', () => {
   });
 });
 
-// describe('Date Range Queries', () => {
-//   it('should query users by date range', async () => {
-//     // Create a user with status "active"
-//     const recentUser = await User.create({
-//       name: 'Recent User',
-//       email: 'recent@example.com',
-//       external_id: 'ext4',
-//       status: 'active'
-//     });
+describe('Date Range Queries', () => {
+  it('should query users by date range', async () => {
+    // Create a user with status "active"
+    const recentUser = await User.create({
+      name: 'Recent User',
+      email: 'recent@example.com',
+      external_id: 'ext4',
+      status: 'active'
+    });
 
-//     // Query users by status and date range using GSI3
-//     const result = await User.queryByIndex(3, 'active', {
-//       skValue: '2024-01-01T00:00:00.000Z' // Start date for the range query
-//     });
+    // Query users by status and date range using GSI3
+    const result = await User.queryByIndex(GSI_INDEX_ID3, 'active', {
+      skValue: '2024-01-01T00:00:00.000Z' // Start date for the range query
+    });
 
-//     expect(result.Items).toBeDefined();
-//     expect(result.Items.length).toBeGreaterThan(0);
-//     expect(result.Items[0].status).toBe('active');
+    expect(result.items).toBeDefined();
+    expect(result.items.length).toBeGreaterThan(0);
+    expect(result.items[0].status).toBe('active');
     
-//     // Compare timestamps instead of Date objects
-//     const startTimestamp = new Date('2024-01-01').getTime();
-//     const itemTimestamp = new Date(result.Items[0].createdAt).getTime();
-//     expect(itemTimestamp).toBeGreaterThan(startTimestamp);
-//   });
-// });
+    // Compare timestamps instead of Date objects
+    const startTimestamp = new Date('2024-01-01').getTime();
+    const itemTimestamp = new Date(result.items[0].createdAt).getTime();
+    expect(itemTimestamp).toBeGreaterThan(startTimestamp);
+  });
+});
 
 describe('Test Utils', () => {
   test('cleanup should remove all test data', async () => {

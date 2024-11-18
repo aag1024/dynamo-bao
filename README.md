@@ -27,8 +27,7 @@ Simple library for working with DynamoDB using the single-table pattern.# raftjs
 
 Key points about the prefixing system:
 - All GSI partition keys include the model_id to namespace the records
-- The double hash (`##`) is used for primary key separation
-- Single hash (`#`) is used for GSI key component separation
+- Single hash (`#`) is used for primary andGSI key component separation
 - Unique constraints have their own special prefix (`_raft_uc`) to separate them from regular records
 - The index_id is embedded in the key name for GSIs (`_gsi1_pk`, `_gsi2_pk`, etc.)
 

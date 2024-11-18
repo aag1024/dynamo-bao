@@ -3,11 +3,11 @@ async function verifyCleanup(docClient, tableName) {
     TableName: tableName,
     FilterExpression: 'begins_with(#pk, :prefix1) OR begins_with(#pk, :prefix2) OR begins_with(#pk, :prefix3)',
     ExpressionAttributeNames: {
-      '#pk': 'pk'
+      '#pk': '_pk'
     },
     ExpressionAttributeValues: {
-      ':prefix1': 'u##',
-      ':prefix2': '_raft_uc##',
+      ':prefix1': 'u#',
+      ':prefix2': '_raft_uc#',
       ':prefix3': 'u#'
     }
   });
@@ -26,11 +26,11 @@ async function cleanupTestData(docClient, tableName) {
     TableName: tableName,
     FilterExpression: 'begins_with(#pk, :prefix1) OR begins_with(#pk, :prefix2) OR begins_with(#pk, :prefix3)',
     ExpressionAttributeNames: {
-      '#pk': 'pk'
+      '#pk': '_pk'
     },
     ExpressionAttributeValues: {
-      ':prefix1': 'u##',
-      ':prefix2': '_raft_uc##',
+      ':prefix1': 'u#',
+      ':prefix2': '_raft_uc#',
       ':prefix3': 'u#'
     }
   };
@@ -55,8 +55,8 @@ async function cleanupTestData(docClient, tableName) {
       const deleteRequests = chunk.map(item => ({
         DeleteRequest: {
           Key: {
-            pk: item.pk,
-            sk: item.sk
+            _pk: item._pk,
+            _sk: item._sk
           }
         }
       }));

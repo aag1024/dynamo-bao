@@ -107,15 +107,26 @@ class BaseModel {
     return isoString;
   }
 
-  static getIndexKeys(data, id) {
-    return {
-      gsi1pk: `${this.prefix}#gsi1#${data.external_platform || ''}`,
-      gsi1sk: id,
-      gsi2pk: `${this.prefix}#gsi2#${data.role || ''}`,
-      gsi2sk: id,
-      gsi3pk: `${this.prefix}#gsi3#${data.status || ''}`,
-      gsi3sk: new Date(data.createdAt).toISOString()
-    };
+  static getIndexKeys(data) {
+    const indexKeys = {};
+    
+    // Build index keys based on configured indexes
+    this.indexes.forEach(index => {
+      const pkValue = data[index.pk];
+      let skValue = data[index.sk];
+      
+      // Convert createdAt to sortable string if it's the sort key
+      if (index.sk === 'createdAt' && skValue) {
+        skValue = this.encodeDateToSortableString(skValue);
+      }
+      
+      if (pkValue && skValue) {
+        indexKeys[`_${index.indexId}_pk`] = `${this.prefix}#${index.indexId}#${pkValue}`;
+        indexKeys[`_${index.indexId}_sk`] = skValue;
+      }
+    });
+    
+    return indexKeys;
   }
 
   static getCapacityFromResponse(response) {
@@ -125,15 +136,14 @@ class BaseModel {
     return Array.isArray(consumed) ? consumed : [consumed];
   }
 
-  static createPrefixedKey(prefix, value, isGsi = false) {
-    const separator = isGsi ? '#' : '##';
-    return `${prefix}${separator}${value}`;
+  static createPrefixedKey(prefix, value) {
+    return `${prefix}#${value}`;
   }
 
   static getKeyForId(id) {
     return {
-      pk: `${this.prefix}##${id}`,
-      sk: this.prefix
+      _pk: `${this.prefix}#${id}`,
+      _sk: this.prefix
     };
   }
 
@@ -149,13 +159,16 @@ class BaseModel {
       Put: {
         TableName: this.table,
         Item: {
-          pk: `_raft_uc##${constraintId}#${this.prefix}#${field}:${value}`,
-          sk: '_raft_uc',
+          _pk: `_raft_uc#${constraintId}#${this.prefix}#${field}:${value}`,
+          _sk: '_raft_uc',
           uniqueValue: `${this.prefix}:${field}:${value}`,
           relatedId: relatedId,
           relatedModel: this.name
         },
-        ConditionExpression: 'attribute_not_exists(pk) OR (relatedId = :relatedId AND relatedModel = :modelName)',
+        ConditionExpression: 'attribute_not_exists(#pk) OR (relatedId = :relatedId AND relatedModel = :modelName)',
+        ExpressionAttributeNames: {
+          '#pk': '_pk'
+        },
         ExpressionAttributeValues: {
           ':relatedId': relatedId,
           ':modelName': this.name
@@ -169,8 +182,8 @@ class BaseModel {
       Delete: {
         TableName: this.table,
         Key: {
-          pk: `_raft_uc##${constraintId}#${this.prefix}#${field}:${value}`,
-          sk: '_raft_uc'
+          _pk: `_raft_uc#${constraintId}#${this.prefix}#${field}:${value}`,
+          _sk: '_raft_uc'
         },
         ConditionExpression: 'relatedId = :relatedId AND relatedModel = :modelName',
         ExpressionAttributeValues: {
@@ -231,25 +244,35 @@ class BaseModel {
     };
   }
 
-  static async queryByIndex(indexNumber, pkValue, options = {}) {
-    const indexName = `gsi${indexNumber}`;
+  static async queryByIndex(indexId, pkValue, options = {}) {
     const params = {
-        TableName: this.table,
-        IndexName: indexName,
-        KeyConditionExpression: options.skValue 
-            ? '#pk = :pkValue AND #sk >= :startDate' 
-            : '#pk = :pkValue',
-        ExpressionAttributeNames: {
-            '#pk': `gsi${indexNumber}pk`,
-            ...(options.skValue && { '#sk': `gsi${indexNumber}sk` })
-        },
-        ExpressionAttributeValues: {
-            ':pkValue': `${this.prefix}#gsi${indexNumber}#${pkValue}`,
-            ...(options.skValue && { ':startDate': options.skValue })
-        },
-        ScanIndexForward: true,
-        ReturnConsumedCapacity: 'TOTAL'
+      TableName: this.table,
+      IndexName: indexId,
+      KeyConditionExpression: '#pk = :pkValue',
+      ExpressionAttributeNames: {
+        '#pk': `_${indexId}_pk`
+      },
+      ExpressionAttributeValues: {
+        ':pkValue': `${this.prefix}#${indexId}#${pkValue}`
+      },
+      ScanIndexForward: true,
+      ReturnConsumedCapacity: 'TOTAL',
+      ...options
     };
+
+    // Add any additional expression attributes
+    if (options.expressionAttributeNames) {
+      params.ExpressionAttributeNames = {
+        ...params.ExpressionAttributeNames,
+        ...options.expressionAttributeNames
+      };
+    }
+    if (options.expressionAttributeValues) {
+      params.ExpressionAttributeValues = {
+        ...params.ExpressionAttributeValues,
+        ...options.expressionAttributeValues
+      };
+    }
 
     console.log('Query params:', JSON.stringify(params, null, 2));
 
@@ -257,13 +280,14 @@ class BaseModel {
     const endTime = Date.now();
 
     return {
-        Items: result.Items,
-        Count: result.Count,
-        ScannedCount: result.ScannedCount,
-        ConsumedCapacity: result.ConsumedCapacity,
-        duration: endTime - Date.now()
+      items: result.Items,
+      count: result.Count,
+      scannedCount: result.ScannedCount,
+      lastEvaluatedKey: result.LastEvaluatedKey,
+      consumedCapacity: result.ConsumedCapacity,
+      duration: endTime - options.startTime
     };
-}
+  }
 
   static async create(data) {
     const itemToCreate = {
@@ -281,15 +305,15 @@ class BaseModel {
           Put: {
             TableName: this.table,
             Item: {
-              pk: `_raft_uc##${constraint.constraintId}#${this.prefix}#${constraint.field}:${itemToCreate[constraint.field]}`,
-              sk: '_raft_uc',
+              _pk: `_raft_uc#${constraint.constraintId}#${this.prefix}#${constraint.field}:${itemToCreate[constraint.field]}`,
+              _sk: '_raft_uc',
               uniqueValue: `${this.prefix}:${constraint.field}:${itemToCreate[constraint.field]}`,
               relatedId: itemToCreate.id,
               relatedModel: this.name
             },
             ConditionExpression: 'attribute_not_exists(#pk)',
             ExpressionAttributeNames: {
-              '#pk': 'pk'
+              '#pk': '_pk'
             }
           }
         };
@@ -299,15 +323,10 @@ class BaseModel {
 
     // Add the main item creation
     const mainItem = {
-      pk: `${this.prefix}##${itemToCreate.id}`,
-      sk: this.prefix,
-      // Add GSI keys
-      gsi1pk: `${this.prefix}#gsi1#${itemToCreate.external_platform || ''}`,
-      gsi1sk: itemToCreate.id,
-      gsi2pk: `${this.prefix}#gsi2#${itemToCreate.role || ''}`,
-      gsi2sk: itemToCreate.id,
-      gsi3pk: `${this.prefix}#gsi3#${itemToCreate.status || ''}`,
-      gsi3sk: new Date(itemToCreate.createdAt).toISOString(),
+      _pk: `${this.prefix}#${itemToCreate.id}`,
+      _sk: this.prefix,
+      // Add GSI keys from index configuration
+      ...this.getIndexKeys(itemToCreate),
       // Add the rest of the item data
       ...itemToCreate
     };
@@ -318,7 +337,7 @@ class BaseModel {
         Item: mainItem,
         ConditionExpression: 'attribute_not_exists(#pk)',
         ExpressionAttributeNames: {
-          '#pk': 'pk'
+          '#pk': '_pk'
         }
       }
     });
@@ -348,8 +367,8 @@ class BaseModel {
               const result = await this.documentClient.get({
                 TableName: this.table,
                 Key: {
-                  pk: `_raft_uc##${constraint.constraintId}#${this.prefix}#${constraint.field}:${itemToCreate[constraint.field]}`,
-                  sk: '_raft_uc'
+                  _pk: `_raft_uc#${constraint.constraintId}#${this.prefix}#${constraint.field}:${itemToCreate[constraint.field]}`,
+                  _sk: '_raft_uc'
                 }
               });
               if (result.Item) {
@@ -427,7 +446,7 @@ class BaseModel {
       });
 
       // Add index updates if needed
-      const indexKeys = this.getIndexKeys(data, id);
+      const indexKeys = this.getIndexKeys(data);
       Object.entries(indexKeys).forEach(([key, value]) => {
         updateParts.push(`#${key} = :${key}`);
         expressionAttributeNames[`#${key}`] = key;
@@ -444,9 +463,12 @@ class BaseModel {
           TableName: this.table,
           Key: this.getKeyForId(id),
           UpdateExpression: `SET ${updateParts.join(', ')}`,
-          ExpressionAttributeNames: expressionAttributeNames,
+          ExpressionAttributeNames: {
+            ...expressionAttributeNames,
+            '#pk': '_pk'
+          },
           ExpressionAttributeValues: expressionAttributeValues,
-          ConditionExpression: 'attribute_exists(pk)'
+          ConditionExpression: 'attribute_exists(#pk)'
         }
       });
   
@@ -477,7 +499,7 @@ class BaseModel {
       });
 
       // Add index updates if needed
-      const indexKeys = this.getIndexKeys(data, id);
+      const indexKeys = this.getIndexKeys(data);
       Object.entries(indexKeys).forEach(([key, value]) => {
         updateParts.push(`#${key} = :${key}`);
         expressionAttributeNames[`#${key}`] = key;
@@ -493,9 +515,12 @@ class BaseModel {
         TableName: this.table,
         Key: this.getKeyForId(id),
         UpdateExpression: `SET ${updateParts.join(', ')}`,
-        ExpressionAttributeNames: expressionAttributeNames,
+        ExpressionAttributeNames: {
+          ...expressionAttributeNames,
+          '#pk': '_pk'
+        },
         ExpressionAttributeValues: expressionAttributeValues,
-        ConditionExpression: 'attribute_exists(pk)',
+        ConditionExpression: 'attribute_exists(#pk)',
         ReturnValues: 'ALL_NEW',
         ReturnConsumedCapacity: 'TOTAL'
       });
@@ -554,7 +579,10 @@ class BaseModel {
         Delete: {
           TableName: this.table,
           Key: this.getKeyForId(id),
-          ConditionExpression: 'attribute_exists(pk)'
+          ExpressionAttributeNames: {
+            '#pk': '_pk'
+          },
+          ConditionExpression: 'attribute_exists(#pk)'
         }
       });
   
@@ -575,7 +603,10 @@ class BaseModel {
       response = await this.documentClient.delete({
         TableName: this.table,
         Key: this.getKeyForId(id),
-        ConditionExpression: 'attribute_exists(pk)',
+        ExpressionAttributeNames: {
+          '#pk': '_pk'
+        },  
+        ConditionExpression: 'attribute_exists(#pk)',
         ReturnValues: 'ALL_OLD',
         ReturnConsumedCapacity: 'TOTAL'
       });

@@ -29,11 +29,11 @@ class User extends BaseModel {
   // Multiple GSIs for different access patterns
   static indexes = [
     // GSI1: Query users by platform
-    new IndexConfig('external_platform', 'user_id', GSI_INDEX_ID1),
+    new IndexConfig('external_platform', 'id', GSI_INDEX_ID1),
     // GSI2: Query users by role
     new IndexConfig('role', 'status', GSI_INDEX_ID2),
     // GSI3: Query users by status
-    new IndexConfig('status', 'created_at', GSI_INDEX_ID3)
+    new IndexConfig('status', 'createdAt', GSI_INDEX_ID3)
   ];
 
   static uniqueConstraints = [

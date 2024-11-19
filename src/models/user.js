@@ -10,18 +10,32 @@ const {
   UNIQUE_CONSTRAINT_ID1,
   UNIQUE_CONSTRAINT_ID2
 } = require('../model');
+const { StringField, DateTimeField } = require('../fields');
 
 class User extends BaseModel {
   static prefix = 'u';
   
   static fields = {
-    name: 'string',
-    email: 'string',
-    external_id: 'string',
-    external_platform: 'string',
-    profile_image_url: 'string',
-    role: 'string',
-    status: 'string'
+    name: StringField({ required: true }),
+    email: StringField({ 
+      required: true,
+      pattern: /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    }),
+    external_id: StringField({ required: true }),
+    external_platform: StringField({ required: true }),
+    profile_image_url: StringField(),
+    role: StringField({ 
+      required: true,
+      defaultValue: 'user'
+    }),
+    status: StringField({ 
+      required: true,
+      defaultValue: 'active'
+    }),
+    createdAt: DateTimeField({ 
+      required: true,
+      defaultValue: () => new Date()
+    })
   };
 
   static primaryKey = new PrimaryKeyConfig('user_id');

@@ -1,6 +1,6 @@
 // src/model.js
-
 const { ulid } = require('ulid');
+const { StringField, DateTimeField } = require('./fields');
 
 // Constants for GSI indexes
 const GSI_INDEX_ID1 = 'gsi1';
@@ -110,19 +110,35 @@ class BaseModel {
   static getIndexKeys(data) {
     const indexKeys = {};
     
-    // Build index keys based on configured indexes
     this.indexes.forEach(index => {
       const pkValue = data[index.pk];
       let skValue = data[index.sk];
       
-      // Convert createdAt to sortable string if it's the sort key
-      if (index.sk === 'createdAt' && skValue) {
-        skValue = this.encodeDateToSortableString(skValue);
-      }
-      
       if (pkValue && skValue) {
-        indexKeys[`_${index.indexId}_pk`] = `${this.prefix}#${index.indexId}#${pkValue}`;
-        indexKeys[`_${index.indexId}_sk`] = skValue;
+        // Convert values using field definitions
+        let pkField = this.fields[index.pk];
+        let skField = this.fields[index.sk];
+
+        if (index.pk === "id") {
+          pkField = StringField();
+        }
+
+        if (index.sk === "id") {
+          skField = StringField();
+        }
+
+        if (index.pk === "createdAt") {
+          pkField = DateTimeField();
+        }
+
+        if (index.sk === "createdAt") {
+          skField = DateTimeField();
+        }
+        
+        if (pkField && skField) {
+          indexKeys[`_${index.indexId}_pk`] = `${this.prefix}#${index.indexId}#${pkField.toGsi(pkValue)}`;
+          indexKeys[`_${index.indexId}_sk`] = skField.toGsi(skValue);
+        }
       }
     });
     
@@ -201,15 +217,27 @@ class BaseModel {
       Key: this.getKeyForId(id),
       ReturnConsumedCapacity: 'TOTAL'
     });
+
+    if (!result.Item) return null;
+
+    // Convert response data using field definitions
+    const convertedItem = {};
+    for (const [key, field] of Object.entries(this.fields)) {
+      if (result.Item[key] !== undefined) {
+        convertedItem[key] = field.fromDy(result.Item[key]);
+      }
+    }
+
     const endTime = Date.now();
     
-    return result.Item ? {
+    return {
       ...result.Item,
+      ...convertedItem,
       _response: {
         ConsumedCapacity: result.ConsumedCapacity,
         duration: endTime - startTime
       }
-    } : null;
+    };
   }
 
   static async findAll() {
@@ -245,6 +273,12 @@ class BaseModel {
   }
 
   static async queryByIndex(indexId, pkValue, options = {}) {
+    // Convert pkValue using field definition if available
+    const index = this.indexes.find(idx => idx.indexId === indexId);
+    if (index && this.fields[index.pk]) {
+      pkValue = this.fields[index.pk].toGsi(pkValue);
+    }
+
     const params = {
       TableName: this.table,
       IndexName: indexId,
@@ -279,8 +313,19 @@ class BaseModel {
     const result = await this.documentClient.query(params);
     const endTime = Date.now();
 
+    // Convert response items using field definitions
+    const convertedItems = result.Items.map(item => {
+      const converted = { ...item };
+      for (const [key, field] of Object.entries(this.fields)) {
+        if (item[key] !== undefined) {
+          converted[key] = field.fromDy(item[key]);
+        }
+      }
+      return converted;
+    });
+
     return {
-      items: result.Items,
+      items: convertedItems,
       count: result.Count,
       scannedCount: result.ScannedCount,
       lastEvaluatedKey: result.LastEvaluatedKey,
@@ -290,8 +335,17 @@ class BaseModel {
   }
 
   static async create(data) {
+    // Convert input data using field definitions
+    const convertedData = {};
+    for (const [key, field] of Object.entries(this.fields)) {
+      if (data[key] !== undefined) {
+        field.validate(data[key]);
+        convertedData[key] = field.toDy(data[key]);
+      }
+    }
+
     const itemToCreate = {
-      ...data,
+      ...convertedData,
       id: data.id || ulid(),
       createdAt: Date.now()
     };
@@ -387,10 +441,18 @@ class BaseModel {
   }
 
   static async update(id, data) {
+    // Convert input data using field definitions
+    const convertedData = {};
+    for (const [key, field] of Object.entries(this.fields)) {
+      if (data[key] !== undefined) {
+        field.validate(data[key]);
+        convertedData[key] = field.toDy(data[key]);
+      }
+    }
+
     const startTime = Date.now();
     const responses = [];
   
-    // Track the find operation capacity
     const currentItem = await this.find(id);
     if (!currentItem) {
       throw new Error('Item not found');

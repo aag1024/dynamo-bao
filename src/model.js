@@ -12,6 +12,21 @@ const UNIQUE_CONSTRAINT_ID1 = '_uc1';
 const UNIQUE_CONSTRAINT_ID2 = '_uc2';
 const UNIQUE_CONSTRAINT_ID3 = '_uc3';
 
+class PrimaryKeyConfig {
+  constructor(pk, sk = 'modelPrefix') {
+    this.pk = pk;
+    this.sk = sk;
+  }
+
+  getPkFieldName() {
+    return '_pk';
+  }
+
+  getSkFieldName() {
+    return '_sk';
+  }
+}
+
 class IndexConfig {
   constructor(pk, sk, indexId) {
     this.pk = pk;
@@ -32,21 +47,6 @@ class IndexConfig {
   }
 }
 
-class PrimaryKeyConfig {
-  constructor(pk, sk = 'model_id') {
-    this.pk = pk;
-    this.sk = sk;
-  }
-
-  getPkFieldName() {
-    return '_pk';
-  }
-
-  getSkFieldName() {
-    return '_sk';
-  }
-}
-
 class UniqueConstraintConfig {
   constructor(field, constraintId) {
     this.field = field;
@@ -59,7 +59,7 @@ class BaseModel {
   static documentClient = null;
   
   // These should be overridden by child classes
-  static prefix = null;  // This replaces model_id in the Python version
+  static modelPrefix = null;
   static fields = {};
   static primaryKey = null;
   static indexes = [];
@@ -75,29 +75,88 @@ class BaseModel {
   }
 
   static validateConfiguration() {
-    if (!this.prefix) {
-      throw new Error(`${this.name} must define a prefix`);
+    if (!this.modelPrefix) {
+      throw new Error(`${this.name} must define a modelPrefix`);
     }
 
     if (!this.primaryKey) {
       throw new Error(`${this.name} must define a primaryKey`);
     }
 
-    // Validate that index IDs are valid
+    // Validate primary key fields exist
+    if (!this.fields[this.primaryKey.pk]) {
+      throw new Error(`Primary key field '${this.primaryKey.pk}' not found in ${this.name} fields`);
+    }
+    if (this.primaryKey.sk !== 'modelPrefix' && !this.fields[this.primaryKey.sk]) {
+      throw new Error(`Sort key field '${this.primaryKey.sk}' not found in ${this.name} fields`);
+    }
+
+    // Validate that index fields exist
     const validIndexIds = [GSI_INDEX_ID1, GSI_INDEX_ID2, GSI_INDEX_ID3];
     this.indexes.forEach(index => {
       if (!validIndexIds.includes(index.indexId)) {
         throw new Error(`Invalid index ID ${index.indexId} in ${this.name}`);
       }
+      
+      // Validate partition key exists
+      if (index.pk !== 'modelPrefix' && !this.fields[index.pk]) {
+        throw new Error(
+          `Index ${index.indexId} partition key field '${index.pk}' not found in ${this.name} fields`
+        );
+      }
+      
+      // Validate sort key exists (unless it's 'modelPrefix')
+      if (index.sk !== 'modelPrefix' && !this.fields[index.sk]) {
+        throw new Error(
+          `Index ${index.indexId} sort key field '${index.sk}' not found in ${this.name} fields`
+        );
+      }
     });
 
-    // Validate that constraint IDs are valid
+    // Validate that constraint fields exist
     const validConstraintIds = [UNIQUE_CONSTRAINT_ID1, UNIQUE_CONSTRAINT_ID2, UNIQUE_CONSTRAINT_ID3];
-    this.uniqueConstraints.forEach(constraint => {
+    this.uniqueConstraints?.forEach(constraint => {
       if (!validConstraintIds.includes(constraint.constraintId)) {
         throw new Error(`Invalid constraint ID ${constraint.constraintId} in ${this.name}`);
       }
+      
+      if (!this.fields[constraint.field]) {
+        throw new Error(
+          `Unique constraint field '${constraint.field}' not found in ${this.name} fields`
+        );
+      }
     });
+  }
+
+  static getPkValue(data) {
+    if (!data) {
+      throw new Error('Data object is required for static getPkValue call');
+    }
+
+    if (this.primaryKey.pk === 'modelPrefix') {
+      return this.modelPrefix;
+    }
+
+    return data[this.primaryKey.pk];
+  }
+
+  static getSkValue(data) {
+    if (!data) {
+      throw new Error('Data object is required for static getSkValue call');
+    }
+    
+    if (this.primaryKey.sk === 'modelPrefix') {
+      return this.modelPrefix;
+    }
+    return data[this.primaryKey.sk];
+  }
+
+  getPkValue() {
+    return this.constructor.getPkValue(this.data);
+  }
+
+  getSkValue() {
+    return this.constructor.getSkValue(this.data);
   }
 
   static encodeDateToSortableString(date) {
@@ -118,26 +177,23 @@ class BaseModel {
         // Convert values using field definitions
         let pkField = this.fields[index.pk];
         let skField = this.fields[index.sk];
-
-        if (index.pk === "id") {
-          pkField = StringField();
-        }
-
-        if (index.sk === "id") {
-          skField = StringField();
-        }
-
-        if (index.pk === "createdAt") {
-          pkField = DateTimeField();
-        }
-
-        if (index.sk === "createdAt") {
-          skField = DateTimeField();
-        }
         
         if (pkField && skField) {
-          indexKeys[`_${index.indexId}_pk`] = `${this.prefix}#${index.indexId}#${pkField.toGsi(pkValue)}`;
-          indexKeys[`_${index.indexId}_sk`] = skField.toGsi(skValue);
+          const gsiPk = `${this.modelPrefix}#${index.indexId}#${pkField.toGsi(pkValue)}`;
+          const gsiSk = skField.toGsi(skValue);
+          
+          console.log('Creating GSI key:', {
+            index: index.indexId,
+            pkField: index.pk,
+            skField: index.sk,
+            pkValue,
+            skValue,
+            gsiPk,
+            gsiSk
+          });
+          
+          indexKeys[`_${index.indexId}_pk`] = gsiPk;
+          indexKeys[`_${index.indexId}_sk`] = gsiSk;
         }
       }
     });
@@ -157,10 +213,14 @@ class BaseModel {
   }
 
   static getKeyForId(id) {
-    return {
-      _pk: `${this.prefix}#${id}`,
-      _sk: this.prefix
-    };
+    if (this.primaryKey.sk === 'modelPrefix') {
+      return {
+        _pk: `${this.modelPrefix}#${id}`,
+        _sk: this.modelPrefix
+      };
+    }
+
+    throw new Error(`getKeyForId only works for primary objects with prefix as SK`);
   }
 
   static accumulateCapacity(responses) {
@@ -175,9 +235,9 @@ class BaseModel {
       Put: {
         TableName: this.table,
         Item: {
-          _pk: `_raft_uc#${constraintId}#${this.prefix}#${field}:${value}`,
+          _pk: `_raft_uc#${constraintId}#${this.modelPrefix}#${field}:${value}`,
           _sk: '_raft_uc',
-          uniqueValue: `${this.prefix}:${field}:${value}`,
+          uniqueValue: `${this.modelPrefix}:${field}:${value}`,
           relatedId: relatedId,
           relatedModel: this.name
         },
@@ -198,7 +258,7 @@ class BaseModel {
       Delete: {
         TableName: this.table,
         Key: {
-          _pk: `_raft_uc#${constraintId}#${this.prefix}#${field}:${value}`,
+          _pk: `_raft_uc#${constraintId}#${this.modelPrefix}#${field}:${value}`,
           _sk: '_raft_uc'
         },
         ConditionExpression: 'relatedId = :relatedId AND relatedModel = :modelName',
@@ -211,7 +271,6 @@ class BaseModel {
   }
 
   static async find(id) {
-    const startTime = Date.now();
     const result = await this.documentClient.get({
       TableName: this.table,
       Key: this.getKeyForId(id),
@@ -220,33 +279,17 @@ class BaseModel {
 
     if (!result.Item) return null;
 
-    // Convert response data using field definitions
-    const convertedItem = {};
-    for (const [key, field] of Object.entries(this.fields)) {
-      if (result.Item[key] !== undefined) {
-        convertedItem[key] = field.fromDy(result.Item[key]);
-      }
-    }
-
-    const endTime = Date.now();
-    
-    return {
-      ...result.Item,
-      ...convertedItem,
-      _response: {
-        ConsumedCapacity: result.ConsumedCapacity,
-        duration: endTime - startTime
-      }
-    };
+    // Create instance with the raw data
+    return new this(result.Item);
   }
 
   static async findAll() {
     const startTime = Date.now();
-    // Find the first global secondary index that uses model_id as PK
-    const globalIndex = this.indexes.find(index => index.pk === 'model_id');
+    // Find the first global secondary index that uses prefix as PK
+    const globalIndex = this.indexes.find(index => index.pk === 'prefix');
     
     if (!globalIndex) {
-      throw new Error(`${this.name} must define a global secondary index with model_id as PK to use findAll`);
+      throw new Error(`${this.name} must define a global secondary index with prefix as PK to use findAll`);
     }
 
     const result = await this.documentClient.query({
@@ -257,7 +300,7 @@ class BaseModel {
         '#pk': globalIndex.getPkFieldName()
       },
       ExpressionAttributeValues: {
-        ':prefix': this.createPrefixedKey(this.prefix, this.prefix)
+        ':prefix': this.createPrefixedKey(this.modelPrefix, this.modelPrefix)
       },
       ReturnConsumedCapacity: 'TOTAL'
     });
@@ -273,11 +316,29 @@ class BaseModel {
   }
 
   static async queryByIndex(indexId, pkValue, options = {}) {
-    // Convert pkValue using field definition if available
+    const startTime = Date.now();
     const index = this.indexes.find(idx => idx.indexId === indexId);
-    if (index && this.fields[index.pk]) {
-      pkValue = this.fields[index.pk].toGsi(pkValue);
+    if (!index) {
+      throw new Error(`Index ${indexId} not found`);
     }
+
+    // Get the field definition for the index's partition key
+    const pkField = this.fields[index.pk];
+    if (!pkField) {
+      throw new Error(`Field ${index.pk} not found for index ${indexId}`);
+    }
+
+    // Convert the value using the field's GSI conversion
+    const convertedPkValue = pkField.toGsi(pkValue);
+    
+    const gsiKey = `${this.modelPrefix}#${indexId}#${convertedPkValue}`;
+    console.log('Index configuration:', {
+      indexId,
+      pkField: index.pk,
+      skField: index.sk,
+      convertedPkValue,
+      gsiKey
+    });
 
     const params = {
       TableName: this.table,
@@ -287,42 +348,20 @@ class BaseModel {
         '#pk': `_${indexId}_pk`
       },
       ExpressionAttributeValues: {
-        ':pkValue': `${this.prefix}#${indexId}#${pkValue}`
+        ':pkValue': gsiKey
       },
       ScanIndexForward: true,
       ReturnConsumedCapacity: 'TOTAL',
       ...options
     };
 
-    // Add any additional expression attributes
-    if (options.expressionAttributeNames) {
-      params.ExpressionAttributeNames = {
-        ...params.ExpressionAttributeNames,
-        ...options.expressionAttributeNames
-      };
-    }
-    if (options.expressionAttributeValues) {
-      params.ExpressionAttributeValues = {
-        ...params.ExpressionAttributeValues,
-        ...options.expressionAttributeValues
-      };
-    }
-
     console.log('Query params:', JSON.stringify(params, null, 2));
 
     const result = await this.documentClient.query(params);
-    const endTime = Date.now();
-
+    console.log('Query result:', JSON.stringify(result, null, 2));
+    
     // Convert response items using field definitions
-    const convertedItems = result.Items.map(item => {
-      const converted = { ...item };
-      for (const [key, field] of Object.entries(this.fields)) {
-        if (item[key] !== undefined) {
-          converted[key] = field.fromDy(item[key]);
-        }
-      }
-      return converted;
-    });
+    const convertedItems = result.Items.map(item => new this(item));
 
     return {
       items: convertedItems,
@@ -330,55 +369,50 @@ class BaseModel {
       scannedCount: result.ScannedCount,
       lastEvaluatedKey: result.LastEvaluatedKey,
       consumedCapacity: result.ConsumedCapacity,
-      duration: endTime - options.startTime
+      duration: Date.now() - startTime,
     };
   }
 
   static async create(data) {
-    // Convert input data using field definitions
-    const convertedData = {};
+    const itemToCreate = {};
+    
+    // First pass: Handle initial values for undefined fields
     for (const [key, field] of Object.entries(this.fields)) {
-      if (data[key] !== undefined) {
-        field.validate(data[key]);
-        convertedData[key] = field.toDy(data[key]);
+      if (data[key] === undefined) {
+        const initialValue = field.getInitialValue();
+        if (initialValue !== undefined) {
+          data[key] = initialValue;
+        }
       }
     }
 
-    const itemToCreate = {
-      ...convertedData,
-      id: data.id || ulid(),
-      createdAt: Date.now()
-    };
+    // Second pass: Validate and convert to DynamoDB format
+    for (const [key, field] of Object.entries(this.fields)) {
+      if (data[key] !== undefined) {
+        field.validate(data[key]);
+        itemToCreate[key] = field.toDy(data[key]);
+      }
+    }
 
     const transactItems = [];
 
     // Add unique constraint operations
     for (const constraint of this.uniqueConstraints) {
       if (itemToCreate[constraint.field]) {
-        const constraintOp = {
-          Put: {
-            TableName: this.table,
-            Item: {
-              _pk: `_raft_uc#${constraint.constraintId}#${this.prefix}#${constraint.field}:${itemToCreate[constraint.field]}`,
-              _sk: '_raft_uc',
-              uniqueValue: `${this.prefix}:${constraint.field}:${itemToCreate[constraint.field]}`,
-              relatedId: itemToCreate.id,
-              relatedModel: this.name
-            },
-            ConditionExpression: 'attribute_not_exists(#pk)',
-            ExpressionAttributeNames: {
-              '#pk': '_pk'
-            }
-          }
-        };
+        const constraintOp = await this._createUniqueConstraint(
+          constraint.field,
+          itemToCreate[constraint.field],
+          this.getGid(itemToCreate),
+          constraint.constraintId
+        );
         transactItems.push(constraintOp);
       }
     }
 
     // Add the main item creation
     const mainItem = {
-      _pk: `${this.prefix}#${itemToCreate.id}`,
-      _sk: this.prefix,
+      _pk: `${this.modelPrefix}#${this.getPkValue(itemToCreate)}`,
+      _sk: this.getSkValue(itemToCreate),
       // Add GSI keys from index configuration
       ...this.getIndexKeys(itemToCreate),
       // Add the rest of the item data
@@ -396,21 +430,19 @@ class BaseModel {
       }
     });
 
-    console.log('Transaction items:', JSON.stringify(transactItems, null, 2));
-
     try {
       const response = await this.documentClient.transactWrite({
         TransactItems: transactItems,
         ReturnConsumedCapacity: 'TOTAL'
       });
       
-      return {
-        ...itemToCreate,
-        _response: {
-          ConsumedCapacity: response.ConsumedCapacity,
-          duration: Date.now() - itemToCreate.createdAt
-        }
+      // Create a new instance with the created data and response
+      const instance = new this(mainItem);
+      instance._response = {
+        ConsumedCapacity: response.ConsumedCapacity,
       };
+      return instance;
+      
     } catch (error) {
       if (error.name === 'TransactionCanceledException') {
         console.error('Transaction cancelled. Reasons:', error.CancellationReasons);
@@ -421,7 +453,7 @@ class BaseModel {
               const result = await this.documentClient.get({
                 TableName: this.table,
                 Key: {
-                  _pk: `_raft_uc#${constraint.constraintId}#${this.prefix}#${constraint.field}:${itemToCreate[constraint.field]}`,
+                  _pk: `_raft_uc#${constraint.constraintId}#${this.modelPrefix}#${constraint.field}:${itemToCreate[constraint.field]}`,
                   _sk: '_raft_uc'
                 }
               });
@@ -441,30 +473,36 @@ class BaseModel {
   }
 
   static async update(id, data) {
+    if (!Object.keys(data).length) return;
+
     // Convert input data using field definitions
     const convertedData = {};
-    for (const [key, field] of Object.entries(this.fields)) {
-      if (data[key] !== undefined) {
-        field.validate(data[key]);
-        convertedData[key] = field.toDy(data[key]);
+    for (const [key, value] of Object.entries(data)) {
+      const field = this.fields[key];
+      if (field) {
+        field.validate(value);
+        convertedData[key] = field.toDy(value);
       }
     }
 
-    const startTime = Date.now();
-    const responses = [];
-  
     const currentItem = await this.find(id);
     if (!currentItem) {
       throw new Error('Item not found');
     }
+
+    // Check unique constraints
+    const uniqueFieldsBeingUpdated = this.uniqueConstraints
+      ?.filter(constraint => 
+        data[constraint.field] !== undefined && 
+        data[constraint.field] !== currentItem[constraint.field]
+      ) || [];
+
+    const startTime = Date.now();
+    const responses = [];
+  
     responses.push(currentItem._response);
   
     let response;
-    const uniqueFieldsBeingUpdated = this.uniqueConstraints
-      .filter(constraint => 
-        data[constraint.field] !== undefined && 
-        data[constraint.field] !== currentItem[constraint.field]
-      );
   
     if (uniqueFieldsBeingUpdated.length > 0) {
       const transactItems = [];
@@ -501,7 +539,7 @@ class BaseModel {
       const expressionAttributeValues = {};
       
       // Handle regular field updates
-      Object.entries(data).forEach(([key, value]) => {
+      Object.entries(convertedData).forEach(([key, value]) => {
         updateParts.push(`#${key} = :${key}`);
         expressionAttributeNames[`#${key}`] = key;
         expressionAttributeValues[`:${key}`] = value;
@@ -514,11 +552,6 @@ class BaseModel {
         expressionAttributeNames[`#${key}`] = key;
         expressionAttributeValues[`:${key}`] = value;
       });
-
-      // Add modifiedAt timestamp
-      updateParts.push('#modifiedAt = :modifiedAt');
-      expressionAttributeNames['#modifiedAt'] = 'modifiedAt';
-      expressionAttributeValues[':modifiedAt'] = Date.now();
   
       transactItems.push({
         Update: {
@@ -554,7 +587,7 @@ class BaseModel {
       const expressionAttributeValues = {};
       
       // Handle regular field updates
-      Object.entries(data).forEach(([key, value]) => {
+      Object.entries(convertedData).forEach(([key, value]) => {
         updateParts.push(`#${key} = :${key}`);
         expressionAttributeNames[`#${key}`] = key;
         expressionAttributeValues[`:${key}`] = value;
@@ -567,11 +600,6 @@ class BaseModel {
         expressionAttributeNames[`#${key}`] = key;
         expressionAttributeValues[`:${key}`] = value;
       });
-
-      // Add modifiedAt timestamp
-      updateParts.push('#modifiedAt = :modifiedAt');
-      expressionAttributeNames['#modifiedAt'] = 'modifiedAt';
-      expressionAttributeValues[':modifiedAt'] = Date.now();
 
       response = await this.documentClient.update({
         TableName: this.table,
@@ -686,14 +714,108 @@ class BaseModel {
       }
     };
   }
+
+  constructor(data) {
+    this.data = { ...data };
+    this._originalData = { ...data };
+    this._changes = new Set();
+    
+    // Define getters/setters for each field
+    Object.entries(this.constructor.fields).forEach(([fieldName, field]) => {
+      Object.defineProperty(this, fieldName, {
+        enumerable: true,
+        get: () => {
+          const value = this.data[fieldName];
+          return value !== undefined ? field.fromDy(value) : undefined;
+        },
+        set: (value) => {
+          const oldValue = this.data[fieldName];
+          const newValue = field.toDy(value);
+          
+          // Only mark as changed if value is actually different
+          if (oldValue !== newValue) {
+            field.validate(value);
+            this.data[fieldName] = newValue;
+            this._changes.add(fieldName);
+          }
+        }
+      });
+    });
+  }
+
+  // get id() {
+  //   return this.data.id;
+  // }
+
+  getGid() {
+    return this.constructor.getGid(this.data);
+  }
+
+  static getGid(data) {
+    if (!data) {
+      throw new Error('Data object is required for getGid call');
+    }
+
+    if (this.primaryKey.sk === 'modelPrefix') {
+      return this.getPkValue(data);
+    }
+
+    if (this.primaryKey.pk === 'modelPrefix') {
+      return this.getSkValue(data);
+    }
+
+    throw new Error(`getGid only works for primary objects with prefix as SK or PK`);
+  }
+
+  // Get only changed fields
+  getChanges() {
+    const changes = {};
+    for (const field of this._changes) {
+      changes[field] = this.data[field];
+    }
+    return changes;
+  }
+
+  // Check if there are any changes
+  hasChanges() {
+    return this._changes.size > 0;
+  }
+
+  // Reset tracking after successful save
+  _resetChangeTracking() {
+    this._originalData = { ...this.data };
+    this._changes.clear();
+  }
+
+  // Instance method to save only changes
+  async save() {
+    if (!this.hasChanges()) {
+      return this; // No changes to save
+    }
+
+    const changes = this.getChanges();
+    await this.constructor.update(this.getGid(), changes);
+    
+    // Reset change tracking after successful save
+    this._resetChangeTracking();
+    
+    return this;
+  }
+
+  // Helper to convert to plain object
+  toJSON() {
+    const obj = {};
+    for (const [fieldName] of Object.entries(this.constructor.fields)) {
+      obj[fieldName] = this[fieldName];
+    }
+    return obj;
+  }
 }
-
-
 module.exports = {
   BaseModel,
-  PrimaryKeyConfig,
-  IndexConfig,
-  UniqueConstraintConfig,
+  PrimaryKeyConfig: (pk, sk) => new PrimaryKeyConfig(pk, sk),
+  IndexConfig: (pk, sk, indexId) => new IndexConfig(pk, sk, indexId),
+  UniqueConstraintConfig: (field, constraintId) => new UniqueConstraintConfig(field, constraintId),
   // Constants
   GSI_INDEX_ID1,
   GSI_INDEX_ID2,
@@ -702,3 +824,4 @@ module.exports = {
   UNIQUE_CONSTRAINT_ID2,
   UNIQUE_CONSTRAINT_ID3,
 };
+

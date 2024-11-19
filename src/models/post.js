@@ -4,23 +4,26 @@ const {
   PrimaryKeyConfig,
   IndexConfig,
   GSI_INDEX_ID1,
-  GSI_INDEX_ID2  // Added this import
+  GSI_INDEX_ID2
 } = require('../model');
+const { StringField, CreateDateField } = require('../fields');
 
 class Post extends BaseModel {
-  static prefix = 'p';
+  static modelPrefix = 'p';
   
   static fields = {
-    userId: 'string',
-    title: 'string',
-    content: 'string'
+    postId: StringField({ required: true }),
+    userId: StringField({ required: true }),
+    title: StringField({ required: true }),
+    content: StringField({ required: true }),
+    createdAt: CreateDateField(),
   };
 
-  static primaryKey = new PrimaryKeyConfig('post_id');
+  static primaryKey = PrimaryKeyConfig('postId');
 
   static indexes = [
-    new IndexConfig('model_id', 'post_id', GSI_INDEX_ID1),
-    new IndexConfig('userId', 'createdAt', GSI_INDEX_ID2)
+    IndexConfig('modelPrefix', 'postId', GSI_INDEX_ID1),
+    IndexConfig('userId', 'createdAt', GSI_INDEX_ID2)
   ];
 }
 

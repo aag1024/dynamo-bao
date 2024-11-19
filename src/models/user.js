@@ -10,12 +10,13 @@ const {
   UNIQUE_CONSTRAINT_ID1,
   UNIQUE_CONSTRAINT_ID2
 } = require('../model');
-const { StringField, DateTimeField } = require('../fields');
+const { StringField, CreateDateField, ModifiedDateField, ULIDField } = require('../fields');
 
 class User extends BaseModel {
-  static prefix = 'u';
+  static modelPrefix = 'u';
   
   static fields = {
+    userId: ULIDField({ autoAssign: true }),
     name: StringField({ required: true }),
     email: StringField({ 
       required: true,
@@ -32,27 +33,21 @@ class User extends BaseModel {
       required: true,
       defaultValue: 'active'
     }),
-    createdAt: DateTimeField({ 
-      required: true,
-      defaultValue: () => new Date()
-    })
+    createdAt: CreateDateField(),
+    modifiedAt: ModifiedDateField()
   };
 
-  static primaryKey = new PrimaryKeyConfig('user_id');
+  static primaryKey = PrimaryKeyConfig('userId');
 
-  // Multiple GSIs for different access patterns
   static indexes = [
-    // GSI1: Query users by platform
-    new IndexConfig('external_platform', 'id', GSI_INDEX_ID1),
-    // GSI2: Query users by role
-    new IndexConfig('role', 'status', GSI_INDEX_ID2),
-    // GSI3: Query users by status
-    new IndexConfig('status', 'createdAt', GSI_INDEX_ID3)
+    IndexConfig('external_platform', 'userId', GSI_INDEX_ID1),
+    IndexConfig('role', 'status', GSI_INDEX_ID2),
+    IndexConfig('status', 'createdAt', GSI_INDEX_ID3)
   ];
 
   static uniqueConstraints = [
-    new UniqueConstraintConfig('email', UNIQUE_CONSTRAINT_ID1),
-    new UniqueConstraintConfig('external_id', UNIQUE_CONSTRAINT_ID2)
+    UniqueConstraintConfig('email', UNIQUE_CONSTRAINT_ID1),
+    UniqueConstraintConfig('external_id', UNIQUE_CONSTRAINT_ID2)
   ];
 }
 

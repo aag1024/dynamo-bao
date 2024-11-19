@@ -68,10 +68,9 @@ describe('User Unique Constraints', () => {
       name: 'Test User 1',
       email: 'test1@example.com',
       status: 'active',
-      createdAt: new Date().toISOString()
     });
 
-    const updatedUser = await User.update(user.id, {
+    const updatedUser = await User.update(user.userId, {
       email: 'test2@example.com',
       status: user.status,
       createdAt: user.createdAt
@@ -84,18 +83,16 @@ describe('User Unique Constraints', () => {
       name: 'Test User 1',
       email: 'test1@example.com',
       status: 'active',
-      createdAt: new Date().toISOString()
     });
 
     await User.create({
       name: 'Test User 2',
       email: 'test2@example.com',
       status: 'active',
-      createdAt: new Date().toISOString()
     });
 
     await expect(async () => {
-      await User.update(user1.id, { 
+      await User.update(user1.userId, { 
         email: 'test2@example.com',
         status: user1.status,
         createdAt: user1.createdAt
@@ -109,7 +106,7 @@ describe('User Unique Constraints', () => {
       email: 'test1@example.com'
     });
 
-    await User.delete(user1.id);
+    await User.delete(user1.userId);
 
     const user2 = await User.create({
       name: 'Test User 2',

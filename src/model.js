@@ -358,6 +358,151 @@ class BaseModel {
     };
   }
 
+  static formatGsiKey(modelPrefix, indexId, value) {
+    return `${modelPrefix}#${indexId}#${value}`;
+  }
+
+  static formatPrimaryKey(modelPrefix, value) {
+    return `${modelPrefix}#${value}`;
+  }
+
+  static formatUniqueConstraintKey(constraintId, modelPrefix, field, value) {
+    return `_raft_uc#${constraintId}#${modelPrefix}#${field}:${value}`;
+  }
+
+  static getBaseQueryParams(pkFieldName, pkValue, options = {}) {
+    const {
+      limit,
+      startKey,
+      direction = 'DESC',
+      indexName
+    } = options;
+
+    const params = {
+      TableName: this.table,
+      KeyConditionExpression: '#pk = :pk',
+      ExpressionAttributeNames: {
+        '#pk': pkFieldName
+      },
+      ExpressionAttributeValues: {
+        ':pk': pkValue
+      },
+      ScanIndexForward: direction === 'ASC',
+      IndexName: indexName,
+      ReturnConsumedCapacity: 'TOTAL'
+    };
+
+    if (limit) {
+      params.Limit = limit;
+    }
+
+    if (startKey) {
+      params.ExclusiveStartKey = startKey;
+    }
+
+    return params;
+  }
+
+  static processQueryResponse(response, options = {}) {
+    const {
+      returnModel = true
+    } = options;
+  
+    return {
+      items: returnModel ? response.Items.map(item => new this(item)) : response.Items,
+      count: response.Items.length,
+      lastEvaluatedKey: response.LastEvaluatedKey,
+      _response: {
+        ConsumedCapacity: response.ConsumedCapacity
+      }
+    };
+  }
+
+  static async validateUniqueConstraints(error, data, currentId = null) {
+    if (error.name === 'TransactionCanceledException') {
+      for (const constraint of Object.values(this.uniqueConstraints)) {
+        if (data[constraint.field]) {
+          try {
+            const result = await this.documentClient.get({
+              TableName: this.table,
+              Key: {
+                _pk: this.formatUniqueConstraintKey(
+                  constraint.constraintId,
+                  this.modelPrefix,
+                  constraint.field,
+                  data[constraint.field]
+                ),
+                _sk: '_raft_uc'
+              }
+            });
+            
+            if (result.Item && (!currentId || result.Item.relatedId !== currentId)) {
+              throw new Error(`${constraint.field} must be unique`);
+            }
+          } catch (innerError) {
+            if (innerError.message.includes('must be unique')) {
+              throw innerError;
+            }
+          }
+        }
+      }
+    }
+    throw error;
+  }
+
+  static getKeyForId(id) {
+    if (this.primaryKey.sk === 'modelPrefix') {
+      return {
+        _pk: this.formatPrimaryKey(this.modelPrefix, id),
+        _sk: this.modelPrefix
+      };
+    }
+    throw new Error(`getKeyForId only works for primary objects with prefix as SK`);
+  }
+
+  static getIndexKeys(data) {
+    const indexKeys = {};
+    
+    Object.entries(this.indexes).forEach(([indexName, index]) => {
+      let pkValue, skValue;
+      
+      // Handle partition key
+      if (index.pk === 'modelPrefix') {
+        pkValue = this.modelPrefix;
+      } else {
+        const pkField = this.fields[index.pk];
+        pkValue = pkField.toGsi(data[index.pk]);
+      }
+      
+      // Handle sort key
+      if (index.sk === 'modelPrefix') {
+        skValue = this.modelPrefix;
+      } else {
+        const skField = this.fields[index.sk];
+        skValue = skField.toGsi(data[index.sk]);
+      }
+      
+      if (pkValue !== undefined && skValue !== undefined) {
+        const gsiPk = this.formatGsiKey(this.modelPrefix, index.indexId, pkValue);
+        indexKeys[`_${index.indexId}_pk`] = gsiPk;
+        indexKeys[`_${index.indexId}_sk`] = skValue;
+      }
+    });
+    
+    return indexKeys;
+  }
+
+  static async queryByPrimaryKey(pkValue, options = {}) {
+    const params = this.getBaseQueryParams(
+      '_pk',
+      this.formatPrimaryKey(this.modelPrefix, pkValue),
+      options
+    );
+
+    const response = await this.documentClient.query(params);
+    return this.processQueryResponse(response, options);
+  }
+
   static async queryByIndex(indexName, pkValue, options = {}) {
     const index = this.indexes[indexName];
     if (!index) {
@@ -367,32 +512,18 @@ class BaseModel {
     // Format the partition key
     let formattedPk;
     if (index instanceof PrimaryKeyConfig) {
-      // Handle primary key config differently
-      formattedPk = `${this.modelPrefix}#${pkValue}`;
+      formattedPk = this.formatPrimaryKey(this.modelPrefix, pkValue);
     } else {
-      const indexId = index.indexId || '';
-      if (index.pk === 'modelPrefix') {
-        formattedPk = `${this.modelPrefix}#${indexId}#${this.modelPrefix}`;
-      } else {
-        formattedPk = `${this.modelPrefix}#${indexId}#${pkValue}`;
-      }
+      formattedPk = this.formatGsiKey(this.modelPrefix, index.indexId || '', pkValue);
     }
 
-    const params = {
-      TableName: this.table,
-      KeyConditionExpression: '#pk = :pk',
-      ExpressionAttributeNames: {
-        '#pk': index instanceof PrimaryKeyConfig ? '_pk' : `_${index.indexId ? index.indexId + '_' : ''}pk`
-      },
-      ExpressionAttributeValues: {
-        ':pk': formattedPk
-      },
-      ScanIndexForward: options.direction === 'ASC',
-      IndexName: index instanceof PrimaryKeyConfig ? undefined : (index.indexId || undefined),
-      ReturnConsumedCapacity: 'TOTAL'
-    };
+    const params = this.getBaseQueryParams(
+      index instanceof PrimaryKeyConfig ? '_pk' : `_${index.indexId ? index.indexId + '_' : ''}pk`,
+      formattedPk,
+      { ...options, indexName: index instanceof PrimaryKeyConfig ? undefined : (index.indexId || undefined) }
+    );
 
-    // Add sort key conditions if provided
+    // Add range key conditions if provided
     if (options.rangeKey && options.rangeValue !== undefined) {
       const skName = index instanceof PrimaryKeyConfig ? '_sk' : `_${index.indexId ? index.indexId + '_' : ''}sk`;
       params.ExpressionAttributeNames['#sk'] = skName;
@@ -414,88 +545,17 @@ class BaseModel {
       }
     }
 
-    // Add pagination parameters
-    if (options.limit) {
-      params.Limit = options.limit;
-    }
-
-    if (options.startKey) {
-      params.ExclusiveStartKey = {
-        [`_${index.indexId}_pk`]: options.startKey[`_${index.indexId}_pk`],
-        [`_${index.indexId}_sk`]: options.startKey[`_${index.indexId}_sk`],
-        _pk: options.startKey._pk,
-        _sk: options.startKey._sk
-      };
-    }
-
     const response = await this.documentClient.query(params);
-
-    // If we got exactly 'limit' items, do a follow-up query to see if there are more
-    let lastEvaluatedKey = response.LastEvaluatedKey;
-    if (options.limit && response.Items.length === options.limit && lastEvaluatedKey) {
-      const checkResponse = await this.documentClient.query({
-        ...params,
-        Limit: 1,
-        ExclusiveStartKey: lastEvaluatedKey
-      });
-
-      // Only keep LastEvaluatedKey if there are more items
-      if (checkResponse.Items.length === 0) {
-        lastEvaluatedKey = undefined;
-      }
-    }
-
-    return {
-      items: response.Items.map(item => new this(item)),
-      lastEvaluatedKey,
-      count: response.Items.length
-    };
-  }
-
-  static async queryByPrimaryKey(pkValue, options = {}) {
-    const {
-      limit,
-      startKey,
-      direction = 'DESC',
-      returnModel = true
-    } = options;
-
-    const params = {
-      TableName: this.table,
-      KeyConditionExpression: '#pk = :pk',
-      ExpressionAttributeNames: {
-        '#pk': '_pk'
-      },
-      ExpressionAttributeValues: {
-        ':pk': `${this.modelPrefix}#${pkValue}`
-      },
-      ScanIndexForward: direction === 'ASC',
-      ReturnConsumedCapacity: 'TOTAL'
-    };
-
-    if (limit) {
-      params.Limit = limit;
-    }
-
-    if (startKey) {
-      params.ExclusiveStartKey = startKey;
-    }
-
-    const response = await this.documentClient.query(params);
-    
-    // Don't return lastEvaluatedKey if we got fewer items than requested
-    const lastEvaluatedKey = limit && response.Items.length >= limit ? 
-      response.LastEvaluatedKey : 
-      undefined;
-
-    return {
-      items: returnModel ? response.Items.map(item => new this(item)) : response.Items,
-      count: response.Count,
-      lastEvaluatedKey,
-      _response: {
-        ConsumedCapacity: response.ConsumedCapacity
-      }
-    };
+  
+    // If this is a paginated query, track how many items we've seen
+    const totalItems = options.startKey ? 
+      (options.previousCount || 0) + response.Items.length :
+      response.Items.length;
+  
+    return this.processQueryResponse(response, { 
+      ...options, 
+      totalItems 
+    });
   }
 
   static async create(data) {
@@ -569,31 +629,7 @@ class BaseModel {
       return instance;
       
     } catch (error) {
-      if (error.name === 'TransactionCanceledException') {
-        console.error('Transaction cancelled. Reasons:', error.CancellationReasons);
-        // Check which constraint failed
-        for (const constraint of Object.values(this.uniqueConstraints)) {
-          if (itemToCreate[constraint.field]) {
-            try {
-              const result = await this.documentClient.get({
-                TableName: this.table,
-                Key: {
-                  _pk: `_raft_uc#${constraint.constraintId}#${this.modelPrefix}#${constraint.field}:${itemToCreate[constraint.field]}`,
-                  _sk: '_raft_uc'
-                }
-              });
-              if (result.Item) {
-                throw new Error(`${constraint.field} must be unique`);
-              }
-            } catch (innerError) {
-              if (innerError.message.includes('must be unique')) {
-                throw innerError;
-              }
-            }
-          }
-        }
-      }
-      throw error;
+      await this.validateUniqueConstraints(error, data);
     }
   }
 
@@ -703,30 +739,7 @@ class BaseModel {
         return updatedItem;
         
       } catch (error) {
-        if (error.name === 'TransactionCanceledException') {
-          // Check which constraint failed
-          for (const constraint of Object.values(this.uniqueConstraints)) {
-            if (data[constraint.field]) {
-              try {
-                const result = await this.documentClient.get({
-                  TableName: this.table,
-                  Key: {
-                    _pk: `_raft_uc#${constraint.constraintId}#${this.modelPrefix}#${constraint.field}:${data[constraint.field]}`,
-                    _sk: '_raft_uc'
-                  }
-                });
-                if (result.Item && result.Item.relatedId !== id) {
-                  throw new Error(`${constraint.field} must be unique`);
-                }
-              } catch (innerError) {
-                if (innerError.message.includes('must be unique')) {
-                  throw innerError;
-                }
-              }
-            }
-          }
-        }
-        throw error;
+        await this.validateUniqueConstraints(error, data, id);
       }
     } else {
       // If no unique constraints, use simple update
@@ -882,10 +895,6 @@ class BaseModel {
   clearRelatedCache(fieldName) {
     delete this._relatedObjects[fieldName];
   }
-
-  // get id() {
-  //   return this.data.id;
-  // }
 
   getGid() {
     return this.constructor.getGid(this.data);

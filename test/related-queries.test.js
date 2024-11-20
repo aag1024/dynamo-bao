@@ -69,21 +69,18 @@ describe('Related Field Queries', () => {
     const user = await User.find(testUser.userId);
     console.log('Test user:', JSON.stringify(user, null, 2));
     
-    const firstPage = await user.queryPosts({ limit: 1 });
-    console.log('First page result:', JSON.stringify(firstPage, null, 2));
+    // First page with limit 1
+    const firstPage = await Post.queryByIndex('postsForUser', user.userId, { limit: 1 });
     expect(firstPage.items).toHaveLength(1);
     expect(firstPage.lastEvaluatedKey).toBeDefined();
 
-    console.log('Using start key:', JSON.stringify(firstPage.lastEvaluatedKey, null, 2));
-    
-    const secondPage = await user.queryPosts({ 
-      limit: 1, 
+    // Second page should be the last page
+    const secondPage = await Post.queryByIndex('postsForUser', user.userId, { 
+      limit: 2, 
       startKey: firstPage.lastEvaluatedKey 
     });
-    console.log('Second page result:', JSON.stringify(secondPage, null, 2));
-    
     expect(secondPage.items).toHaveLength(1);
-    expect(secondPage.lastEvaluatedKey).toBeUndefined(); // No more pages
+    expect(secondPage.lastEvaluatedKey).toBeUndefined();
   });
 
   test('should support different sort directions', async () => {

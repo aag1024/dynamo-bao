@@ -63,7 +63,7 @@ class BaseModel {
   static modelPrefix = null;
   static fields = {};
   static primaryKey = null;
-  static indexes = [];
+  static indexes = {};
   static uniqueConstraints = [];
 
   static initTable(documentClient, tableName) {
@@ -97,7 +97,7 @@ class BaseModel {
 
     // Validate that index fields exist
     const validIndexIds = [GSI_INDEX_ID1, GSI_INDEX_ID2, GSI_INDEX_ID3];
-    this.indexes.forEach(index => {
+    Object.values(this.indexes).forEach(index => {
       if (!validIndexIds.includes(index.indexId)) {
         throw new Error(`Invalid index ID ${index.indexId} in ${this.name}`);
       }
@@ -173,32 +173,32 @@ class BaseModel {
   static getIndexKeys(data) {
     const indexKeys = {};
     
-    this.indexes.forEach(index => {
-      const pkValue = data[index.pk];
-      let skValue = data[index.sk];
+    Object.entries(this.indexes).forEach(([indexName, index]) => {
+      let pkValue, skValue;
       
-      if (pkValue && skValue) {
-        // Convert values using field definitions
-        let pkField = this.fields[index.pk];
-        let skField = this.fields[index.sk];
+      // Handle partition key
+      if (index.pk === 'modelPrefix') {
+        pkValue = this.modelPrefix;
+      } else {
+        const pkField = this.fields[index.pk];
+        pkValue = pkField.toGsi(data[index.pk]);
+      }
+      
+      // Handle sort key
+      if (index.sk === 'modelPrefix') {
+        skValue = this.modelPrefix;
+      } else {
+        const skField = this.fields[index.sk];
+        skValue = skField.toGsi(data[index.sk]);
+      }
+      
+      if (pkValue !== undefined && skValue !== undefined) {
+        // Format the GSI keys
+        const gsiPk = `${this.modelPrefix}#${index.indexId}#${pkValue}`;
+        const gsiSk = skValue;
         
-        if (pkField && skField) {
-          const gsiPk = `${this.modelPrefix}#${index.indexId}#${pkField.toGsi(pkValue)}`;
-          const gsiSk = skField.toGsi(skValue);
-          
-          console.log('Creating GSI key:', {
-            index: index.indexId,
-            pkField: index.pk,
-            skField: index.sk,
-            pkValue,
-            skValue,
-            gsiPk,
-            gsiSk
-          });
-          
-          indexKeys[`_${index.indexId}_pk`] = gsiPk;
-          indexKeys[`_${index.indexId}_sk`] = gsiSk;
-        }
+        indexKeys[`_${index.indexId}_pk`] = gsiPk;
+        indexKeys[`_${index.indexId}_sk`] = gsiSk;
       }
     });
     
@@ -319,61 +319,59 @@ class BaseModel {
     };
   }
 
-  static async queryByIndex(indexId, pkValue, options = {}) {
-    const startTime = Date.now();
-    const index = this.indexes.find(idx => idx.indexId === indexId);
-    if (!index) {
-      throw new Error(`Index ${indexId} not found`);
+  static async queryByIndex(indexName, pkValue, options = {}) {
+    if (!this.indexes[indexName]) {
+      throw new Error(`Index "${indexName}" not found in ${this.name} model`);
     }
 
-    // Get the field definition for the index's partition key
-    const pkField = this.fields[index.pk];
-    if (!pkField) {
-      throw new Error(`Field ${index.pk} not found for index ${indexId}`);
-    }
-
-    // Convert the value using the field's GSI conversion
-    const convertedPkValue = pkField.toGsi(pkValue);
+    const index = this.indexes[indexName];
+    const indexId = index.indexId;
     
-    const gsiKey = `${this.modelPrefix}#${indexId}#${convertedPkValue}`;
-    console.log('Index configuration:', {
-      indexId,
-      pkField: index.pk,
-      skField: index.sk,
-      convertedPkValue,
-      gsiKey
-    });
+    let formattedPk;
+    if (index.pk === 'modelPrefix') {
+      formattedPk = `${this.modelPrefix}#${indexId}#${this.modelPrefix}`;
+    } else {
+      const pkField = this.fields[index.pk];
+      formattedPk = `${this.modelPrefix}#${indexId}#${pkField.toGsi(pkValue)}`;
+    }
 
     const params = {
       TableName: this.table,
       IndexName: indexId,
-      KeyConditionExpression: '#pk = :pkValue',
+      KeyConditionExpression: '#pk = :pk',
       ExpressionAttributeNames: {
         '#pk': `_${indexId}_pk`
       },
       ExpressionAttributeValues: {
-        ':pkValue': gsiKey
+        ':pk': formattedPk
       },
-      ScanIndexForward: true,
-      ReturnConsumedCapacity: 'TOTAL',
-      ...options
+      ReturnConsumedCapacity: 'TOTAL'
     };
 
-    console.log('Query params:', JSON.stringify(params, null, 2));
+    // Handle sort key conditions
+    if (options.skValue) {
+      const skField = this.fields[index.sk];
+      
+      if (options.skValue.between) {
+        const [start, end] = options.skValue.between;
+        params.KeyConditionExpression += ' AND #sk BETWEEN :start AND :end';
+        params.ExpressionAttributeNames['#sk'] = `_${indexId}_sk`;
+        params.ExpressionAttributeValues[':start'] = skField.toGsi(start);
+        params.ExpressionAttributeValues[':end'] = skField.toGsi(end);
+      } else {
+        params.KeyConditionExpression += ' AND #sk = :sk';
+        params.ExpressionAttributeNames['#sk'] = `_${indexId}_sk`;
+        params.ExpressionAttributeValues[':sk'] = skField.toGsi(options.skValue);
+      }
+    }
 
     const result = await this.documentClient.query(params);
-    console.log('Query result:', JSON.stringify(result, null, 2));
-    
-    // Convert response items using field definitions
-    const convertedItems = result.Items.map(item => new this(item));
-
     return {
-      items: convertedItems,
-      count: result.Count,
-      scannedCount: result.ScannedCount,
+      items: result.Items.map(item => this.fromDynamoDB(item)),
       lastEvaluatedKey: result.LastEvaluatedKey,
-      consumedCapacity: result.ConsumedCapacity,
-      duration: Date.now() - startTime,
+      _response: {
+        ConsumedCapacity: result.ConsumedCapacity
+      }
     };
   }
 
@@ -476,163 +474,167 @@ class BaseModel {
     }
   }
 
-  static async update(id, data) {
-    if (!Object.keys(data).length) return;
-
-    // Convert input data using field definitions
-    const convertedData = {};
-    for (const [key, value] of Object.entries(data)) {
-      const field = this.fields[key];
-      if (field) {
-        field.validate(value);
-        convertedData[key] = field.toDy(value);
+  static async update(id, changes) {
+    // Validate the changes
+    for (const [field, value] of Object.entries(changes)) {
+      const fieldDef = this.fields[field];
+      if (!fieldDef) {
+        throw new Error(`Invalid field: ${field}`);
       }
+      fieldDef.validate(value);
     }
 
+    // Get current item to calculate GSI updates
     const currentItem = await this.find(id);
     if (!currentItem) {
       throw new Error('Item not found');
     }
 
-    // Check unique constraints
-    const uniqueFieldsBeingUpdated = this.uniqueConstraints
-      ?.filter(constraint => 
-        data[constraint.field] !== undefined && 
-        data[constraint.field] !== currentItem[constraint.field]
-      ) || [];
+    const transactItems = [];
 
-    const startTime = Date.now();
-    const responses = [];
-  
-    responses.push(currentItem._response);
-  
-    let response;
-  
-    if (uniqueFieldsBeingUpdated.length > 0) {
-      const transactItems = [];
-  
-      // Handle unique constraints
-      for (const constraint of uniqueFieldsBeingUpdated) {
-        // Remove old constraint if it exists
-        if (currentItem[constraint.field]) {
+    // Handle unique constraint updates
+    for (const constraint of this.uniqueConstraints) {
+      const field = constraint.field;
+      if (changes[field] !== undefined && changes[field] !== currentItem[field]) {
+        // Remove old constraint
+        if (currentItem[field]) {
           transactItems.push(
             await this._removeUniqueConstraint(
-              constraint.field,
-              currentItem[constraint.field],
+              field,
+              currentItem[field],
               id,
               constraint.constraintId
             )
           );
         }
-        // Add new constraint if value provided
-        if (data[constraint.field]) {
-          transactItems.push(
-            await this._createUniqueConstraint(
-              constraint.field,
-              data[constraint.field],
-              id,
-              constraint.constraintId
-            )
-          );
+        
+        // Add new constraint
+        transactItems.push(
+          await this._createUniqueConstraint(
+            field,
+            changes[field],
+            id,
+            constraint.constraintId
+          )
+        );
+      }
+    }
+
+    // Prepare update expression parts
+    const updateParts = [];
+    const expressionAttributeNames = {};
+    const expressionAttributeValues = {};
+    let updateCount = 0;
+
+    // Handle regular fields
+    for (const [field, value] of Object.entries(changes)) {
+      const attributeName = `#attr${updateCount}`;
+      const attributeValue = `:val${updateCount}`;
+      
+      updateParts.push(`${attributeName} = ${attributeValue}`);
+      expressionAttributeNames[attributeName] = field;
+      expressionAttributeValues[attributeValue] = this.fields[field].toDy(value);
+      updateCount++;
+    }
+
+    // Handle GSI updates
+    const oldIndexKeys = this.getIndexKeys(currentItem.data);
+    const newData = { ...currentItem.data, ...changes };
+    const newIndexKeys = this.getIndexKeys(newData);
+
+    // Add GSI updates to expression
+    for (const [key, newValue] of Object.entries(newIndexKeys)) {
+      if (oldIndexKeys[key] !== newValue) {
+        const attributeName = `#${key}`;
+        const attributeValue = `:${key}`;
+        
+        // Find the index and field this GSI key belongs to
+        const [, indexId, keyType] = key.split('_'); // e.g., _gsi1_pk -> ['', 'gsi1', 'pk']
+        const index = Object.values(this.indexes).find(idx => idx.indexId === indexId);
+        const fieldName = keyType === 'pk' ? index.pk : index.sk;
+        
+        // Only convert if it's not a modelPrefix
+        if (fieldName !== 'modelPrefix') {
+          const field = this.fields[fieldName];
+          updateParts.push(`${attributeName} = ${attributeValue}`);
+          expressionAttributeNames[attributeName] = key;
+          expressionAttributeValues[attributeValue] = newValue;
         }
       }
-  
-      // Build update expression for main item
-      const updateParts = [];
-      const expressionAttributeNames = {};
-      const expressionAttributeValues = {};
-      
-      // Handle regular field updates
-      Object.entries(convertedData).forEach(([key, value]) => {
-        updateParts.push(`#${key} = :${key}`);
-        expressionAttributeNames[`#${key}`] = key;
-        expressionAttributeValues[`:${key}`] = value;
-      });
+    }
 
-      // Add index updates if needed
-      const indexKeys = this.getIndexKeys(data);
-      Object.entries(indexKeys).forEach(([key, value]) => {
-        updateParts.push(`#${key} = :${key}`);
-        expressionAttributeNames[`#${key}`] = key;
-        expressionAttributeValues[`:${key}`] = value;
-      });
-  
+    if (transactItems.length > 0) {
+      // If we have unique constraints to update, use transactWrite
       transactItems.push({
         Update: {
           TableName: this.table,
           Key: this.getKeyForId(id),
           UpdateExpression: `SET ${updateParts.join(', ')}`,
-          ExpressionAttributeNames: {
-            ...expressionAttributeNames,
-            '#pk': '_pk'
-          },
+          ExpressionAttributeNames: expressionAttributeNames,
           ExpressionAttributeValues: expressionAttributeValues,
-          ConditionExpression: 'attribute_exists(#pk)'
+          ReturnValues: 'ALL_NEW'
         }
       });
-  
+
       try {
-        response = await this.documentClient.transactWrite({
+        const response = await this.documentClient.transactWrite({
           TransactItems: transactItems,
           ReturnConsumedCapacity: 'TOTAL'
         });
-        responses.push(response);
+        
+        // Fetch the updated item since transactWrite doesn't return values
+        const updatedItem = await this.find(id);
+        updatedItem._response = {
+          ConsumedCapacity: response.ConsumedCapacity,
+        };
+        return updatedItem;
+        
       } catch (error) {
         if (error.name === 'TransactionCanceledException') {
-          const failedConstraint = uniqueFieldsBeingUpdated[0];
-          throw new Error(`${failedConstraint.field} must be unique`);
+          // Check which constraint failed
+          for (const constraint of this.uniqueConstraints) {
+            if (changes[constraint.field]) {
+              try {
+                const result = await this.documentClient.get({
+                  TableName: this.table,
+                  Key: {
+                    _pk: `_raft_uc#${constraint.constraintId}#${this.modelPrefix}#${constraint.field}:${changes[constraint.field]}`,
+                    _sk: '_raft_uc'
+                  }
+                });
+                if (result.Item && result.Item.relatedId !== id) {
+                  throw new Error(`${constraint.field} must be unique`);
+                }
+              } catch (innerError) {
+                if (innerError.message.includes('must be unique')) {
+                  throw innerError;
+                }
+              }
+            }
+          }
         }
         throw error;
       }
     } else {
-      // Build update expression for non-unique update
-      const updateParts = [];
-      const expressionAttributeNames = {};
-      const expressionAttributeValues = {};
-      
-      // Handle regular field updates
-      Object.entries(convertedData).forEach(([key, value]) => {
-        updateParts.push(`#${key} = :${key}`);
-        expressionAttributeNames[`#${key}`] = key;
-        expressionAttributeValues[`:${key}`] = value;
-      });
+      // If no unique constraints, use simple update
+      try {
+        const response = await this.documentClient.update({
+          TableName: this.table,
+          Key: this.getKeyForId(id),
+          UpdateExpression: `SET ${updateParts.join(', ')}`,
+          ExpressionAttributeNames: expressionAttributeNames,
+          ExpressionAttributeValues: expressionAttributeValues,
+          ReturnValues: 'ALL_NEW'
+        });
 
-      // Add index updates if needed
-      const indexKeys = this.getIndexKeys(data);
-      Object.entries(indexKeys).forEach(([key, value]) => {
-        updateParts.push(`#${key} = :${key}`);
-        expressionAttributeNames[`#${key}`] = key;
-        expressionAttributeValues[`:${key}`] = value;
-      });
-
-      response = await this.documentClient.update({
-        TableName: this.table,
-        Key: this.getKeyForId(id),
-        UpdateExpression: `SET ${updateParts.join(', ')}`,
-        ExpressionAttributeNames: {
-          ...expressionAttributeNames,
-          '#pk': '_pk'
-        },
-        ExpressionAttributeValues: expressionAttributeValues,
-        ConditionExpression: 'attribute_exists(#pk)',
-        ReturnValues: 'ALL_NEW',
-        ReturnConsumedCapacity: 'TOTAL'
-      });
-      responses.push(response);
-    }
-  
-    const endTime = Date.now();
-    const allCapacity = this.accumulateCapacity(responses);
-  
-    return {
-      ...currentItem,
-      ...data,
-      modifiedAt: Date.now(),
-      _response: {
-        ConsumedCapacity: allCapacity,
-        duration: endTime - startTime
+        return this.fromDynamoDB(response.Attributes);
+      } catch (error) {
+        if (error.name === 'ConditionalCheckFailedException') {
+          throw new Error('Concurrent update detected');
+        }
+        throw error;
       }
-    };
+    }
   }
 
   static async delete(id) {
@@ -875,6 +877,18 @@ class BaseModel {
       throw new Error(`Field ${fieldName} is not a RelatedField`);
     }
     return field.getInstance();
+  }
+
+  static fromDynamoDB(item) {
+    if (!item) return null;
+
+    const data = {};
+    for (const [fieldName, field] of Object.entries(this.fields)) {
+      if (item[fieldName] !== undefined) {
+        data[fieldName] = field.fromDy(item[fieldName]);
+      }
+    }
+    return new this(data);
   }
 }
 module.exports = {

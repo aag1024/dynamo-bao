@@ -39,11 +39,11 @@ class User extends BaseModel {
 
   static primaryKey = PrimaryKeyConfig('userId');
 
-  static indexes = [
-    IndexConfig('external_platform', 'userId', GSI_INDEX_ID1),
-    IndexConfig('role', 'status', GSI_INDEX_ID2),
-    IndexConfig('status', 'createdAt', GSI_INDEX_ID3)
-  ];
+  static indexes = {
+    byPlatform: IndexConfig('external_platform', 'userId', GSI_INDEX_ID1),
+    byRole: IndexConfig('role', 'status', GSI_INDEX_ID2),
+    byStatus: IndexConfig('status', 'createdAt', GSI_INDEX_ID3)
+  };
 
   static uniqueConstraints = [
     UniqueConstraintConfig('email', UNIQUE_CONSTRAINT_ID1),

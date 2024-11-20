@@ -155,49 +155,67 @@ describe('GSI Queries', () => {
     ]);
   });
 
-  test('should query users by platform using GSI1', async () => {
-    const platformUsers = await User.queryByIndex(GSI_INDEX_ID1, 'platform1');
-    console.log('platformUsers:', platformUsers);
+  test('should query users by platform using byPlatform index', async () => {
+    const platformUsers = await User.queryByIndex('byPlatform', 'platform1');
     expect(platformUsers.items).toHaveLength(2);
     expect(platformUsers.items[0].external_platform).toBe('platform1');
   });
 
-  test('should query users by role using GSI2', async () => {
-    const adminUsers = await User.queryByIndex(GSI_INDEX_ID2, 'admin');
+  test('should query users by role using byRole index', async () => {
+    const adminUsers = await User.queryByIndex('byRole', 'admin');
     expect(adminUsers.items).toHaveLength(1);
     expect(adminUsers.items[0].role).toBe('admin');
   });
 
-  test('should query users by status using GSI3', async () => {
-    const activeUsers = await User.queryByIndex(GSI_INDEX_ID3, 'active');
+  test('should query users by status using byStatus index', async () => {
+    const activeUsers = await User.queryByIndex('byStatus', 'active');
     expect(activeUsers.items).toHaveLength(2);
     expect(activeUsers.items[0].status).toBe('active');
+  });
+
+  test('should throw error for invalid index name', async () => {
+    await expect(
+      User.queryByIndex('invalidIndex', 'someValue')
+    ).rejects.toThrow('Index "invalidIndex" not found in User model');
   });
 });
 
 describe('Date Range Queries', () => {
-  it('should query users by date range', async () => {
-    // Create a user with status "active"
-    const recentUser = await User.create({
-      name: 'Recent User',
-      email: 'recent@example.com',
-      external_id: 'ext4',
-      status: 'active'
+  test('should query users by date range', async () => {
+    const startDate = new Date();
+    await Promise.all([
+      User.create({
+        name: 'Test User 1',
+        email: 'test1@example.com',
+        external_id: 'ext1',
+        external_platform: 'platform1',
+        status: 'active'
+      }),
+      User.create({
+        name: 'Test User 2',
+        email: 'test2@example.com',
+        external_id: 'ext2',
+        external_platform: 'platform1',
+        status: 'active'
+      })
+    ]);
+    const endDate = new Date();
+
+    const result = await User.queryByIndex('byStatus', 'active', {
+      skValue: { between: [startDate, endDate] }
     });
 
-    // Query users by status and date range using GSI3
-    const result = await User.queryByIndex(GSI_INDEX_ID3, 'active', {
-      skValue: '2024-01-01T00:00:00.000Z' // Start date for the range query
-    });
-
-    expect(result.items).toBeDefined();
     expect(result.items.length).toBeGreaterThan(0);
-    expect(result.items[0].status).toBe('active');
-    
-    // Compare timestamps instead of Date objects
-    const startTimestamp = new Date('2024-01-01').getTime();
-    const itemTimestamp = new Date(result.items[0].createdAt).getTime();
-    expect(itemTimestamp).toBeGreaterThan(startTimestamp);
+    result.items.forEach(user => {
+      expect(user.status).toBe('active');
+      // Convert dates to timestamps for comparison
+      const userCreatedAt = user.createdAt.getTime();
+      const startTimestamp = startDate.getTime();
+      const endTimestamp = endDate.getTime();
+      
+      expect(userCreatedAt).toBeGreaterThanOrEqual(startTimestamp);
+      expect(userCreatedAt).toBeLessThanOrEqual(endTimestamp);
+    });
   });
 });
 

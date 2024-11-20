@@ -22,14 +22,15 @@ describe('Post Model', () => {
   });
 
   beforeEach(async () => {
+    // Clean up before each test
     await cleanupTestData(docClient, process.env.TABLE_NAME);
     await verifyCleanup(docClient, process.env.TABLE_NAME);
 
-    // Create a test user for each test
+    // Create a test user with unique values for each test
     testUser = await User.create({
       name: 'Test User',
-      email: 'test@example.com',
-      external_id: 'ext1',
+      email: `test${Date.now()}@example.com`, // Make email unique
+      external_id: `ext${Date.now()}`, // Make external_id unique
       external_platform: 'platform1',
       role: 'user',
       status: 'active'
@@ -37,7 +38,9 @@ describe('Post Model', () => {
   });
 
   afterEach(async () => {
+    // Clean up after each test
     await cleanupTestData(docClient, process.env.TABLE_NAME);
+    await verifyCleanup(docClient, process.env.TABLE_NAME);
   });
 
   describe('RelatedField - User', () => {
@@ -69,7 +72,8 @@ describe('Post Model', () => {
       expect(user).toBeTruthy();
       expect(user.userId).toBe(testUser.userId);
       expect(user.name).toBe('Test User');
-      expect(user.email).toBe('test@example.com');
+      expect(user.email).toBeTruthy();
+      expect(user.email).toMatch(/@example.com$/);
     });
 
     test('should cache related user after first load', async () => {
@@ -124,6 +128,56 @@ describe('Post Model', () => {
       // Verify we can still use the getter
       const user = await post.getUser();
       expect(user.userId).toBe(testUser.userId);
+    });
+  });
+
+  describe('Post Queries', () => {
+    let testPosts;
+
+    beforeEach(async () => {
+      // Verify no existing posts
+      const existingPosts = await Post.queryByIndex('allPosts', 'p');
+      expect(existingPosts.items).toHaveLength(0);
+
+      // Create test posts
+      testPosts = await Promise.all([
+        Post.create({
+          userId: testUser.userId,
+          title: 'Post 1',
+          content: 'Content 1'
+        }),
+        Post.create({
+          userId: testUser.userId,
+          title: 'Post 2',
+          content: 'Content 2'
+        })
+      ]);
+    });
+
+    test('should query all posts using allPosts index', async () => {
+      const result = await Post.queryByIndex('allPosts', 'p');
+      expect(result.items).toHaveLength(2);
+      expect(result.items[0].title).toBeDefined();
+    });
+
+    test('should query posts by user using postsForUser index', async () => {
+      const result = await Post.queryByIndex('postsForUser', testUser.userId);
+      expect(result.items).toHaveLength(2);
+      expect(result.items[0].userId).toBe(testUser.userId);
+    });
+
+    test('should return empty array for user with no posts', async () => {
+      const anotherUser = await User.create({
+        name: 'Another User',
+        email: `another${Date.now()}@example.com`, // Make email unique
+        external_id: `ext${Date.now()}2`, // Make external_id unique
+        external_platform: 'platform1',
+        role: 'user',
+        status: 'active'
+      });
+
+      const result = await Post.queryByIndex('postsForUser', anotherUser.userId);
+      expect(result.items).toHaveLength(0);
     });
   });
 }); 

@@ -21,10 +21,10 @@ class Post extends BaseModel {
 
   static primaryKey = PrimaryKeyConfig('postId');
 
-  static indexes = [
-    IndexConfig('modelPrefix', 'postId', GSI_INDEX_ID1),
-    IndexConfig('userId', 'createdAt', GSI_INDEX_ID2)
-  ];
+  static indexes = {
+    allPosts: IndexConfig('modelPrefix', 'postId', GSI_INDEX_ID1),
+    postsForUser: IndexConfig('userId', 'createdAt', GSI_INDEX_ID2)
+  };
 }
 
 module.exports = { Post };

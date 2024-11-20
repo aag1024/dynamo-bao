@@ -106,3 +106,28 @@ describe('Capacity Usage Tests', () => {
     expect(result.id).toBe(user.id);
   });
 });
+
+describe('Query Capacity Tests', () => {
+  test('should efficiently query by index', async () => {
+    const user = await User.create({
+      name: 'Test User',
+      email: 'test@example.com',
+      external_id: 'ext1',
+      external_platform: 'platform1',
+      role: 'user',
+      status: 'active'
+    });
+
+    const capacityBefore = await sumConsumedCapacity();
+    
+    await User.queryByIndex('byPlatform', 'platform1');
+    await User.queryByIndex('byRole', 'user');
+    await User.queryByIndex('byStatus', 'active');
+    
+    const capacityAfter = await sumConsumedCapacity();
+    const capacityUsed = capacityAfter - capacityBefore;
+
+    expect(capacityUsed).toBeLessThanOrEqual(3); // Assuming 1 capacity unit per query
+    printCapacityUsage('Index Queries', capacityUsed);
+  });
+});

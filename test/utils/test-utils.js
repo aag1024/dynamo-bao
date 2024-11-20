@@ -1,14 +1,15 @@
 async function verifyCleanup(docClient, tableName) {
   const scanResult = await docClient.scan({
     TableName: tableName,
-    FilterExpression: 'begins_with(#pk, :prefix1) OR begins_with(#pk, :prefix2) OR begins_with(#pk, :prefix3)',
+    FilterExpression: 'begins_with(#pk, :prefix1) OR begins_with(#pk, :prefix2) OR begins_with(#pk, :prefix3) OR begins_with(#pk, :prefix4)',
     ExpressionAttributeNames: {
       '#pk': '_pk'
     },
     ExpressionAttributeValues: {
       ':prefix1': 'u#',
       ':prefix2': '_raft_uc#',
-      ':prefix3': 'u#'
+      ':prefix3': 'p#',
+      ':prefix4': '_raft_uc#'
     }
   });
 
@@ -24,14 +25,15 @@ async function cleanupTestData(docClient, tableName) {
   // Scan for all items that match our test patterns
   const scanParams = {
     TableName: tableName,
-    FilterExpression: 'begins_with(#pk, :prefix1) OR begins_with(#pk, :prefix2) OR begins_with(#pk, :prefix3)',
+    FilterExpression: 'begins_with(#pk, :prefix1) OR begins_with(#pk, :prefix2) OR begins_with(#pk, :prefix3) OR begins_with(#pk, :prefix4)',
     ExpressionAttributeNames: {
       '#pk': '_pk'
     },
     ExpressionAttributeValues: {
       ':prefix1': 'u#',
       ':prefix2': '_raft_uc#',
-      ':prefix3': 'u#'
+      ':prefix3': 'p#',
+      ':prefix4': '_raft_uc#'
     }
   };
 

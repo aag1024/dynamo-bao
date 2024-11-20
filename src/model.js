@@ -209,13 +209,6 @@ class BaseModel {
     return this.constructor.getSkValue(this.data);
   }
 
-  static encodeDateToSortableString(date) {
-    // Convert date to ISO string and pad year to ensure proper sorting
-    // Format: YYYY-MM-DDTHH:mm:ss.sssZ
-    const isoString = (typeof date === 'number' ? new Date(date) : date).toISOString();
-    return isoString;
-  }
-
   static getIndexKeys(data) {
     const indexKeys = {};
     

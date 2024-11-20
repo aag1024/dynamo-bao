@@ -22,18 +22,19 @@ async function verifyCleanup(docClient, tableName) {
 async function cleanupTestData(docClient, tableName) {
   console.log('\nCleaning up test data...');
 
-  // Scan for all items that match our test patterns
   const scanParams = {
     TableName: tableName,
-    FilterExpression: 'begins_with(#pk, :prefix1) OR begins_with(#pk, :prefix2) OR begins_with(#pk, :prefix3) OR begins_with(#pk, :prefix4)',
+    FilterExpression: 'begins_with(#pk, :prefix1) OR begins_with(#pk, :prefix2) OR begins_with(#pk, :prefix3) OR begins_with(#pk, :prefix4) OR begins_with(#pk, :prefix5) OR begins_with(#pk, :prefix6)',
     ExpressionAttributeNames: {
       '#pk': '_pk'
     },
     ExpressionAttributeValues: {
-      ':prefix1': 'u#',
-      ':prefix2': '_raft_uc#',
-      ':prefix3': 'p#',
-      ':prefix4': '_raft_uc#'
+      ':prefix1': 'u#',  // User
+      ':prefix2': 'p#',  // Post
+      ':prefix3': 't#',  // Tag
+      ':prefix4': 'tp#', // TaggedPost
+      ':prefix5': '_raft_uc#', // Unique constraints
+      ':prefix6': '_raft_uc#'  // Additional unique constraints
     }
   };
 

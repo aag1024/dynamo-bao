@@ -155,7 +155,10 @@ describe('Post Model', () => {
     });
 
     test('should query all posts using allPosts index', async () => {
+      console.log('Post.indexes:', Post.indexes);
+      console.log('Post.modelPrefix:', Post.modelPrefix);
       const result = await Post.queryByIndex('allPosts', 'p');
+      console.log('Query result:', JSON.stringify(result, null, 2));
       expect(result.items).toHaveLength(2);
       expect(result.items[0].title).toBeDefined();
     });

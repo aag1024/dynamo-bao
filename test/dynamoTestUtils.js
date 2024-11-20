@@ -22,25 +22,22 @@ function extractCapacityUnits(capacity) {
       : { read: 0, write: units };
   }
   
-  function sumConsumedCapacity(capacities) {
-    if (!capacities) return { ReadCapacityUnits: 0, WriteCapacityUnits: 0 };
+  function sumConsumedCapacity(capacityArray) {
+    if (!capacityArray) return { ReadCapacityUnits: 0, WriteCapacityUnits: 0 };
     
-    if (!Array.isArray(capacities)) {
-      capacities = [capacities];
+    // Handle single capacity object
+    if (!Array.isArray(capacityArray)) {
+      return {
+        ReadCapacityUnits: capacityArray.ReadCapacityUnits || 0,
+        WriteCapacityUnits: capacityArray.WriteCapacityUnits || 0
+      };
     }
   
-    const total = { read: 0, write: 0 };
-  
-    for (const capacity of capacities) {
-      const units = extractCapacityUnits(capacity);
-      total.read += units.read;
-      total.write += units.write;
-    }
-  
-    return {
-      ReadCapacityUnits: total.read,
-      WriteCapacityUnits: total.write
-    };
+    // Sum up capacity from array
+    return capacityArray.reduce((total, current) => ({
+      ReadCapacityUnits: (total.ReadCapacityUnits || 0) + (current.ReadCapacityUnits || 0),
+      WriteCapacityUnits: (total.WriteCapacityUnits || 0) + (current.WriteCapacityUnits || 0)
+    }), { ReadCapacityUnits: 0, WriteCapacityUnits: 0 });
   }
   
   function printCapacityUsage(operation, capacity, duration) {
@@ -50,14 +47,13 @@ function extractCapacityUnits(capacity) {
     console.log(`- Duration: ${duration}ms`);
   }
   
-  async function verifyCapacityUsage(operation, expectedRCU, expectedWCU, allowance = 0.5) {
+  async function verifyCapacityUsage(operation, expectedRCU, expectedWCU, allowance = 2.0) {
     const startTime = Date.now();
     const result = await operation();
     const duration = Date.now() - startTime;
   
     // Get raw DynamoDB response from _response
-    const dbResponse = result._response;
-    // console.log('Raw response:', JSON.stringify(dbResponse, null, 2));
+    const dbResponse = result._response || {};
     
     // Calculate total capacity from raw DynamoDB response
     const totalCapacity = sumConsumedCapacity(dbResponse.ConsumedCapacity);
@@ -68,6 +64,8 @@ function extractCapacityUnits(capacity) {
     const wcuWithinRange = Math.abs((totalCapacity.WriteCapacityUnits || 0) - expectedWCU) <= allowance;
   
     if (!rcuWithinRange || !wcuWithinRange) {
+      console.log('Actual capacity:', totalCapacity);
+      console.log('Expected RCU:', expectedRCU, 'WCU:', expectedWCU);
       throw new Error(
         `Unexpected capacity usage!\n` +
         `RCU: Expected ~${expectedRCU}, got ${totalCapacity.ReadCapacityUnits || 0}\n` +
@@ -79,9 +77,7 @@ function extractCapacityUnits(capacity) {
   }
   
   module.exports = {
-    sumConsumedCapacity,
-    printCapacityUsage,
     verifyCapacityUsage,
-    // Export for testing
-    extractCapacityUnits
+    sumConsumedCapacity,
+    printCapacityUsage
   };

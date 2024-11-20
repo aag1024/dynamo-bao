@@ -15,6 +15,8 @@ const {
   } = require('./model');
   const { User } = require('./models/user');
   const { Post } = require('./models/post');
+  const { Tag } = require('./models/tag');
+  const { TaggedPost } = require('./models/tagged-post');
   
   module.exports = {
     BaseModel,
@@ -31,4 +33,6 @@ const {
     UNIQUE_CONSTRAINT_ID2,
     UNIQUE_CONSTRAINT_ID3,
     UNIQUE_CONSTRAINT_ID4,
+    Tag,
+    TaggedPost,
   };

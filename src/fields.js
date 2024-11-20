@@ -87,15 +87,17 @@ class DateTimeField extends BaseField {
   }
 
   toGsi(value) {
-    if (!value) return '';
+    if (!value) return '0';
     try {
-      // Convert to timestamp first to ensure consistency
+      // Convert to timestamp string with padding for correct sorting
       const timestamp = this.toDy(value);
-      if (!timestamp) return '';
-      return new Date(timestamp).toISOString();
+      if (!timestamp) return '0';
+      const result = timestamp.toString().padStart(20, '0');
+      console.log('Converting to GSI:', { value, timestamp, result });
+      return result;
     } catch (error) {
       console.warn('Error converting date for GSI:', error);
-      return '';
+      return '0';
     }
   }
 }

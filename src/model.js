@@ -74,6 +74,9 @@ class BaseModel {
       
       // Register the model when initializing table
       ModelRegistry.getInstance().register(this);
+
+      // Register related indexes
+      this.registerRelatedIndexes();
     }
     return this.table;
   }
@@ -87,37 +90,39 @@ class BaseModel {
       throw new Error(`${this.name} must define a primaryKey`);
     }
 
+    const validIndexIds = [GSI_INDEX_ID1, GSI_INDEX_ID2, GSI_INDEX_ID3, undefined]; // undefined for PK-based indexes
+    
+    Object.entries(this.indexes).forEach(([indexName, index]) => {
+      // Check if this index matches the primary key configuration
+      const isPrimaryKeyIndex = (
+        index instanceof PrimaryKeyConfig &&
+        index.pk === this.primaryKey.pk &&
+        index.sk === this.primaryKey.sk
+      );
+
+      // Allow undefined indexId only for primary key based indexes
+      if (!validIndexIds.includes(index.indexId) && !isPrimaryKeyIndex) {
+        throw new Error(`Invalid index ID ${index.indexId} in ${this.name}`);
+      }
+
+      // Validate fields exist, accounting for modelPrefix
+      if (index.pk !== 'modelPrefix' && !this.fields[index.pk]) {
+        throw new Error(`Index ${indexName} references non-existent field ${index.pk}`);
+      }
+      if (index.sk !== 'modelPrefix' && !this.fields[index.sk]) {
+        throw new Error(`Index ${indexName} references non-existent field ${index.sk}`);
+      }
+    });
+
     // Validate primary key fields exist
-    if (!this.fields[this.primaryKey.pk]) {
+    if (this.primaryKey.pk !== 'modelPrefix' && !this.fields[this.primaryKey.pk]) {
       throw new Error(`Primary key field '${this.primaryKey.pk}' not found in ${this.name} fields`);
     }
     if (this.primaryKey.sk !== 'modelPrefix' && !this.fields[this.primaryKey.sk]) {
       throw new Error(`Sort key field '${this.primaryKey.sk}' not found in ${this.name} fields`);
     }
 
-    // Validate that index fields exist
-    const validIndexIds = [GSI_INDEX_ID1, GSI_INDEX_ID2, GSI_INDEX_ID3];
-    Object.values(this.indexes).forEach(index => {
-      if (!validIndexIds.includes(index.indexId)) {
-        throw new Error(`Invalid index ID ${index.indexId} in ${this.name}`);
-      }
-      
-      // Validate partition key exists
-      if (index.pk !== 'modelPrefix' && !this.fields[index.pk]) {
-        throw new Error(
-          `Index ${index.indexId} partition key field '${index.pk}' not found in ${this.name} fields`
-        );
-      }
-      
-      // Validate sort key exists (unless it's 'modelPrefix')
-      if (index.sk !== 'modelPrefix' && !this.fields[index.sk]) {
-        throw new Error(
-          `Index ${index.indexId} sort key field '${index.sk}' not found in ${this.name} fields`
-        );
-      }
-    });
-
-    // Validate that constraint fields exist
+    // Validate unique constraints
     const validConstraintIds = [UNIQUE_CONSTRAINT_ID1, UNIQUE_CONSTRAINT_ID2, UNIQUE_CONSTRAINT_ID3];
     Object.values(this.uniqueConstraints || {}).forEach(constraint => {
       if (!validConstraintIds.includes(constraint.constraintId)) {
@@ -129,6 +134,47 @@ class BaseModel {
           `Unique constraint field '${constraint.field}' not found in ${this.name} fields`
         );
       }
+    });
+  }
+
+  static registerRelatedIndexes() {
+    // Get all indexes that reference related fields
+    const relatedIndexes = Object.entries(this.indexes).filter(([indexName, index]) => {
+      const field = this.fields[index.pk];
+      return field instanceof RelatedFieldClass;
+    });
+
+    // Process each related index
+    relatedIndexes.forEach(([indexName, index]) => {
+      const field = this.fields[index.pk];
+      const relatedModelName = field.modelName;
+      
+      // Get the related model class
+      const RelatedModel = ModelRegistry.getInstance().get(relatedModelName);
+      const CurrentModel = this;  // The model where the index is defined
+      
+      // Generate the method name
+      let methodName;
+      if (indexName.startsWith('by') && indexName.endsWith(relatedModelName)) {
+        methodName = `query${indexName.slice(2, -relatedModelName.length)}`;
+      } else if (indexName.startsWith('for') && indexName.endsWith(relatedModelName)) {
+        methodName = `query${indexName.slice(3, -relatedModelName.length)}`;
+      } else {
+        methodName = `query${this.name}s`;
+      }
+
+      // Add the query method to the related model's prototype
+      RelatedModel.prototype[methodName] = async function(options = {}) {
+        const { limit, startKey, direction = 'DESC' } = options;
+        
+        // Use the model where the index is defined (Post)
+        return await CurrentModel.queryByIndex(indexName, this.getGid(), {
+          limit,
+          startKey,
+          direction,
+          returnModel: true
+        });
+      };
     });
   }
 
@@ -320,57 +366,141 @@ class BaseModel {
   }
 
   static async queryByIndex(indexName, pkValue, options = {}) {
-    if (!this.indexes[indexName]) {
+    const index = this.indexes[indexName];
+    if (!index) {
       throw new Error(`Index "${indexName}" not found in ${this.name} model`);
     }
 
-    const index = this.indexes[indexName];
-    const indexId = index.indexId;
-    
+    // Format the partition key
     let formattedPk;
-    if (index.pk === 'modelPrefix') {
-      formattedPk = `${this.modelPrefix}#${indexId}#${this.modelPrefix}`;
+    if (index instanceof PrimaryKeyConfig) {
+      // Handle primary key config differently
+      formattedPk = `${this.modelPrefix}#${pkValue}`;
     } else {
-      const pkField = this.fields[index.pk];
-      formattedPk = `${this.modelPrefix}#${indexId}#${pkField.toGsi(pkValue)}`;
+      const indexId = index.indexId || '';
+      if (index.pk === 'modelPrefix') {
+        formattedPk = `${this.modelPrefix}#${indexId}#${this.modelPrefix}`;
+      } else {
+        formattedPk = `${this.modelPrefix}#${indexId}#${pkValue}`;
+      }
     }
 
     const params = {
       TableName: this.table,
-      IndexName: indexId,
       KeyConditionExpression: '#pk = :pk',
       ExpressionAttributeNames: {
-        '#pk': `_${indexId}_pk`
+        '#pk': index instanceof PrimaryKeyConfig ? '_pk' : `_${index.indexId ? index.indexId + '_' : ''}pk`
       },
       ExpressionAttributeValues: {
         ':pk': formattedPk
       },
+      ScanIndexForward: options.direction === 'ASC',
+      IndexName: index instanceof PrimaryKeyConfig ? undefined : (index.indexId || undefined),
       ReturnConsumedCapacity: 'TOTAL'
     };
 
-    // Handle sort key conditions
-    if (options.skValue) {
-      const skField = this.fields[index.sk];
-      
-      if (options.skValue.between) {
-        const [start, end] = options.skValue.between;
-        params.KeyConditionExpression += ' AND #sk BETWEEN :start AND :end';
-        params.ExpressionAttributeNames['#sk'] = `_${indexId}_sk`;
-        params.ExpressionAttributeValues[':start'] = skField.toGsi(start);
-        params.ExpressionAttributeValues[':end'] = skField.toGsi(end);
+    // Add sort key conditions if provided
+    if (options.rangeKey && options.rangeValue !== undefined) {
+      const skName = index instanceof PrimaryKeyConfig ? '_sk' : `_${index.indexId ? index.indexId + '_' : ''}sk`;
+      params.ExpressionAttributeNames['#sk'] = skName;
+
+      const formatRangeValue = (value) => {
+        if (index.sk === 'modelPrefix' ? null : this.fields[index.sk] && this.fields[index.sk].toGsi) {
+          return this.fields[index.sk].toGsi(value);
+        }
+        return value.toString();
+      };
+
+      if (options.rangeCondition === 'BETWEEN' && options.endRangeValue !== undefined) {
+        params.KeyConditionExpression += ' AND #sk BETWEEN :rv AND :erv';
+        params.ExpressionAttributeValues[':rv'] = formatRangeValue(options.rangeValue);
+        params.ExpressionAttributeValues[':erv'] = formatRangeValue(options.endRangeValue);
       } else {
-        params.KeyConditionExpression += ' AND #sk = :sk';
-        params.ExpressionAttributeNames['#sk'] = `_${indexId}_sk`;
-        params.ExpressionAttributeValues[':sk'] = skField.toGsi(options.skValue);
+        params.KeyConditionExpression += ` AND #sk ${options.rangeCondition} :rv`;
+        params.ExpressionAttributeValues[':rv'] = formatRangeValue(options.rangeValue);
       }
     }
 
-    const result = await this.documentClient.query(params);
+    // Add pagination parameters
+    if (options.limit) {
+      params.Limit = options.limit;
+    }
+
+    if (options.startKey) {
+      params.ExclusiveStartKey = {
+        [`_${index.indexId}_pk`]: options.startKey[`_${index.indexId}_pk`],
+        [`_${index.indexId}_sk`]: options.startKey[`_${index.indexId}_sk`],
+        _pk: options.startKey._pk,
+        _sk: options.startKey._sk
+      };
+    }
+
+    const response = await this.documentClient.query(params);
+
+    // If we got exactly 'limit' items, do a follow-up query to see if there are more
+    let lastEvaluatedKey = response.LastEvaluatedKey;
+    if (options.limit && response.Items.length === options.limit && lastEvaluatedKey) {
+      const checkResponse = await this.documentClient.query({
+        ...params,
+        Limit: 1,
+        ExclusiveStartKey: lastEvaluatedKey
+      });
+
+      // Only keep LastEvaluatedKey if there are more items
+      if (checkResponse.Items.length === 0) {
+        lastEvaluatedKey = undefined;
+      }
+    }
+
     return {
-      items: result.Items.map(item => this.fromDynamoDB(item)),
-      lastEvaluatedKey: result.LastEvaluatedKey,
+      items: response.Items.map(item => new this(item)),
+      lastEvaluatedKey,
+      count: response.Items.length
+    };
+  }
+
+  static async queryByPrimaryKey(pkValue, options = {}) {
+    const {
+      limit,
+      startKey,
+      direction = 'DESC',
+      returnModel = true
+    } = options;
+
+    const params = {
+      TableName: this.table,
+      KeyConditionExpression: '#pk = :pk',
+      ExpressionAttributeNames: {
+        '#pk': '_pk'
+      },
+      ExpressionAttributeValues: {
+        ':pk': `${this.modelPrefix}#${pkValue}`
+      },
+      ScanIndexForward: direction === 'ASC',
+      ReturnConsumedCapacity: 'TOTAL'
+    };
+
+    if (limit) {
+      params.Limit = limit;
+    }
+
+    if (startKey) {
+      params.ExclusiveStartKey = startKey;
+    }
+
+    const response = await this.documentClient.query(params);
+    
+    // Don't return lastEvaluatedKey if we got fewer items than requested
+    const lastEvaluatedKey = limit && response.Items.length >= limit ? 
+      response.LastEvaluatedKey : 
+      undefined;
+
+    return {
+      items: returnModel ? response.Items.map(item => new this(item)) : response.Items,
+      count: response.Count,
+      lastEvaluatedKey,
       _response: {
-        ConsumedCapacity: result.ConsumedCapacity
+        ConsumedCapacity: response.ConsumedCapacity
       }
     };
   }
@@ -474,17 +604,7 @@ class BaseModel {
     }
   }
 
-  static async update(id, changes) {
-    // Validate the changes
-    for (const [field, value] of Object.entries(changes)) {
-      const fieldDef = this.fields[field];
-      if (!fieldDef) {
-        throw new Error(`Invalid field: ${field}`);
-      }
-      fieldDef.validate(value);
-    }
-
-    // Get current item to calculate GSI updates
+  static async update(id, data) {
     const currentItem = await this.find(id);
     if (!currentItem) {
       throw new Error('Item not found');
@@ -495,7 +615,7 @@ class BaseModel {
     // Handle unique constraint updates
     for (const constraint of Object.values(this.uniqueConstraints)) {
       const field = constraint.field;
-      if (changes[field] !== undefined && changes[field] !== currentItem[field]) {
+      if (data[field] !== undefined && data[field] !== currentItem[field]) {
         // Remove old constraint
         if (currentItem[field]) {
           transactItems.push(
@@ -512,7 +632,7 @@ class BaseModel {
         transactItems.push(
           await this._createUniqueConstraint(
             field,
-            changes[field],
+            data[field],
             id,
             constraint.constraintId
           )
@@ -527,7 +647,7 @@ class BaseModel {
     let updateCount = 0;
 
     // Handle regular fields
-    for (const [field, value] of Object.entries(changes)) {
+    for (const [field, value] of Object.entries(data)) {
       const attributeName = `#attr${updateCount}`;
       const attributeValue = `:val${updateCount}`;
       
@@ -539,7 +659,7 @@ class BaseModel {
 
     // Handle GSI updates
     const oldIndexKeys = this.getIndexKeys(currentItem.data);
-    const newData = { ...currentItem.data, ...changes };
+    const newData = { ...currentItem.data, ...data };
     const newIndexKeys = this.getIndexKeys(newData);
 
     // Add GSI updates to expression
@@ -593,12 +713,12 @@ class BaseModel {
         if (error.name === 'TransactionCanceledException') {
           // Check which constraint failed
           for (const constraint of Object.values(this.uniqueConstraints)) {
-            if (changes[constraint.field]) {
+            if (data[constraint.field]) {
               try {
                 const result = await this.documentClient.get({
                   TableName: this.table,
                   Key: {
-                    _pk: `_raft_uc#${constraint.constraintId}#${this.modelPrefix}#${constraint.field}:${changes[constraint.field]}`,
+                    _pk: `_raft_uc#${constraint.constraintId}#${this.modelPrefix}#${constraint.field}:${data[constraint.field]}`,
                     _sk: '_raft_uc'
                   }
                 });
@@ -638,113 +758,100 @@ class BaseModel {
   }
 
   static async delete(id) {
-    const startTime = Date.now();
-    const responses = [];
-    
-    // Get the current item first to handle constraints
-    const currentItem = await this.find(id);
-    if (!currentItem) {
-      return null;
+    const item = await this.find(id);
+    if (!item) {
+      throw new Error('Item not found');
     }
-    responses.push(currentItem._response);
-  
-    let response;
-    const hasUniqueConstraints = Object.values(this.uniqueConstraints).filter(
-      constraint => currentItem[constraint.field] !== undefined
-    ).length > 0;
-  
-    if (hasUniqueConstraints) {
-      const transactItems = [];
-  
-      // Remove all unique constraints
-      for (const constraint of Object.values(this.uniqueConstraints)) {
-        if (currentItem[constraint.field]) {
-          transactItems.push(
-            await this._removeUniqueConstraint(
-              constraint.field,
-              currentItem[constraint.field],
-              id,
-              constraint.constraintId
-            )
-          );
-        }
-      }
-  
-      // Delete the main item
-      transactItems.push({
+
+    const transactItems = [
+      {
         Delete: {
           TableName: this.table,
-          Key: this.getKeyForId(id),
-          ExpressionAttributeNames: {
-            '#pk': '_pk'
-          },
-          ConditionExpression: 'attribute_exists(#pk)'
+          Key: {
+            _pk: item.data._pk,
+            _sk: item.data._sk
+          }
         }
-      });
-  
-      try {
-        response = await this.documentClient.transactWrite({
-          TransactItems: transactItems,
-          ReturnConsumedCapacity: 'TOTAL'
-        });
-        responses.push(response);
-      } catch (error) {
-        if (error.name === 'TransactionCanceledException') {
-          throw new Error('Failed to delete item - transaction failed');
-        }
-        throw error;
       }
-    } else {
-      // Simple delete without constraints
-      response = await this.documentClient.delete({
-        TableName: this.table,
-        Key: this.getKeyForId(id),
-        ExpressionAttributeNames: {
-          '#pk': '_pk'
-        },  
-        ConditionExpression: 'attribute_exists(#pk)',
-        ReturnValues: 'ALL_OLD',
-        ReturnConsumedCapacity: 'TOTAL'
+    ];
+
+    // Add unique constraint cleanup
+    const uniqueConstraints = Object.values(this.uniqueConstraints || {});
+    if (uniqueConstraints.length > 0) {
+      uniqueConstraints.forEach(constraint => {
+        const value = item[constraint.field];
+        if (value) {
+          transactItems.push({
+            Delete: {
+              TableName: this.table,
+              Key: {
+                _pk: `_raft_uc#${constraint.constraintId}#${this.modelPrefix}#${constraint.field}:${value}`,
+                _sk: '_raft_uc'
+              }
+            }
+          });
+        }
       });
-      responses.push(response);
     }
-  
-    const endTime = Date.now();
-    const allCapacity = this.accumulateCapacity(responses);
-  
+
+    const response = await this.documentClient.transactWrite({
+      TransactItems: transactItems,
+      ReturnConsumedCapacity: 'TOTAL'
+    });
+
+    // Return deleted item info with capacity information
     return {
-      ...currentItem,
+      userId: id,
+      _pk: item.data._pk,
+      _sk: item.data._sk,
       _response: {
-        ConsumedCapacity: allCapacity,
-        duration: endTime - startTime
+        ConsumedCapacity: response.ConsumedCapacity
       }
     };
   }
 
   constructor(data = {}) {
-    // Initialize data and changes tracking
+    // Initialize data object with all DynamoDB attributes
     this.data = {};
+    
+    // Copy all DynamoDB system attributes
+    const systemKeys = [
+      '_pk', '_sk',
+      '_gsi1_pk', '_gsi1_sk',
+      '_gsi2_pk', '_gsi2_sk',
+      '_gsi3_pk', '_gsi3_sk'
+    ];
+    
+    systemKeys.forEach(key => {
+      if (data[key] !== undefined) {
+        this.data[key] = data[key];
+      }
+    });
+
     this._originalData = {};
     this._changes = new Set();
-    this._relatedObjects = {};  // Store related objects here
+    this._relatedObjects = {};
 
     // Initialize fields with data
     Object.entries(this.constructor.fields).forEach(([fieldName, field]) => {
-      // Set the data value
+      let value;
       if (data[fieldName] !== undefined) {
-        this.data[fieldName] = field.fromDy(data[fieldName]);
+        value = field.fromDy(data[fieldName]);
       } else {
-        this.data[fieldName] = field.getInitialValue();
+        value = field.getInitialValue();
       }
-
-      // Define property getter/setter
+      
+      // Store both raw and converted values
+      this.data[fieldName] = data[fieldName];  // Raw DynamoDB value
+      
+      // Define property getter/setter for converted value
       Object.defineProperty(this, fieldName, {
-        get: () => this.data[fieldName],
-        set: (value) => {
-          if (value !== this.data[fieldName]) {
-            this.data[fieldName] = value;
+        get: () => value,
+        set: (newValue) => {
+          if (newValue !== value) {
+            value = newValue;
+            this.data[fieldName] = field.toDy(newValue);  // Update raw value
             this._changes.add(fieldName);
-            // Clear cached related object when field value changes
             if (field instanceof RelatedFieldClass) {
               delete this._relatedObjects[fieldName];
             }
@@ -763,12 +870,10 @@ class BaseModel {
         
         if (!this[getterName]) {
           this[getterName] = async function() {
-            // Return cached object if it exists
             if (this._relatedObjects[fieldName]) {
               return this._relatedObjects[fieldName];
             }
             
-            // Load and cache the related object
             const Model = ModelRegistry.getInstance().get(field.modelName);
             this._relatedObjects[fieldName] = await Model.find(this[fieldName]);
             return this._relatedObjects[fieldName];

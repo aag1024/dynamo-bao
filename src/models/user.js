@@ -45,10 +45,10 @@ class User extends BaseModel {
     byStatus: IndexConfig('status', 'createdAt', GSI_INDEX_ID3)
   };
 
-  static uniqueConstraints = [
-    UniqueConstraintConfig('email', UNIQUE_CONSTRAINT_ID1),
-    UniqueConstraintConfig('external_id', UNIQUE_CONSTRAINT_ID2)
-  ];
+  static uniqueConstraints = {
+    uniqueEmail: UniqueConstraintConfig('email', UNIQUE_CONSTRAINT_ID1),
+    uniqueExternalId: UniqueConstraintConfig('external_id', UNIQUE_CONSTRAINT_ID2)
+  };
 }
 
 module.exports = { User };

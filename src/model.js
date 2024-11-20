@@ -64,7 +64,7 @@ class BaseModel {
   static fields = {};
   static primaryKey = null;
   static indexes = {};
-  static uniqueConstraints = [];
+  static uniqueConstraints = {};
 
   static initTable(documentClient, tableName) {
     if (!this.table) {
@@ -119,7 +119,7 @@ class BaseModel {
 
     // Validate that constraint fields exist
     const validConstraintIds = [UNIQUE_CONSTRAINT_ID1, UNIQUE_CONSTRAINT_ID2, UNIQUE_CONSTRAINT_ID3];
-    this.uniqueConstraints?.forEach(constraint => {
+    Object.values(this.uniqueConstraints || {}).forEach(constraint => {
       if (!validConstraintIds.includes(constraint.constraintId)) {
         throw new Error(`Invalid constraint ID ${constraint.constraintId} in ${this.name}`);
       }
@@ -399,7 +399,7 @@ class BaseModel {
     const transactItems = [];
 
     // Add unique constraint operations
-    for (const constraint of this.uniqueConstraints) {
+    for (const constraint of Object.values(this.uniqueConstraints)) {
       if (itemToCreate[constraint.field]) {
         const constraintOp = await this._createUniqueConstraint(
           constraint.field,
@@ -449,7 +449,7 @@ class BaseModel {
       if (error.name === 'TransactionCanceledException') {
         console.error('Transaction cancelled. Reasons:', error.CancellationReasons);
         // Check which constraint failed
-        for (const constraint of this.uniqueConstraints) {
+        for (const constraint of Object.values(this.uniqueConstraints)) {
           if (itemToCreate[constraint.field]) {
             try {
               const result = await this.documentClient.get({
@@ -493,7 +493,7 @@ class BaseModel {
     const transactItems = [];
 
     // Handle unique constraint updates
-    for (const constraint of this.uniqueConstraints) {
+    for (const constraint of Object.values(this.uniqueConstraints)) {
       const field = constraint.field;
       if (changes[field] !== undefined && changes[field] !== currentItem[field]) {
         // Remove old constraint
@@ -592,7 +592,7 @@ class BaseModel {
       } catch (error) {
         if (error.name === 'TransactionCanceledException') {
           // Check which constraint failed
-          for (const constraint of this.uniqueConstraints) {
+          for (const constraint of Object.values(this.uniqueConstraints)) {
             if (changes[constraint.field]) {
               try {
                 const result = await this.documentClient.get({
@@ -649,7 +649,7 @@ class BaseModel {
     responses.push(currentItem._response);
   
     let response;
-    const hasUniqueConstraints = this.uniqueConstraints.filter(
+    const hasUniqueConstraints = Object.values(this.uniqueConstraints).filter(
       constraint => currentItem[constraint.field] !== undefined
     ).length > 0;
   
@@ -657,7 +657,7 @@ class BaseModel {
       const transactItems = [];
   
       // Remove all unique constraints
-      for (const constraint of this.uniqueConstraints) {
+      for (const constraint of Object.values(this.uniqueConstraints)) {
         if (currentItem[constraint.field]) {
           transactItems.push(
             await this._removeUniqueConstraint(

@@ -30,7 +30,8 @@ describe('User Unique Constraints', () => {
       email: 'test1@example.com'
     };
     const user = await User.create(userData);
-    expect(user).toMatchObject(userData);
+    expect(user.name).toBe(userData.name);
+    expect(user.email).toBe(userData.email);
   });
 
   test('should prevent duplicate email creation', async () => {

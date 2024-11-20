@@ -6,14 +6,14 @@ const {
   GSI_INDEX_ID1,
   GSI_INDEX_ID2
 } = require('../model');
-const { StringField, CreateDateField } = require('../fields');
+const { StringField, CreateDateField, ULIDField, RelatedField } = require('../fields');
 
 class Post extends BaseModel {
   static modelPrefix = 'p';
   
   static fields = {
-    postId: StringField({ required: true }),
-    userId: StringField({ required: true }),
+    postId: ULIDField({ autoAssign: true }),
+    userId: RelatedField('User', { required: true }),
     title: StringField({ required: true }),
     content: StringField({ required: true }),
     createdAt: CreateDateField(),

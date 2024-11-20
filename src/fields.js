@@ -1,4 +1,5 @@
 const { ulid, decodeTime } = require('ulid');
+const { ModelRegistry } = require('./model-registry');
 
 class BaseField {
   constructor(options = {}) {
@@ -151,6 +152,7 @@ class CreateDateField extends DateTimeField {
     }
     return value instanceof Date ? value.getTime() : value;
   }
+
 }
 
 class ModifiedDateField extends DateTimeField {
@@ -218,12 +220,64 @@ class ULIDField extends BaseField {
   }
 }
 
+class RelatedField extends BaseField {
+  constructor(modelName, options = {}) {
+    super(options);
+    this.modelName = modelName;
+  }
+
+  validate(value) {
+    if (this.required && !value) {
+      throw new Error('Field is required');
+    }
+    // Allow both string IDs and model instances
+    if (value && typeof value !== 'string' && (!value.getGid || typeof value.getGid !== 'function')) {
+      throw new Error('Related field value must be a string ID or model instance');
+    }
+    return true;
+  }
+
+  toDy(value) {
+    if (!value) return null;
+    // If we're given a model instance, get its ID
+    if (typeof value === 'object' && value.getGid) {
+      return value.getGid();
+    }
+    return value;
+  }
+
+  fromDy(value) {
+    return value;
+  }
+
+  toGsi(value) {
+    return this.toDy(value) || '';
+  }
+}
+
+// Factory functions for creating field instances
+const createStringField = (options) => new StringField(options);
+const createDateTimeField = (options) => new DateTimeField(options);
+const createCreateDateField = (options) => new CreateDateField(options);
+const createModifiedDateField = (options) => new ModifiedDateField(options);
+const createULIDField = (options) => new ULIDField(options);
+const createRelatedField = (modelName, options) => new RelatedField(modelName, options);
+
+// Export both the factory functions and the classes
 module.exports = {
-  StringField: (options) => new StringField(options),
-  DateTimeField: (options) => new DateTimeField(options),
-  CreateDateField: (options) => new CreateDateField(options),
-  ModifiedDateField: (options) => new ModifiedDateField(options),
-  IntegerField: (options) => new IntegerField(options),
-  FloatField: (options) => new FloatField(options),
-  ULIDField: (options) => new ULIDField(options),
+  // Factory functions
+  StringField: createStringField,
+  DateTimeField: createDateTimeField,
+  CreateDateField: createCreateDateField,
+  ModifiedDateField: createModifiedDateField,
+  ULIDField: createULIDField,
+  RelatedField: createRelatedField,
+  
+  // Classes (for instanceof checks)
+  StringFieldClass: StringField,
+  DateTimeFieldClass: DateTimeField,
+  CreateDateFieldClass: CreateDateField,
+  ModifiedDateFieldClass: ModifiedDateField,
+  ULIDFieldClass: ULIDField,
+  RelatedFieldClass: RelatedField
 }; 

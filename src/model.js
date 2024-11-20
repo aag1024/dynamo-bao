@@ -1,6 +1,7 @@
 // src/model.js
 const { ulid } = require('ulid');
-const { StringField, DateTimeField } = require('./fields');
+const { StringField, DateTimeField, RelatedFieldClass, RelatedField } = require('./fields');
+const { ModelRegistry } = require('./model-registry');
 
 // Constants for GSI indexes
 const GSI_INDEX_ID1 = 'gsi1';
@@ -70,6 +71,9 @@ class BaseModel {
       this.documentClient = documentClient;
       this.table = tableName;
       this.validateConfiguration();
+      
+      // Register the model when initializing table
+      ModelRegistry.getInstance().register(this);
     }
     return this.table;
   }
@@ -715,32 +719,68 @@ class BaseModel {
     };
   }
 
-  constructor(data) {
-    this.data = { ...data };
-    this._originalData = { ...data };
+  constructor(data = {}) {
+    // Initialize data and changes tracking
+    this.data = {};
+    this._originalData = {};
     this._changes = new Set();
-    
-    // Define getters/setters for each field
+    this._relatedObjects = {};  // Store related objects here
+
+    // Initialize fields with data
     Object.entries(this.constructor.fields).forEach(([fieldName, field]) => {
+      // Set the data value
+      if (data[fieldName] !== undefined) {
+        this.data[fieldName] = field.fromDy(data[fieldName]);
+      } else {
+        this.data[fieldName] = field.getInitialValue();
+      }
+
+      // Define property getter/setter
       Object.defineProperty(this, fieldName, {
-        enumerable: true,
-        get: () => {
-          const value = this.data[fieldName];
-          return value !== undefined ? field.fromDy(value) : undefined;
-        },
+        get: () => this.data[fieldName],
         set: (value) => {
-          const oldValue = this.data[fieldName];
-          const newValue = field.toDy(value);
-          
-          // Only mark as changed if value is actually different
-          if (oldValue !== newValue) {
-            field.validate(value);
-            this.data[fieldName] = newValue;
+          if (value !== this.data[fieldName]) {
+            this.data[fieldName] = value;
             this._changes.add(fieldName);
+            // Clear cached related object when field value changes
+            if (field instanceof RelatedFieldClass) {
+              delete this._relatedObjects[fieldName];
+            }
           }
         }
       });
+
+      // Add getter method for RelatedFields
+      if (field instanceof RelatedFieldClass) {
+        const baseName = fieldName.endsWith('Id') 
+          ? fieldName.slice(0, -2) 
+          : fieldName;
+        
+        const capitalizedName = baseName.charAt(0).toUpperCase() + baseName.slice(1);
+        const getterName = `get${capitalizedName}`;
+        
+        if (!this[getterName]) {
+          this[getterName] = async function() {
+            // Return cached object if it exists
+            if (this._relatedObjects[fieldName]) {
+              return this._relatedObjects[fieldName];
+            }
+            
+            // Load and cache the related object
+            const Model = ModelRegistry.getInstance().get(field.modelName);
+            this._relatedObjects[fieldName] = await Model.find(this[fieldName]);
+            return this._relatedObjects[fieldName];
+          };
+        }
+      }
     });
+
+    // Store original data for change tracking
+    this._originalData = { ...this.data };
+  }
+
+  clearRelatedCache(fieldName) {
+    delete this._relatedObjects[fieldName];
   }
 
   // get id() {
@@ -809,6 +849,32 @@ class BaseModel {
       obj[fieldName] = this[fieldName];
     }
     return obj;
+  }
+
+  async loadRelatedData() {
+    const promises = [];
+    
+    for (const [fieldName, field] of Object.entries(this.constructor.fields)) {
+      if (field instanceof RelatedFieldClass && this[fieldName]) {
+        promises.push(
+          field.load(this[fieldName])
+            .then(instance => {
+              field._loadedInstance = instance;
+            })
+        );
+      }
+    }
+
+    await Promise.all(promises);
+    return this;
+  }
+
+  getRelated(fieldName) {
+    const field = this.constructor.fields[fieldName];
+    if (!(field instanceof RelatedFieldClass)) {
+      throw new Error(`Field ${fieldName} is not a RelatedField`);
+    }
+    return field.getInstance();
   }
 }
 module.exports = {

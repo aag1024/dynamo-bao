@@ -61,7 +61,7 @@ describe('TaggedPost Queries', () => {
   });
 
   test('should query posts by tag using primary key', async () => {
-    const result = await TaggedPost.queryByIndex('postsByTag', testTag1.tagId);
+    const result = await TaggedPost.queryByIndex('postIdsByTag', testTag1.tagId);
     
     expect(result.items).toHaveLength(1);
     expect(result.items[0].tagId).toBe(testTag1.tagId);
@@ -72,7 +72,7 @@ describe('TaggedPost Queries', () => {
   });
 
   test('should query tags by post using GSI', async () => {
-    const result = await TaggedPost.queryByIndex('tagsByPost', testPost.postId);
+    const result = await TaggedPost.queryByIndex('tagIdsByPost', testPost.postId);
     
     expect(result.items).toHaveLength(2);
     expect(result.items.map(item => item.tagId)).toContain(testTag1.tagId);
@@ -81,7 +81,7 @@ describe('TaggedPost Queries', () => {
 
   test('should format keys correctly with model prefix', async () => {
     // Query using the primary key as an index
-    const result = await TaggedPost.queryByIndex('postsByTag', testTag1.tagId);
+    const result = await TaggedPost.queryByIndex('postIdsByTag', testTag1.tagId);
     
     expect(result.items).toHaveLength(1);
     const taggedPost = result.items[0];
@@ -91,9 +91,14 @@ describe('TaggedPost Queries', () => {
     expect(taggedPost.data._pk).toBe(`tp#${testTag1.tagId}`);
     
     // Query using the GSI
-    const gsiResult = await TaggedPost.queryByIndex('tagsByPost', testPost.postId);
+    const gsiResult = await TaggedPost.queryByIndex('tagIdsByPost', testPost.postId);
     expect(gsiResult.items).toHaveLength(2);
     const gsiTaggedPost = gsiResult.items[0];
+    const tag = await gsiTaggedPost.getTag();
+    const post = await gsiTaggedPost.getPost();
+
+    // const posts = await tag.queryPosts();
+    // expect(posts.items).toHaveLength(2);
     
     // Check GSI key format
     const expectedGsiKey = `tp#${GSI_INDEX_ID1}#${testPost.postId}`;

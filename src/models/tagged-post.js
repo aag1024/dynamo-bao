@@ -18,8 +18,8 @@ class TaggedPost extends BaseModel {
   static primaryKey = PrimaryKeyConfig('tagId', 'postId');
 
   static indexes = {
-    postsByTag: this.primaryKey,
-    tagsByPost: IndexConfig('postId', 'tagId', GSI_INDEX_ID1)
+    postIdsByTag: this.primaryKey,
+    tagIdsByPost: IndexConfig('postId', 'tagId', GSI_INDEX_ID1)
   };
 }
 

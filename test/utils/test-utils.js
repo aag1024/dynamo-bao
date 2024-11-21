@@ -1,4 +1,13 @@
+const { ModelManager } = require('../../src/model-manager');
+
 async function verifyCleanup(docClient, tableName) {
+  if (!docClient) {
+    throw new Error('docClient is required for cleanup verification');
+  }
+  if (!tableName) {
+    throw new Error('tableName is required for cleanup verification');
+  }
+  
   const scanResult = await docClient.scan({
     TableName: tableName,
     FilterExpression: 'begins_with(#pk, :prefix1) OR begins_with(#pk, :prefix2) OR begins_with(#pk, :prefix3) OR begins_with(#pk, :prefix4)',
@@ -20,6 +29,13 @@ async function verifyCleanup(docClient, tableName) {
 }
 
 async function cleanupTestData(docClient, tableName) {
+  if (!docClient) {
+    throw new Error('docClient is required for cleanup');
+  }
+  if (!tableName) {
+    throw new Error('tableName is required for cleanup');
+  }
+  
   console.log('\nCleaning up test data...');
 
   const scanParams = {

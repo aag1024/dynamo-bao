@@ -1,28 +1,25 @@
-const { User, Post } = require('../src');
-const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
-const { DynamoDBDocument } = require('@aws-sdk/lib-dynamodb');
+const { 
+  initModels, 
+  ModelManager,
+  User, 
+  Post
+} = require('../src');
 const { cleanupTestData, verifyCleanup } = require('./utils/test-utils');
 require('dotenv').config();
 
-let docClient;
 let testUser;
 
 describe('Post Model', () => {
   beforeAll(async () => {
-    const client = new DynamoDBClient({ region: process.env.AWS_REGION });
-    docClient = DynamoDBDocument.from(client);
-    
-    // Initialize both models
-    User.initTable(docClient, process.env.TABLE_NAME);
-    Post.initTable(docClient, process.env.TABLE_NAME);
-
-    // Verify models are registered
-    const registry = require('../src/model-registry').ModelRegistry.getInstance();
-    console.log('Registered models:', registry.listModels());
+    // Initialize models
+    initModels({
+      region: process.env.AWS_REGION,
+      tableName: process.env.TABLE_NAME
+    });
   });
 
   beforeEach(async () => {
-    // Clean up before each test
+    const docClient = ModelManager.getInstance().documentClient;
     await cleanupTestData(docClient, process.env.TABLE_NAME);
     await verifyCleanup(docClient, process.env.TABLE_NAME);
 
@@ -38,7 +35,7 @@ describe('Post Model', () => {
   });
 
   afterEach(async () => {
-    // Clean up after each test
+    const docClient = ModelManager.getInstance().documentClient;
     await cleanupTestData(docClient, process.env.TABLE_NAME);
     await verifyCleanup(docClient, process.env.TABLE_NAME);
   });

@@ -1,24 +1,26 @@
-const { User, Post, Tag, TaggedPost } = require('../src');
-const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
-const { DynamoDBDocument } = require('@aws-sdk/lib-dynamodb');
+const { 
+    initModels, 
+    ModelManager,
+    User,
+    Post,
+    Tag,
+    TaggedPost 
+} = require('../src');
 const { cleanupTestData } = require('./utils/test-utils');
 require('dotenv').config();
 
 describe('Related Field Queries', () => {
-  let docClient;
   let testUser, testPosts, testTags;
 
   beforeAll(async () => {
-    const client = new DynamoDBClient({ region: process.env.AWS_REGION });
-    docClient = DynamoDBDocument.from(client);
-    
-    User.initTable(docClient, process.env.TABLE_NAME);
-    Post.initTable(docClient, process.env.TABLE_NAME);
-    Tag.initTable(docClient, process.env.TABLE_NAME);
-    TaggedPost.initTable(docClient, process.env.TABLE_NAME);
+    initModels({
+      region: process.env.AWS_REGION,
+      tableName: process.env.TABLE_NAME
+    });
   });
 
   beforeEach(async () => {
+    const docClient = ModelManager.getInstance().documentClient;
     await cleanupTestData(docClient, process.env.TABLE_NAME);
     
     // Create test user
@@ -69,6 +71,7 @@ describe('Related Field Queries', () => {
   });
 
   afterEach(async () => {
+    const docClient = ModelManager.getInstance().documentClient;
     await cleanupTestData(docClient, process.env.TABLE_NAME);
   });
 

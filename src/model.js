@@ -66,21 +66,6 @@ class BaseModel {
   static indexes = {};
   static uniqueConstraints = {};
 
-  static initTable(documentClient, tableName) {
-    if (!this.table) {
-      this.documentClient = documentClient;
-      this.table = tableName;
-      this.validateConfiguration();
-      
-      // Register the model when initializing table
-      ModelRegistry.getInstance().register(this);
-
-      // Register related indexes
-      this.registerRelatedIndexes();
-    }
-    return this.table;
-  }
-
   static validateConfiguration() {
     if (!this.modelPrefix) {
       throw new Error(`${this.name} must define a modelPrefix`);

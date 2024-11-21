@@ -1,24 +1,44 @@
 // test/unique.test.js
-const { User } = require('../src');
-const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
-const { DynamoDBDocument } = require('@aws-sdk/lib-dynamodb');
+const { 
+  initModels, 
+  ModelManager,
+  User,
+  Post,
+  UNIQUE_CONSTRAINT_ID1 
+} = require('../src');
 const { cleanupTestData, verifyCleanup } = require('./utils/test-utils');
+const { DescribeTableCommand } = require('@aws-sdk/client-dynamodb');
 require('dotenv').config();
 
-let docClient;
-
 beforeAll(async () => {
-  const client = new DynamoDBClient({ region: process.env.AWS_REGION });
-  docClient = DynamoDBDocument.from(client);
-  User.initTable(docClient, process.env.TABLE_NAME);
+  // Initialize models
+  initModels({
+    region: process.env.AWS_REGION,
+    tableName: process.env.TABLE_NAME
+  });
+
+  const docClient = ModelManager.getInstance().documentClient;
+  
+  try {
+    const tableInfo = await docClient.send(new DescribeTableCommand({
+      TableName: process.env.TABLE_NAME
+    }));
+    console.log('Table exists:', tableInfo.Table.TableName);
+    console.log('GSIs:', tableInfo.Table.GlobalSecondaryIndexes);
+  } catch (error) {
+    console.error('Failed to connect to DynamoDB:', error);
+    throw error;
+  }
 });
 
 beforeEach(async () => {
+  const docClient = ModelManager.getInstance().documentClient;
   await cleanupTestData(docClient, process.env.TABLE_NAME);
   await verifyCleanup(docClient, process.env.TABLE_NAME);
 });
 
 afterEach(async () => {
+  const docClient = ModelManager.getInstance().documentClient;
   await cleanupTestData(docClient, process.env.TABLE_NAME);
   await verifyCleanup(docClient, process.env.TABLE_NAME);
 });

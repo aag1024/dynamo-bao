@@ -1,18 +1,25 @@
-const { User } = require('../src/models/user');
-const { createDbClient } = require('../src/db');
+const { 
+    initModels, 
+    ModelManager,
+    User, 
+} = require('../src');
 const { cleanupTestData } = require('./utils/test-utils');
 require('dotenv').config();
 
-let docClient;
 let testUser;
 
 describe('Instance Methods', () => {
-  beforeAll(() => {
-    docClient = createDbClient();
-    User.initTable(docClient, process.env.TABLE_NAME);
-  });
+    beforeAll(async () => {
+        // Initialize models
+        initModels({
+          region: process.env.AWS_REGION,
+          tableName: process.env.TABLE_NAME
+        });
+      });
 
   beforeEach(async () => {
+    const docClient = ModelManager.getInstance().documentClient;
+
     // Create a test user for each test
     testUser = await User.create({
       name: 'Test User',
@@ -25,6 +32,7 @@ describe('Instance Methods', () => {
   });
 
   afterEach(async () => {
+    const docClient = ModelManager.getInstance().documentClient;
     await cleanupTestData(docClient, process.env.TABLE_NAME);
   });
 

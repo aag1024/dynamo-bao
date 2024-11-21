@@ -1,4 +1,6 @@
 const { 
+    initModels,
+    ModelManager,
     User, 
     Post,
     GSI_INDEX_ID1, 
@@ -6,19 +8,17 @@ const {
     GSI_INDEX_ID3 
   } = require('../src');
 const { DynamoDBClient, DescribeTableCommand } = require('@aws-sdk/client-dynamodb');
-const { DynamoDBDocument } = require('@aws-sdk/lib-dynamodb');
 const { cleanupTestData, verifyCleanup } = require('./utils/test-utils');
 require('dotenv').config();
 
-let docClient;
-let testUsers = [];
-
 beforeAll(async () => {
-  const client = new DynamoDBClient({ region: process.env.AWS_REGION });
-  docClient = DynamoDBDocument.from(client);
-  
-  console.log('AWS Region:', process.env.AWS_REGION);
-  console.log('Table Name:', process.env.TABLE_NAME);
+  // Initialize models
+  initModels({
+    region: process.env.AWS_REGION,
+    tableName: process.env.TABLE_NAME
+  });
+
+  const docClient = ModelManager.getInstance().documentClient;
   
   try {
     const tableInfo = await docClient.send(new DescribeTableCommand({
@@ -30,20 +30,17 @@ beforeAll(async () => {
     console.error('Failed to connect to DynamoDB:', error);
     throw error;
   }
-  
-  User.initTable(docClient, process.env.TABLE_NAME);
-  Post.initTable(docClient, process.env.TABLE_NAME);
 });
 
 beforeEach(async () => {
+  const docClient = ModelManager.getInstance().documentClient;
   await cleanupTestData(docClient, process.env.TABLE_NAME);
-  // Verify cleanup worked
   await verifyCleanup(docClient, process.env.TABLE_NAME);
 });
 
 afterEach(async () => {
+  const docClient = ModelManager.getInstance().documentClient;
   await cleanupTestData(docClient, process.env.TABLE_NAME);
-  // Verify cleanup worked
   await verifyCleanup(docClient, process.env.TABLE_NAME);
 });
 
@@ -221,14 +218,23 @@ describe('Date Range Queries', () => {
 
 describe('Test Utils', () => {
   test('cleanup should remove all test data', async () => {
-    // Create some test data
-    await User.create({
+    const docClient = ModelManager.getInstance().documentClient;
+    
+    const userData = {
       name: 'Test User',
       email: 'test@example.com',
       external_id: 'ext1'
-    });
+    };
 
-    // Run cleanup
+    await User.create(userData);
+
+    // Verify data exists
+    const initialScan = await docClient.scan({
+      TableName: process.env.TABLE_NAME
+    });
+    expect(initialScan.Items.length).toBeGreaterThan(0);
+
+    // Cleanup
     await cleanupTestData(docClient, process.env.TABLE_NAME);
 
     // Verify cleanup
@@ -239,11 +245,11 @@ describe('Test Utils', () => {
         '#pk': '_pk'
       },
       ExpressionAttributeValues: {
-        ':prefix1': 'user##',
-        ':prefix2': '_raft_uc##'
+        ':prefix1': 'u#',
+        ':prefix2': 'p#'
       }
     });
 
-    expect(scanResult.Items).toHaveLength(0);
+    expect(scanResult.Items.length).toBe(0);
   });
 });

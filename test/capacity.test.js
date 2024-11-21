@@ -1,18 +1,13 @@
 // test/capacity.test.js
 const { 
-  User, 
-  Post,
-  GSI_INDEX_ID1, 
-  GSI_INDEX_ID2, 
-  GSI_INDEX_ID3 
+    initModels, 
+    ModelManager,
+    User, 
 } = require('../src');
-const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
-const { DynamoDBDocument } = require('@aws-sdk/lib-dynamodb');
 const { cleanupTestData, verifyCleanup } = require('./utils/test-utils');
 const { verifyCapacityUsage } = require('./dynamoTestUtils');
 require('dotenv').config();
 
-let docClient;
 let totalConsumedCapacity = 0;
 
 // Add helper function to track capacity
@@ -21,18 +16,21 @@ async function sumConsumedCapacity() {
 }
 
 beforeAll(async () => {
-  const client = new DynamoDBClient({ region: process.env.AWS_REGION });
-  docClient = DynamoDBDocument.from(client);
-  User.initTable(docClient, process.env.TABLE_NAME);
+  initModels({
+    region: process.env.AWS_REGION,
+    tableName: process.env.TABLE_NAME
+  });
 });
 
 beforeEach(async () => {
+  const docClient = ModelManager.getInstance().documentClient;
   await cleanupTestData(docClient, process.env.TABLE_NAME);
   await verifyCleanup(docClient, process.env.TABLE_NAME);
   totalConsumedCapacity = 0;  // Reset capacity counter
 });
 
 afterEach(async () => {
+  const docClient = ModelManager.getInstance().documentClient;
   await cleanupTestData(docClient, process.env.TABLE_NAME);
   await verifyCleanup(docClient, process.env.TABLE_NAME);
 });

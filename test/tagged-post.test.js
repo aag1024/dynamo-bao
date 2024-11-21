@@ -1,24 +1,26 @@
-const { User, Post, Tag, TaggedPost } = require('../src');
-const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
-const { DynamoDBDocument } = require('@aws-sdk/lib-dynamodb');
+const { 
+    initModels, 
+    ModelManager,
+    User,
+    Post,
+    Tag,
+    TaggedPost 
+} = require('../src');
 const { cleanupTestData } = require('./utils/test-utils');
 require('dotenv').config();
 
+beforeAll(async () => {
+  initModels({
+    region: process.env.AWS_REGION,
+    tableName: process.env.TABLE_NAME
+  });
+});
+
 describe('TaggedPost Queries', () => {
-  let docClient;
   let testUser, testPost1, testPost2, testTag1, testTag2;
 
-  beforeAll(async () => {
-    const client = new DynamoDBClient({ region: process.env.AWS_REGION });
-    docClient = DynamoDBDocument.from(client);
-    
-    User.initTable(docClient, process.env.TABLE_NAME);
-    Post.initTable(docClient, process.env.TABLE_NAME);
-    Tag.initTable(docClient, process.env.TABLE_NAME);
-    TaggedPost.initTable(docClient, process.env.TABLE_NAME);
-  });
-
   beforeEach(async () => {
+    const docClient = ModelManager.getInstance().documentClient;
     await cleanupTestData(docClient, process.env.TABLE_NAME);
 
     // Create test user
@@ -69,7 +71,7 @@ describe('TaggedPost Queries', () => {
   });
 
   afterEach(async () => {
-    await cleanupTestData(docClient, process.env.TABLE_NAME);
+    // Cleanup test data
   });
 
   test('should query posts for a tag using primary key', async () => {

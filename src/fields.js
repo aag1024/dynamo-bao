@@ -103,12 +103,22 @@ class DateTimeField extends BaseField {
 }
 
 class IntegerField extends BaseField {
+  getInitialValue() {
+    return this.options.defaultValue !== undefined ? this.options.defaultValue : null;
+  }
+
   toDy(value) {
+    if (value === undefined || value === null) {
+      return this.getInitialValue();
+    }
     return Number(value);
   }
 
   fromDy(value) {
-    return value != null ? parseInt(value, 10) : null;
+    if (value === undefined || value === null) {
+      return this.getInitialValue();
+    }
+    return parseInt(value, 10);
   }
 
   toGsi(value) {
@@ -118,7 +128,14 @@ class IntegerField extends BaseField {
 }
 
 class FloatField extends BaseField {
+  getInitialValue() {
+    return this.options.defaultValue !== undefined ? this.options.defaultValue : null;
+  }
+
   toDy(value) {
+    if (value === undefined || value === null) {
+      return this.getInitialValue();
+    }
     const num = Number(value);
     if (this.options.precision !== undefined && !isNaN(num)) {
       return Number(num.toFixed(this.options.precision));
@@ -127,7 +144,10 @@ class FloatField extends BaseField {
   }
 
   fromDy(value) {
-    return value != null ? parseFloat(value) : null;
+    if (value === undefined || value === null) {
+      return this.getInitialValue();
+    }
+    return parseFloat(value);
   }
 
   toGsi(value) {
@@ -233,7 +253,7 @@ class RelatedField extends BaseField {
       throw new Error('Field is required');
     }
     // Allow both string IDs and model instances
-    if (value && typeof value !== 'string' && (!value.getGid || typeof value.getGid !== 'function')) {
+    if (value && typeof value !== 'string' && (!value.getGlobalId || typeof value.getGlobalId !== 'function')) {
       throw new Error('Related field value must be a string ID or model instance');
     }
     return true;
@@ -242,8 +262,8 @@ class RelatedField extends BaseField {
   toDy(value) {
     if (!value) return null;
     // If we're given a model instance, get its ID
-    if (typeof value === 'object' && value.getGid) {
-      return value.getGid();
+    if (typeof value === 'object' && value.getGlobalId) {
+      return value.getGlobalId();
     }
     return value;
   }
@@ -264,6 +284,8 @@ const createCreateDateField = (options) => new CreateDateField(options);
 const createModifiedDateField = (options) => new ModifiedDateField(options);
 const createULIDField = (options) => new ULIDField(options);
 const createRelatedField = (modelName, options) => new RelatedField(modelName, options);
+const createIntegerField = (options) => new IntegerField(options);
+const createFloatField = (options) => new FloatField(options);
 
 // Export both the factory functions and the classes
 module.exports = {
@@ -274,6 +296,8 @@ module.exports = {
   ModifiedDateField: createModifiedDateField,
   ULIDField: createULIDField,
   RelatedField: createRelatedField,
+  IntegerField: createIntegerField,
+  FloatField: createFloatField,
   
   // Classes (for instanceof checks)
   StringFieldClass: StringField,
@@ -281,5 +305,7 @@ module.exports = {
   CreateDateFieldClass: CreateDateField,
   ModifiedDateFieldClass: ModifiedDateField,
   ULIDFieldClass: ULIDField,
-  RelatedFieldClass: RelatedField
+  RelatedFieldClass: RelatedField,
+  IntegerFieldClass: IntegerField,
+  FloatFieldClass: FloatField
 }; 

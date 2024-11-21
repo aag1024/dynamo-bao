@@ -13,6 +13,8 @@ const UNIQUE_CONSTRAINT_ID1 = '_uc1';
 const UNIQUE_CONSTRAINT_ID2 = '_uc2';
 const UNIQUE_CONSTRAINT_ID3 = '_uc3';
 
+const GID_SEPARATOR = "##__SK__##";
+
 class PrimaryKeyConfig {
   constructor(pk, sk = 'modelPrefix') {
     this.pk = pk;
@@ -160,7 +162,7 @@ class BaseModel {
 
         const results = await CurrentModel.queryByIndex(
           indexName,
-          this.getGid(),
+          this.getPkValue(),
           queryOptions
         );
 
@@ -246,17 +248,6 @@ class BaseModel {
     return `${prefix}#${value}`;
   }
 
-  static getKeyForId(id) {
-    if (this.primaryKey.sk === 'modelPrefix') {
-      return {
-        _pk: `${this.modelPrefix}#${id}`,
-        _sk: this.modelPrefix
-      };
-    }
-
-    throw new Error(`getKeyForId only works for primary objects with prefix as SK`);
-  }
-
   static accumulateCapacity(responses) {
     const allCapacity = responses
       .filter(r => r && r.ConsumedCapacity)
@@ -304,10 +295,10 @@ class BaseModel {
     };
   }
 
-  static async find(id) {
+  static async find(gid) {
     const result = await this.documentClient.get({
       TableName: this.table,
-      Key: this.getKeyForId(id),
+      Key: this.getKeyForGlobalId(gid),
       ReturnConsumedCapacity: 'TOTAL'
     });
 
@@ -451,14 +442,33 @@ class BaseModel {
     throw error;
   }
 
-  static getKeyForId(id) {
-    if (this.primaryKey.sk === 'modelPrefix') {
+  static isModelPrefixGid(gid) {
+    return gid.indexOf(GID_SEPARATOR) === -1;
+  }
+
+  static getKeyForGlobalId(gid) {
+    if (this.isModelPrefixGid(gid)) {
+      if (this.primaryKey.sk === 'modelPrefix') {
+        return {
+          _pk: this.formatPrimaryKey(this.modelPrefix, gid),
+          _sk: this.modelPrefix
+        };
+      }
+      else if (this.primaryKey.pk === 'modelPrefix') {
+        return {
+          _pk: this.modelPrefix,
+          _sk: gid
+        };
+      } else {
+        throw new Error(`Primary key must be modelPrefix to use a modelPrefix GID: ${gid}`);
+      }
+    } else {
+      const id = this.parseGlobalId(gid);
       return {
-        _pk: this.formatPrimaryKey(this.modelPrefix, id),
-        _sk: this.modelPrefix
+        _pk: this.formatPrimaryKey(this.modelPrefix, id.pk),
+        _sk: id.sk
       };
     }
-    throw new Error(`getKeyForId only works for primary objects with prefix as SK`);
   }
 
   static getIndexKeys(data) {
@@ -588,7 +598,7 @@ class BaseModel {
         const constraintOp = await this._createUniqueConstraint(
           constraint.field,
           itemToCreate[constraint.field],
-          this.getGid(itemToCreate),
+          this.getGlobalId(itemToCreate),
           constraint.constraintId
         );
         transactItems.push(constraintOp);
@@ -718,7 +728,7 @@ class BaseModel {
       transactItems.push({
         Update: {
           TableName: this.table,
-          Key: this.getKeyForId(id),
+          Key: this.getKeyForGlobalId(id),
           UpdateExpression: `SET ${updateParts.join(', ')}`,
           ExpressionAttributeNames: expressionAttributeNames,
           ExpressionAttributeValues: expressionAttributeValues,
@@ -747,7 +757,7 @@ class BaseModel {
       try {
         const response = await this.documentClient.update({
           TableName: this.table,
-          Key: this.getKeyForId(id),
+          Key: this.getKeyForGlobalId(id),
           UpdateExpression: `SET ${updateParts.join(', ')}`,
           ExpressionAttributeNames: expressionAttributeNames,
           ExpressionAttributeValues: expressionAttributeValues,
@@ -897,13 +907,26 @@ class BaseModel {
     delete this._relatedObjects[fieldName];
   }
 
-  getGid() {
-    return this.constructor.getGid(this.data);
+  getGlobalId() {
+    return this.constructor.getGlobalId(this.data);
   }
 
-  static getGid(data) {
+  static parseGlobalId(gid) {
+    if (!gid) {
+      throw new Error('Global ID is required to parse');
+    }
+
+    if (gid.indexOf(GID_SEPARATOR) === -1) {
+      return gid;
+    }
+
+    const [pk, sk] = gid.split(GID_SEPARATOR);
+    return { pk, sk };
+  }
+
+  static getGlobalId(data) {
     if (!data) {
-      throw new Error('Data object is required for getGid call');
+      throw new Error('Data object is required for getGlobalId call');
     }
 
     if (this.primaryKey.sk === 'modelPrefix') {
@@ -914,7 +937,15 @@ class BaseModel {
       return this.getSkValue(data);
     }
 
-    throw new Error(`getGid only works for primary objects with prefix as SK or PK`);
+    const pkValue = this.getPkValue(data);
+    const skValue = this.getSkValue(data);
+
+    if (pkValue !== undefined && skValue !== undefined && 
+      pkValue !== null && skValue !== null) {
+      return pkValue + GID_SEPARATOR + skValue;
+    }
+
+    throw new Error(`PK and SK must be defined to get a GID`);
   }
 
   // Get only changed fields
@@ -944,7 +975,7 @@ class BaseModel {
     }
 
     const changes = this.getChanges();
-    await this.constructor.update(this.getGid(), changes);
+    await this.constructor.update(this.getGlobalId(), changes);
     
     // Reset change tracking after successful save
     this._resetChangeTracking();

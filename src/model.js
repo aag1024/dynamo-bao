@@ -930,21 +930,24 @@ class BaseModel {
     }
 
     if (this.primaryKey.sk === 'modelPrefix') {
-      return this.getPkValue(data);
+      const pkField = this.fields[this.primaryKey.pk];
+      return pkField.toGsi(this.getPkValue(data));
+    } else if (this.primaryKey.pk === 'modelPrefix') {
+      const skField = this.fields[this.primaryKey.sk];
+      return skField.toGsi(this.getSkValue(data));
+    } else {
+      const pkField = this.fields[this.primaryKey.pk];
+      const skField = this.fields[this.primaryKey.sk];
+  
+      const pkValue = pkField.toGsi(this.getPkValue(data));
+      const skValue = skField.toGsi(this.getSkValue(data));
+  
+      if (pkValue !== undefined && skValue !== undefined && 
+        pkValue !== null && skValue !== null) {
+        return pkValue + GID_SEPARATOR + skValue;
+      }
     }
-
-    if (this.primaryKey.pk === 'modelPrefix') {
-      return this.getSkValue(data);
-    }
-
-    const pkValue = this.getPkValue(data);
-    const skValue = this.getSkValue(data);
-
-    if (pkValue !== undefined && skValue !== undefined && 
-      pkValue !== null && skValue !== null) {
-      return pkValue + GID_SEPARATOR + skValue;
-    }
-
+    
     throw new Error(`PK and SK must be defined to get a GID`);
   }
 

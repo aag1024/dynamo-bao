@@ -138,42 +138,43 @@ class BaseModel {
   }
 
   static registerRelatedIndexes() {
-    // Get all indexes that reference related fields
-    const relatedIndexes = Object.entries(this.indexes).filter(([indexName, index]) => {
-      const field = this.fields[index.pk];
-      return field instanceof RelatedFieldClass;
+    // Find all indexes where the partition key is a RelatedField
+    const relatedIndexes = Object.entries(this.indexes).filter(([_, index]) => {
+      const pkField = this.fields[index.pk];
+      return pkField instanceof RelatedFieldClass;
     });
 
-    // Process each related index
     relatedIndexes.forEach(([indexName, index]) => {
-      const field = this.fields[index.pk];
-      const relatedModelName = field.modelName;
-      
-      // Get the related model class
-      const RelatedModel = ModelRegistry.getInstance().get(relatedModelName);
-      const CurrentModel = this;  // The model where the index is defined
-      
-      // Generate the method name
+      // Get the source field (the partition key field)
+      const sourceField = this.fields[index.pk];
+      // Get the model this field relates to
+      const SourceModel = ModelRegistry.getInstance().get(sourceField.modelName);
+      const CurrentModel = this;
+
+      // Generate method name from index name (e.g., 'postsForUser' -> 'queryPosts')
       let methodName;
-      if (indexName.startsWith('by') && indexName.endsWith(relatedModelName)) {
-        methodName = `query${indexName.slice(2, -relatedModelName.length)}`;
-      } else if (indexName.startsWith('for') && indexName.endsWith(relatedModelName)) {
-        methodName = `query${indexName.slice(3, -relatedModelName.length)}`;
+      if (indexName.includes('For')) {
+        const [prefix] = indexName.split('For');
+        methodName = `query${prefix.charAt(0).toUpperCase()}${prefix.slice(1)}`;
       } else {
-        methodName = `query${this.name}s`;
+        methodName = `query${indexName.charAt(0).toUpperCase()}${indexName.slice(1)}`;
       }
 
-      // Add the query method to the related model's prototype
-      RelatedModel.prototype[methodName] = async function(options = {}) {
+      // Add the query method to the source model
+      SourceModel.prototype[methodName] = async function(options = {}) {
         const { limit, startKey, direction = 'DESC' } = options;
         
-        // Use the model where the index is defined (Post)
-        return await CurrentModel.queryByIndex(indexName, this.getGid(), {
-          limit,
-          startKey,
-          direction,
-          returnModel: true
-        });
+        const results = await CurrentModel.queryByIndex(
+          indexName,
+          this.getGid(),
+          { limit, startKey, direction }
+        );
+
+        return {
+          items: results.items,
+          lastEvaluatedKey: results.lastEvaluatedKey,
+          _response: results._response
+        };
       };
     });
   }

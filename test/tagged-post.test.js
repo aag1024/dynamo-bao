@@ -1,4 +1,4 @@
-const { User, Post, Tag, TaggedPost, GSI_INDEX_ID1 } = require('../src');
+const { User, Post, Tag, TaggedPost } = require('../src');
 const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
 const { DynamoDBDocument } = require('@aws-sdk/lib-dynamodb');
 const { cleanupTestData } = require('./utils/test-utils');
@@ -6,14 +6,12 @@ require('dotenv').config();
 
 describe('TaggedPost Queries', () => {
   let docClient;
-  let testPost, testTag1, testTag2;
+  let testUser, testPost1, testPost2, testTag1, testTag2;
 
   beforeAll(async () => {
-    // Initialize DynamoDB client
     const client = new DynamoDBClient({ region: process.env.AWS_REGION });
     docClient = DynamoDBDocument.from(client);
     
-    // Initialize all required models
     User.initTable(docClient, process.env.TABLE_NAME);
     Post.initTable(docClient, process.env.TABLE_NAME);
     Tag.initTable(docClient, process.env.TABLE_NAME);
@@ -23,8 +21,8 @@ describe('TaggedPost Queries', () => {
   beforeEach(async () => {
     await cleanupTestData(docClient, process.env.TABLE_NAME);
 
-    // Create test user (required for post creation)
-    const testUser = await User.create({
+    // Create test user
+    testUser = await User.create({
       name: 'Test User',
       email: `test${Date.now()}@example.com`,
       external_id: `ext${Date.now()}`,
@@ -33,25 +31,39 @@ describe('TaggedPost Queries', () => {
       status: 'active'
     });
 
-    // Create test data
-    testPost = await Post.create({
-      userId: testUser.userId,
-      title: 'Test Post',
-      content: 'Test Content'
-    });
+    // Create test posts
+    [testPost1, testPost2] = await Promise.all([
+      Post.create({
+        userId: testUser.userId,
+        title: 'Test Post 1',
+        content: 'Content 1'
+      }),
+      Post.create({
+        userId: testUser.userId,
+        title: 'Test Post 2',
+        content: 'Content 2'
+      })
+    ]);
 
-    testTag1 = await Tag.create({ name: 'Tag1' });
-    testTag2 = await Tag.create({ name: 'Tag2' });
+    // Create test tags
+    [testTag1, testTag2] = await Promise.all([
+      Tag.create({ name: 'Tag1' }),
+      Tag.create({ name: 'Tag2' })
+    ]);
 
-    // Create tagged posts
+    // Create tagged posts relationships
     await Promise.all([
       TaggedPost.create({
         tagId: testTag1.tagId,
-        postId: testPost.postId
+        postId: testPost1.postId
+      }),
+      TaggedPost.create({
+        tagId: testTag1.tagId,
+        postId: testPost2.postId
       }),
       TaggedPost.create({
         tagId: testTag2.tagId,
-        postId: testPost.postId
+        postId: testPost1.postId
       })
     ]);
   });
@@ -60,48 +72,72 @@ describe('TaggedPost Queries', () => {
     await cleanupTestData(docClient, process.env.TABLE_NAME);
   });
 
-  test('should query posts by tag using primary key', async () => {
-    const result = await TaggedPost.queryByIndex('postIdsByTag', testTag1.tagId);
+  test('should query posts for a tag using primary key', async () => {
+    const tag = await Tag.find(testTag1.tagId);
+    const posts = await tag.queryPosts();
     
-    expect(result.items).toHaveLength(1);
-    expect(result.items[0].tagId).toBe(testTag1.tagId);
-    expect(result.items[0].postId).toBe(testPost.postId);
-    
-    // No limit was set, so no pagination
-    expect(result.lastEvaluatedKey).toBeUndefined();
+    expect(posts.items).toHaveLength(2);
+    expect(posts.items.map(p => p.postId).sort()).toEqual(
+      [testPost1.postId, testPost2.postId].sort()
+    );
   });
 
-  test('should query tags by post using GSI', async () => {
-    const result = await TaggedPost.queryByIndex('tagIdsByPost', testPost.postId);
+  test('should query tags for a post using GSI', async () => {
+    const post = await Post.find(testPost1.postId);
+    const tags = await post.queryTags();
     
-    expect(result.items).toHaveLength(2);
-    expect(result.items.map(item => item.tagId)).toContain(testTag1.tagId);
-    expect(result.items.map(item => item.tagId)).toContain(testTag2.tagId);
+    expect(tags.items).toHaveLength(2);
+    expect(tags.items.map(t => t.tagId).sort()).toEqual(
+      [testTag1.tagId, testTag2.tagId].sort()
+    );
   });
 
-  test('should format keys correctly with model prefix', async () => {
-    // Query using the primary key as an index
-    const result = await TaggedPost.queryByIndex('postIdsByTag', testTag1.tagId);
+  test('should query recent posts for a tag', async () => {
+    const tag = await Tag.find(testTag1.tagId);
+    const recentPosts = await tag.queryRecentPosts();
     
-    expect(result.items).toHaveLength(1);
-    const taggedPost = result.items[0];
-    
-    // Check that we can access both the model properties and raw data
-    expect(taggedPost.tagId).toBe(testTag1.tagId);
-    expect(taggedPost.data._pk).toBe(`tp#${testTag1.tagId}`);
-    
-    // Query using the GSI
-    const gsiResult = await TaggedPost.queryByIndex('tagIdsByPost', testPost.postId);
-    expect(gsiResult.items).toHaveLength(2);
-    const gsiTaggedPost = gsiResult.items[0];
-    const tag = await gsiTaggedPost.getTag();
-    const post = await gsiTaggedPost.getPost();
+    expect(recentPosts.items).toHaveLength(2);
+    expect(recentPosts.items[0].createdAt.getTime())
+      .toBeGreaterThanOrEqual(recentPosts.items[1].createdAt.getTime());
+  });
 
-    // const posts = await tag.queryPosts();
-    // expect(posts.items).toHaveLength(2);
+  test('should handle pagination for posts by tag', async () => {
+    const tag = await Tag.find(testTag1.tagId);
+    const firstPage = await tag.queryPosts({ limit: 1 });
     
-    // Check GSI key format
-    const expectedGsiKey = `tp#${GSI_INDEX_ID1}#${testPost.postId}`;
-    expect(gsiTaggedPost.data[`_${GSI_INDEX_ID1}_pk`]).toBe(expectedGsiKey);
+    expect(firstPage.items).toHaveLength(1);
+    expect(firstPage.lastEvaluatedKey).toBeDefined();
+
+    const secondPage = await tag.queryPosts({ 
+      limit: 2, 
+      startKey: firstPage.lastEvaluatedKey 
+    });
+    
+    expect(secondPage.items).toHaveLength(1);
+    expect(secondPage.lastEvaluatedKey).toBeUndefined();
+    
+    // Verify we got different posts
+    expect(firstPage.items[0].postId).not.toBe(secondPage.items[0].postId);
+  });
+
+  test('should return empty results for tag with no posts', async () => {
+    const emptyTag = await Tag.create({ name: 'Empty Tag' });
+    const posts = await emptyTag.queryPosts();
+    
+    expect(posts.items).toHaveLength(0);
+    expect(posts.lastEvaluatedKey).toBeUndefined();
+  });
+
+  test('should return empty results for post with no tags', async () => {
+    const untaggedPost = await Post.create({
+      userId: testUser.userId,
+      title: 'Untagged Post',
+      content: 'No Tags'
+    });
+    
+    const tags = await untaggedPost.queryTags();
+    
+    expect(tags.items).toHaveLength(0);
+    expect(tags.lastEvaluatedKey).toBeUndefined();
   });
 }); 

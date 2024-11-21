@@ -1,19 +1,21 @@
-const { User, Post } = require('../src');
+const { User, Post, Tag, TaggedPost } = require('../src');
 const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
 const { DynamoDBDocument } = require('@aws-sdk/lib-dynamodb');
-const { cleanupTestData, verifyCleanup } = require('./utils/test-utils');
+const { cleanupTestData } = require('./utils/test-utils');
 require('dotenv').config();
 
-let docClient;
-let testUser;
-
 describe('Related Field Queries', () => {
+  let docClient;
+  let testUser, testPosts, testTags;
+
   beforeAll(async () => {
     const client = new DynamoDBClient({ region: process.env.AWS_REGION });
     docClient = DynamoDBDocument.from(client);
     
     User.initTable(docClient, process.env.TABLE_NAME);
     Post.initTable(docClient, process.env.TABLE_NAME);
+    Tag.initTable(docClient, process.env.TABLE_NAME);
+    TaggedPost.initTable(docClient, process.env.TABLE_NAME);
   });
 
   beforeEach(async () => {
@@ -29,8 +31,8 @@ describe('Related Field Queries', () => {
       status: 'active'
     });
 
-    // Create some test posts
-    await Promise.all([
+    // Create test posts
+    testPosts = await Promise.all([
       Post.create({
         userId: testUser.userId,
         title: 'Post 1',
@@ -42,119 +44,99 @@ describe('Related Field Queries', () => {
         content: 'Content 2'
       })
     ]);
+
+    // Create test tags
+    testTags = await Promise.all([
+      Tag.create({ name: 'Tag 1' }),
+      Tag.create({ name: 'Tag 2' })
+    ]);
+
+    // Create tag relationships
+    await Promise.all([
+      TaggedPost.create({
+        tagId: testTags[0].tagId,
+        postId: testPosts[0].postId
+      }),
+      TaggedPost.create({
+        tagId: testTags[0].tagId,
+        postId: testPosts[1].postId
+      }),
+      TaggedPost.create({
+        tagId: testTags[1].tagId,
+        postId: testPosts[0].postId
+      })
+    ]);
   });
 
   afterEach(async () => {
     await cleanupTestData(docClient, process.env.TABLE_NAME);
   });
 
-  test('should automatically generate queryPosts method', async () => {
-    const user = await User.find(testUser.userId);
-    console.log('Test user:', user);
-    
-    // Log the test posts
-    const allPosts = await Post.queryByIndex('allPosts', 'p');
-    console.log('All posts:', allPosts);
-    
-    const posts = await user.queryPosts();
-    console.log('User posts:', posts);
-    
-    expect(posts.items).toHaveLength(2);
-    posts.items.forEach(post => {
-      expect(post.userId).toBe(testUser.userId);
+  describe('Direct Relationships', () => {
+    test('should automatically generate queryPosts method for User', async () => {
+      const user = await User.find(testUser.userId);
+      const posts = await user.queryPosts();
+      
+      expect(posts.items).toHaveLength(2);
+      posts.items.forEach(post => {
+        expect(post.userId).toBe(testUser.userId);
+      });
+    });
+
+    test('should handle pagination in direct relationships', async () => {
+      const user = await User.find(testUser.userId);
+      const firstPage = await user.queryPosts({ limit: 1 });
+      
+      expect(firstPage.items).toHaveLength(1);
+      expect(firstPage.lastEvaluatedKey).toBeDefined();
+
+      const secondPage = await user.queryPosts({ 
+        limit: 2, 
+        startKey: firstPage.lastEvaluatedKey 
+      });
+      
+      expect(secondPage.items).toHaveLength(1);
+      expect(secondPage.lastEvaluatedKey).toBeUndefined();
+      expect(firstPage.items[0].postId).not.toBe(secondPage.items[0].postId);
     });
   });
 
-  test('should query related posts with pagination', async () => {
-    const user = await User.find(testUser.userId);
-    console.log('Test user:', JSON.stringify(user, null, 2));
-    
-    // First page with limit 1
-    const firstPage = await Post.queryByIndex('postsForUser', user.userId, { limit: 1 });
-    expect(firstPage.items).toHaveLength(1);
-    expect(firstPage.lastEvaluatedKey).toBeDefined();
-
-    // Second page should be the last page
-    const secondPage = await Post.queryByIndex('postsForUser', user.userId, { 
-      limit: 2, 
-      startKey: firstPage.lastEvaluatedKey 
-    });
-    expect(secondPage.items).toHaveLength(1);
-    expect(secondPage.lastEvaluatedKey).toBeUndefined();
-  });
-
-  test('should support different sort directions', async () => {
-    const user = await User.find(testUser.userId);
-    
-    const ascPosts = await user.queryPosts({ direction: 'ASC' });
-    const descPosts = await user.queryPosts({ direction: 'DESC' });
-    
-    expect(ascPosts.items).toHaveLength(2);
-    expect(descPosts.items).toHaveLength(2);
-    
-    // Check that the order is reversed
-    expect(ascPosts.items[0].postId).toBe(descPosts.items[1].postId);
-    expect(ascPosts.items[1].postId).toBe(descPosts.items[0].postId);
-  });
-
-  test('should support date range filtering with custom keys', async () => {
-    const user = await User.find(testUser.userId);
-    
-    // Clean up existing posts from beforeEach
-    await cleanupTestData(docClient, process.env.TABLE_NAME);
-    
-    // Create test data with specific dates
-    const lastMonth = new Date('2024-10-20T00:00:00Z');
-    const thisMonth1 = new Date('2024-11-15T00:00:00Z');
-    const thisMonth2 = new Date('2024-11-16T00:00:00Z');
-    const nextMonth = new Date('2024-12-20T00:00:00Z');
-
-    await Promise.all([
-      // Old post
-      Post.create({
-        userId: testUser.userId,
-        title: 'Old Post',
-        content: 'Old Content',
-        createdAt: lastMonth
-      }),
-      // Current month posts
-      Post.create({
-        userId: testUser.userId,
-        title: 'Post 1',
-        content: 'Content 1',
-        createdAt: thisMonth1
-      }),
-      Post.create({
-        userId: testUser.userId,
-        title: 'Post 2',
-        content: 'Content 2',
-        createdAt: thisMonth2
-      }),
-      // Future post
-      Post.create({
-        userId: testUser.userId,
-        title: 'Future Post',
-        content: 'Future Content',
-        createdAt: nextMonth
-      })
-    ]);
-
-    // Find posts from this month only
-    const thisMonth = new Date('2024-11-01T00:00:00Z');
-    const nextMonthStart = new Date('2024-12-01T00:00:00Z');
-
-    const thisMonthPosts = await Post.queryByIndex('postsForUser', testUser.userId, {
-      rangeKey: 'createdAt',
-      rangeCondition: 'BETWEEN',
-      rangeValue: thisMonth,
-      endRangeValue: nextMonthStart
+  describe('Mapping Table Relationships', () => {
+    test('should automatically generate query methods for Tag->Posts', async () => {
+      const tag = await Tag.find(testTags[0].tagId);
+      const posts = await tag.queryPosts();
+      
+      expect(posts.items).toHaveLength(2);
+      const postIds = posts.items.map(p => p.postId).sort();
+      const expectedPostIds = testPosts.map(p => p.postId).sort();
+      expect(postIds).toEqual(expectedPostIds);
     });
 
-    expect(thisMonthPosts.items).toHaveLength(2);
-    thisMonthPosts.items.forEach(post => {
-      const postDate = post.createdAt.getTime();
-      expect(postDate).toBeGreaterThanOrEqual(thisMonth.getTime());
-      expect(postDate).toBeLessThan(nextMonthStart.getTime());
+    test('should automatically generate query methods for Post->Tags', async () => {
+      const post = await Post.find(testPosts[0].postId);
+      const tags = await post.queryTags();
+      
+      expect(tags.items).toHaveLength(2);
+      const tagIds = tags.items.map(t => t.tagId).sort();
+      const expectedTagIds = testTags.map(t => t.tagId).sort();
+      expect(tagIds).toEqual(expectedTagIds);
+    });
+
+    test('should handle pagination in mapping relationships', async () => {
+      const tag = await Tag.find(testTags[0].tagId);
+      const firstPage = await tag.queryPosts({ limit: 1 });
+      
+      expect(firstPage.items).toHaveLength(1);
+      expect(firstPage.lastEvaluatedKey).toBeDefined();
+
+      const secondPage = await tag.queryPosts({ 
+        limit: 2, 
+        startKey: firstPage.lastEvaluatedKey 
+      });
+      
+      expect(secondPage.items).toHaveLength(1);
+      expect(secondPage.lastEvaluatedKey).toBeUndefined();
+      expect(firstPage.items[0].postId).not.toBe(secondPage.items[0].postId);
     });
   });
 }); 

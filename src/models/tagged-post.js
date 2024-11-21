@@ -2,7 +2,8 @@ const {
   BaseModel, 
   PrimaryKeyConfig,
   IndexConfig,
-  GSI_INDEX_ID1
+  GSI_INDEX_ID1,
+  GSI_INDEX_ID2
 } = require('../model');
 const { CreateDateField, RelatedField } = require('../fields');
 
@@ -18,8 +19,9 @@ class TaggedPost extends BaseModel {
   static primaryKey = PrimaryKeyConfig('tagId', 'postId');
 
   static indexes = {
-    postIdsByTag: this.primaryKey,
-    tagIdsByPost: IndexConfig('postId', 'tagId', GSI_INDEX_ID1)
+    postsForTag: this.primaryKey,
+    tagsForPost: IndexConfig('postId', 'tagId', GSI_INDEX_ID1),
+    recentPostsForTag: IndexConfig('tagId', 'createdAt', GSI_INDEX_ID2)
   };
 }
 

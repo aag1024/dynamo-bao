@@ -9,7 +9,7 @@ const {
     static modelPrefix = 'up';
     
     static fields = {
-      userId: RelatedField({ modelName: 'User' }),
+      userId: RelatedField("User", { required: true }),
       name: StringField({ required: true }),
       profile_image_url: StringField(),
     };

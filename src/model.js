@@ -130,13 +130,11 @@ class BaseModel {
     });
 
     relatedIndexes.forEach(([indexName, index]) => {
-      // Get the source field (the partition key field)
       const sourceField = this.fields[index.pk];
-      // Get the model this field relates to
       const SourceModel = ModelRegistry.getInstance().get(sourceField.modelName);
       const CurrentModel = this;
 
-      // Generate method name from index name (e.g., 'postsForUser' -> 'queryPosts')
+      // Generate method name from index name
       let methodName;
       if (indexName.includes('For')) {
         const [prefix] = indexName.split('For');
@@ -145,21 +143,28 @@ class BaseModel {
         methodName = `query${indexName.charAt(0).toUpperCase()}${indexName.slice(1)}`;
       }
 
-      // Add the query method to the source model
-      SourceModel.prototype[methodName] = async function(options = {}) {
-        const { limit, startKey, direction = 'DESC' } = options;
-        
+      // Add the query method to the source model with separate pagination params
+      SourceModel.prototype[methodName] = async function(
+        limit = null,
+        startKey = null,
+        direction = 'DESC',
+        options = {}
+      ) {
+        // Convert the startKey back to the correct format if it exists
+        const queryOptions = {
+          ...options,
+          limit,
+          direction,
+          startKey: startKey ? JSON.parse(JSON.stringify(startKey)) : null
+        };
+
         const results = await CurrentModel.queryByIndex(
           indexName,
           this.getGid(),
-          { limit, startKey, direction }
+          queryOptions
         );
 
-        return {
-          items: results.items,
-          lastEvaluatedKey: results.lastEvaluatedKey,
-          _response: results._response
-        };
+        return results;
       };
     });
   }
@@ -389,14 +394,24 @@ class BaseModel {
     return params;
   }
 
-  static processQueryResponse(response, options = {}) {
+  static async processQueryResponse(response, options = {}) {
     const {
-      returnModel = true
+      returnModel = true,
+      loadRelated = false,
+      relatedFields = null
     } = options;
   
+    // Create model instances
+    let items = returnModel ? response.Items.map(item => new this(item)) : response.Items;
+
+    // Load related data if requested
+    if (returnModel && loadRelated) {
+      await Promise.all(items.map(item => item.loadRelatedData(relatedFields)));
+    }
+
     return {
-      items: returnModel ? response.Items.map(item => new this(item)) : response.Items,
-      count: response.Items.length,
+      items,
+      count: items.length,
       lastEvaluatedKey: response.LastEvaluatedKey,
       _response: {
         ConsumedCapacity: response.ConsumedCapacity
@@ -946,22 +961,43 @@ class BaseModel {
     return obj;
   }
 
-  async loadRelatedData() {
+  async loadRelatedData(fieldNames = null) {
     const promises = [];
     
     for (const [fieldName, field] of Object.entries(this.constructor.fields)) {
+      // Skip if fieldNames is provided and this field isn't in the list
+      if (fieldNames && !fieldNames.includes(fieldName)) {
+        continue;
+      }
+      
       if (field instanceof RelatedFieldClass && this[fieldName]) {
         promises.push(
-          field.load(this[fieldName])
+          this._loadRelatedField(fieldName, field)
             .then(instance => {
-              field._loadedInstance = instance;
+              this._relatedObjects[fieldName] = instance;
             })
         );
       }
     }
-
+  
     await Promise.all(promises);
     return this;
+  }
+
+  async _loadRelatedField(fieldName, field) {
+    const value = this[fieldName];
+    if (!value) return null;
+    
+    // Get the related model class from the registry
+    const ModelClass = ModelRegistry.getInstance().get(field.modelName);
+    
+    // If we already have a model instance, return it
+    if (value instanceof ModelClass) {
+      return value;
+    }
+    
+    // Otherwise, load the instance from the database
+    return await ModelClass.find(value);
   }
 
   getRelated(fieldName) {
@@ -969,7 +1005,7 @@ class BaseModel {
     if (!(field instanceof RelatedFieldClass)) {
       throw new Error(`Field ${fieldName} is not a RelatedField`);
     }
-    return field.getInstance();
+    return this._relatedObjects[fieldName];
   }
 
   static fromDynamoDB(item) {

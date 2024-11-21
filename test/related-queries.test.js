@@ -88,15 +88,16 @@ describe('Related Field Queries', () => {
 
     test('should handle pagination in direct relationships', async () => {
       const user = await User.find(testUser.userId);
-      const firstPage = await user.queryPosts({ limit: 1 });
+      const firstPage = await user.queryPosts(1, null, 'DESC');
       
       expect(firstPage.items).toHaveLength(1);
       expect(firstPage.lastEvaluatedKey).toBeDefined();
 
-      const secondPage = await user.queryPosts({ 
-        limit: 2, 
-        startKey: firstPage.lastEvaluatedKey 
-      });
+      const secondPage = await user.queryPosts(
+        2, 
+        firstPage.lastEvaluatedKey,
+        'DESC'
+      );
       
       expect(secondPage.items).toHaveLength(1);
       expect(secondPage.lastEvaluatedKey).toBeUndefined();
@@ -127,18 +128,67 @@ describe('Related Field Queries', () => {
 
     test('should handle pagination in mapping relationships', async () => {
       const tag = await Tag.find(testTags[0].tagId);
-      const firstPage = await tag.queryPosts({ limit: 1 });
+      const firstPage = await tag.queryPosts(1, null, 'DESC');
       
       expect(firstPage.items).toHaveLength(1);
       expect(firstPage.lastEvaluatedKey).toBeDefined();
 
-      const secondPage = await tag.queryPosts({ 
-        limit: 2, 
-        startKey: firstPage.lastEvaluatedKey 
-      });
+      const secondPage = await tag.queryPosts(
+        2, 
+        firstPage.lastEvaluatedKey,
+        'DESC'
+      );
       
       expect(secondPage.items).toHaveLength(1);
       expect(secondPage.lastEvaluatedKey).toBeUndefined();
+      expect(firstPage.items[0].postId).not.toBe(secondPage.items[0].postId);
+    });
+  });
+
+  describe('Related Data Loading in Queries', () => {
+    test('should load all related data when requested', async () => {
+      const user = await User.find(testUser.userId);
+      const posts = await user.queryPosts(null, null, 'DESC', { 
+        loadRelated: true 
+      });
+      
+      posts.items.forEach(post => {
+        const relatedUser = post.getRelated('userId');
+        expect(relatedUser).toBeDefined();
+        expect(relatedUser.userId).toBe(testUser.userId);
+      });
+    });
+
+    test('should load specific related fields', async () => {
+      const user = await User.find(testUser.userId);
+      const posts = await user.queryPosts(null, null, 'DESC', { 
+        loadRelated: true,
+        relatedFields: ['userId']
+      });
+      
+      posts.items.forEach(post => {
+        const relatedUser = post.getRelated('userId');
+        expect(relatedUser).toBeDefined();
+        expect(relatedUser.userId).toBe(testUser.userId);
+      });
+    });
+
+    test('should work with pagination when loading related data', async () => {
+      const user = await User.find(testUser.userId);
+      const firstPage = await user.queryPosts(1, null, 'DESC', { 
+        loadRelated: true 
+      });
+      
+      expect(firstPage.items).toHaveLength(1);
+      expect(firstPage.lastEvaluatedKey).toBeDefined();
+      expect(firstPage.items[0].getRelated('userId')).toBeDefined();
+
+      const secondPage = await user.queryPosts(1, firstPage.lastEvaluatedKey, 'DESC', { 
+        loadRelated: true 
+      });
+      
+      expect(secondPage.items).toHaveLength(1);
+      expect(secondPage.items[0].getRelated('userId')).toBeDefined();
       expect(firstPage.items[0].postId).not.toBe(secondPage.items[0].postId);
     });
   });

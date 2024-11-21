@@ -105,20 +105,19 @@ describe('TaggedPost Queries', () => {
 
   test('should handle pagination for posts by tag', async () => {
     const tag = await Tag.find(testTag1.tagId);
-    const firstPage = await tag.queryPosts({ limit: 1 });
+    const firstPage = await tag.queryPosts(1, null, 'DESC');
     
     expect(firstPage.items).toHaveLength(1);
     expect(firstPage.lastEvaluatedKey).toBeDefined();
 
-    const secondPage = await tag.queryPosts({ 
-      limit: 2, 
-      startKey: firstPage.lastEvaluatedKey 
-    });
+    const secondPage = await tag.queryPosts(
+      2, 
+      firstPage.lastEvaluatedKey,
+      'DESC'
+    );
     
     expect(secondPage.items).toHaveLength(1);
     expect(secondPage.lastEvaluatedKey).toBeUndefined();
-    
-    // Verify we got different posts
     expect(firstPage.items[0].postId).not.toBe(secondPage.items[0].postId);
   });
 

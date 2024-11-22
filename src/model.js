@@ -680,59 +680,83 @@ class BaseModel {
       }
     }
 
-    // Prepare update expression parts
-    const updateParts = [];
-    const expressionAttributeNames = {};
-    const expressionAttributeValues = {};
-    let updateCount = 0;
-
+    // Initialize context for collecting expressions
+    const context = {
+      expressionAttributeNames: {},
+      expressionAttributeValues: {}
+    };
+    
+    const setParts = [];
+    const addParts = [];
+    
     // Handle regular fields
-    for (const [field, value] of Object.entries(data)) {
-      const attributeName = `#attr${updateCount}`;
-      const attributeValue = `:val${updateCount}`;
+    for (const [fieldName, value] of Object.entries(data)) {
+      const field = this.fields[fieldName];
+      if (!field) continue;
+
+      const updateExpr = field.getUpdateExpression(fieldName, value, context);
       
-      updateParts.push(`${attributeName} = ${attributeValue}`);
-      expressionAttributeNames[attributeName] = field;
-      expressionAttributeValues[attributeValue] = this.fields[field].toDy(value);
-      updateCount++;
-    }
-
-    // Handle GSI updates
-    const oldIndexKeys = this.getIndexKeys(currentItem.data);
-    const newData = { ...currentItem.data, ...data };
-    const newIndexKeys = this.getIndexKeys(newData);
-
-    // Add GSI updates to expression
-    for (const [key, newValue] of Object.entries(newIndexKeys)) {
-      if (oldIndexKeys[key] !== newValue) {
-        const attributeName = `#${key}`;
-        const attributeValue = `:${key}`;
-        
-        // Find the index and field this GSI key belongs to
-        const [, indexId, keyType] = key.split('_'); // e.g., _gsi1_pk -> ['', 'gsi1', 'pk']
-        const index = Object.values(this.indexes).find(idx => idx.indexId === indexId);
-        const fieldName = keyType === 'pk' ? index.pk : index.sk;
-        
-        // Only convert if it's not a modelPrefix
-        if (fieldName !== 'modelPrefix') {
-          const field = this.fields[fieldName];
-          updateParts.push(`${attributeName} = ${attributeValue}`);
-          expressionAttributeNames[attributeName] = key;
-          expressionAttributeValues[attributeValue] = newValue;
+      if (updateExpr && updateExpr.expression) {
+        if (updateExpr.type === 'ADD') {
+          addParts.push(updateExpr.expression);
+        } else if (updateExpr.type === 'SET') {
+          setParts.push(updateExpr.expression);
         }
       }
     }
+    
+    // Build update expression parts
+    const updateParts = [];
+    if (setParts.length > 0) {
+      updateParts.push(`SET ${setParts.join(', ')}`);
+    }
+    if (addParts.length > 0) {
+      updateParts.push(`ADD ${addParts.join(', ')}`);
+    }
 
+    const updateExpression = updateParts.join(' ');
+
+    // Clean up unused attribute names and values
+    const usedNames = new Set();
+    const usedValues = new Set();
+    
+    // Extract used names and values from all parts of the update expression
+    updateExpression.split(/[\s,()]+/).forEach(part => {
+      if (part.startsWith('#')) {
+        usedNames.add(part);
+      }
+      if (part.startsWith(':')) {
+        usedValues.add(part);
+      }
+    });
+
+    // Filter out unused names and values
+    const filteredNames = {};
+    const filteredValues = {};
+    
+    for (const [key, value] of Object.entries(context.expressionAttributeNames)) {
+      if (usedNames.has(key)) {
+        filteredNames[key] = value;
+      }
+    }
+    
+    for (const [key, value] of Object.entries(context.expressionAttributeValues)) {
+      // Include all values that start with the same prefix
+      const prefix = key.split('_')[0]; // In case we have suffixed values
+      if (usedValues.has(prefix)) {
+        filteredValues[key] = value;
+      }
+    }
+
+    // Use the filtered attributes in the update
     if (transactItems.length > 0) {
-      // If we have unique constraints to update, use transactWrite
       transactItems.push({
         Update: {
           TableName: this.table,
           Key: this.getKeyForGlobalId(id),
-          UpdateExpression: `SET ${updateParts.join(', ')}`,
-          ExpressionAttributeNames: expressionAttributeNames,
-          ExpressionAttributeValues: expressionAttributeValues,
-          ReturnValues: 'ALL_NEW'
+          UpdateExpression: updateExpression,
+          ExpressionAttributeNames: Object.keys(filteredNames).length > 0 ? filteredNames : undefined,
+          ExpressionAttributeValues: Object.keys(filteredValues).length > 0 ? filteredValues : undefined
         }
       });
 
@@ -753,24 +777,16 @@ class BaseModel {
         await this.validateUniqueConstraints(error, data, id);
       }
     } else {
-      // If no unique constraints, use simple update
-      try {
-        const response = await this.documentClient.update({
-          TableName: this.table,
-          Key: this.getKeyForGlobalId(id),
-          UpdateExpression: `SET ${updateParts.join(', ')}`,
-          ExpressionAttributeNames: expressionAttributeNames,
-          ExpressionAttributeValues: expressionAttributeValues,
-          ReturnValues: 'ALL_NEW'
-        });
+      const response = await this.documentClient.update({
+        TableName: this.table,
+        Key: this.getKeyForGlobalId(id),
+        UpdateExpression: updateExpression,
+        ExpressionAttributeNames: Object.keys(filteredNames).length > 0 ? filteredNames : undefined,
+        ExpressionAttributeValues: Object.keys(filteredValues).length > 0 ? filteredValues : undefined,
+        ReturnValues: 'ALL_NEW'
+      });
 
-        return this.fromDynamoDB(response.Attributes);
-      } catch (error) {
-        if (error.name === 'ConditionalCheckFailedException') {
-          throw new Error('Concurrent update detected');
-        }
-        throw error;
-      }
+      return this.fromDynamoDB(response.Attributes);
     }
   }
 

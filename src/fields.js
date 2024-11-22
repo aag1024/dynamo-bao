@@ -39,6 +39,25 @@ class BaseField {
   fromGsi(value) {
     return this.fromDy(value);
   }
+
+  getUpdateExpression(fieldName, value, context = {}) {
+    if (value === undefined) return null;
+    
+    // Default implementation just sets the value
+    context.expressionAttributeNames = context.expressionAttributeNames || {};
+    context.expressionAttributeValues = context.expressionAttributeValues || {};
+    
+    const attributeName = `#${fieldName}`;
+    const attributeValue = `:${fieldName}`;
+    
+    context.expressionAttributeNames[attributeName] = fieldName;
+    context.expressionAttributeValues[attributeValue] = this.toDy(value);
+    
+    return {
+      type: 'SET',
+      expression: `${attributeName} = ${attributeValue}`
+    };
+  }
 }
 
 class StringField extends BaseField {
@@ -277,6 +296,77 @@ class RelatedField extends BaseField {
   }
 }
 
+class CounterField extends BaseField {
+  constructor(options = {}) {
+    super(options);
+    this.defaultValue = options.defaultValue || 0;
+  }
+
+  validate(value) {
+    super.validate(value);
+    if (value !== undefined && !Number.isInteger(value)) {
+      throw new Error('CounterField value must be an integer');
+    }
+    return true;
+  }
+
+  getInitialValue() {
+    return this.defaultValue;
+  }
+
+  toDy(value) {
+    if (value === undefined || value === null) {
+      return this.getInitialValue();
+    }
+    return Number(value);
+  }
+
+  fromDy(value) {
+    if (value === undefined || value === null) {
+      return this.getInitialValue();
+    }
+    return parseInt(value, 10);
+  }
+
+  getUpdateExpression(fieldName, value, context = {}) {
+    if (value === undefined) {
+      // For new items, use the default value
+      value = this.getInitialValue();
+    }
+
+    context.expressionAttributeNames = context.expressionAttributeNames || {};
+    context.expressionAttributeValues = context.expressionAttributeValues || {};
+
+    const attributeName = `#${fieldName}`;
+    const attributeValue = `:${fieldName}`;
+    
+    context.expressionAttributeNames[attributeName] = fieldName;
+    
+    // If the value is relative (has + or - prefix), use ADD
+    if (typeof value === 'string' && (value.startsWith('+') || value.startsWith('-'))) {
+      const numericValue = parseInt(value, 10);
+      context.expressionAttributeValues[attributeValue] = numericValue;
+      
+      // Return just the expression part without the ADD keyword
+      return {
+        type: 'ADD',
+        expression: `${attributeName} ${attributeValue}`
+      };
+    }
+    
+    // Return just the expression part without the SET keyword
+    context.expressionAttributeValues[attributeValue] = this.toDy(value);
+    return {
+      type: 'SET',
+      expression: `${attributeName} = ${attributeValue}`
+    };
+  }
+
+  toGsi(value) {
+    return value != null ? value.toString().padStart(20, '0') : '';
+  }
+}
+
 // Factory functions for creating field instances
 const createStringField = (options) => new StringField(options);
 const createDateTimeField = (options) => new DateTimeField(options);
@@ -286,6 +376,7 @@ const createULIDField = (options) => new ULIDField(options);
 const createRelatedField = (modelName, options) => new RelatedField(modelName, options);
 const createIntegerField = (options) => new IntegerField(options);
 const createFloatField = (options) => new FloatField(options);
+const createCounterField = (options) => new CounterField(options);
 
 // Export both the factory functions and the classes
 module.exports = {
@@ -298,6 +389,7 @@ module.exports = {
   RelatedField: createRelatedField,
   IntegerField: createIntegerField,
   FloatField: createFloatField,
+  CounterField: createCounterField,
   
   // Classes (for instanceof checks)
   StringFieldClass: StringField,
@@ -307,5 +399,6 @@ module.exports = {
   ULIDFieldClass: ULIDField,
   RelatedFieldClass: RelatedField,
   IntegerFieldClass: IntegerField,
-  FloatFieldClass: FloatField
+  FloatFieldClass: FloatField,
+  CounterFieldClass: CounterField
 }; 

@@ -107,7 +107,7 @@ async function cleanupTestData(docClient, tableName) {
   }
 
   // Add a small delay before verification to ensure consistency
-  await new Promise(resolve => setTimeout(resolve, 500));
+  await new Promise(resolve => setTimeout(resolve, 100));
   
   console.log(`Successfully deleted ${allItems.length} items`);
   

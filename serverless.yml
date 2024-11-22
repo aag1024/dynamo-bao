@@ -34,6 +34,12 @@ resources:
             AttributeType: S
           - AttributeName: _gsi3_sk
             AttributeType: S
+          - AttributeName: _gsi4_pk
+            AttributeType: S
+          - AttributeName: _gsi4_sk
+            AttributeType: S
+          - AttributeName: _gsi_test_id
+            AttributeType: S
         KeySchema:
           - AttributeName: _pk
             KeyType: HASH
@@ -62,6 +68,20 @@ resources:
                 KeyType: HASH
               - AttributeName: _gsi3_sk
                 KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+          - IndexName: gsi4
+            KeySchema:
+              - AttributeName: _gsi4_pk
+                KeyType: HASH
+              - AttributeName: _gsi4_sk
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+          - IndexName: gsi_test
+            KeySchema:
+              - AttributeName: _gsi_test_id
+                KeyType: HASH
             Projection:
               ProjectionType: ALL
         TimeToLiveSpecification:

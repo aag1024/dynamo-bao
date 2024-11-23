@@ -1,17 +1,13 @@
 const { 
     initModels,
     ModelManager,
-    User, 
-    Post,
-    GSI_INDEX_ID1, 
-    GSI_INDEX_ID2, 
-    GSI_INDEX_ID3 
+    User,
   } = require('../src');
-const { DynamoDBClient, DescribeTableCommand } = require('@aws-sdk/client-dynamodb');
+const { DescribeTableCommand } = require('@aws-sdk/client-dynamodb');
 const { cleanupTestData, verifyCleanup } = require('./utils/test-utils');
-require('dotenv').config();
 const { ulid } = require('ulid');
 const { QueryCommand } = require('@aws-sdk/lib-dynamodb');
+require('dotenv').config();
 
 let testId;
 
@@ -52,6 +48,7 @@ beforeEach(async () => {
 afterEach(async () => {
   if (testId) {
     await cleanupTestData(testId);
+    await verifyCleanup(testId);
   }
 });
 

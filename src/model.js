@@ -458,59 +458,59 @@ class BaseModel {
     }
   }
 
-  static async createUniqueConstraints(data, id) {
-    if (!this.uniqueConstraints) {
-      return [];
-    }
+  // static async createUniqueConstraints(data, id) {
+  //   if (!this.uniqueConstraints) {
+  //     return [];
+  //   }
 
-    const items = [];
-    for (const [name, constraint] of Object.entries(this.uniqueConstraints)) {
-      const value = data[constraint.field];
-      if (!value) continue;
+  //   const items = [];
+  //   for (const [name, constraint] of Object.entries(this.uniqueConstraints)) {
+  //     const value = data[constraint.field];
+  //     if (!value) continue;
 
-      const key = this.formatUniqueConstraintKey(
-        constraint.constraintId,
-        this.modelPrefix,
-        constraint.field,
-        value
-      );
+  //     const key = this.formatUniqueConstraintKey(
+  //       constraint.constraintId,
+  //       this.modelPrefix,
+  //       constraint.field,
+  //       value
+  //     );
 
-      items.push({
-        _pk: key,
-        _sk: UNIQUE_CONSTRAINT_KEY,
-        relatedId: id,
-        _gsi_test_id: this._test_id,
-      });
-    }
+  //     items.push({
+  //       _pk: key,
+  //       _sk: UNIQUE_CONSTRAINT_KEY,
+  //       relatedId: id,
+  //       _gsi_test_id: this._test_id,
+  //     });
+  //   }
 
-    return items;
-  }
+  //   return items;
+  // }
 
-  static async deleteUniqueConstraints(data) {
-    if (!this.uniqueConstraints) {
-      return [];
-    }
+  // static async deleteUniqueConstraints(data) {
+  //   if (!this.uniqueConstraints) {
+  //     return [];
+  //   }
 
-    const items = [];
-    for (const [name, constraint] of Object.entries(this.uniqueConstraints)) {
-      const value = data[constraint.field];
-      if (!value) continue;
+  //   const items = [];
+  //   for (const [name, constraint] of Object.entries(this.uniqueConstraints)) {
+  //     const value = data[constraint.field];
+  //     if (!value) continue;
 
-      const key = this.formatUniqueConstraintKey(
-        constraint.constraintId,
-        this.modelPrefix,
-        constraint.field,
-        value
-      );
+  //     const key = this.formatUniqueConstraintKey(
+  //       constraint.constraintId,
+  //       this.modelPrefix,
+  //       constraint.field,
+  //       value
+  //     );
 
-      items.push({
-        _pk: key,
-        _sk: UNIQUE_CONSTRAINT_KEY
-      });
-    }
+  //     items.push({
+  //       _pk: key,
+  //       _sk: UNIQUE_CONSTRAINT_KEY
+  //     });
+  //   }
 
-    return items;
-  }
+  //   return items;
+  // }
 
   static isModelPrefixGid(gid) {
     return gid.indexOf(GID_SEPARATOR) === -1;
@@ -708,8 +708,6 @@ class BaseModel {
       mainItem._gsi_test_id = testId;
     }
 
-    console.log('Creating item:', mainItem);
-
     transactItems.push({
       Put: {
         TableName: this.table,
@@ -720,6 +718,8 @@ class BaseModel {
         }
       }
     });
+
+    console.log('Create transact items:', JSON.stringify(transactItems, null, 2));
 
     try {
       const response = await this.documentClient.transactWrite({
@@ -744,8 +744,8 @@ class BaseModel {
     }
   }
 
-  static async update(id, data) {
-    const currentItem = await this.find(id);
+  static async update(gid, data) {
+    const currentItem = await this.find(gid);
     if (!currentItem) {
       throw new Error('Item not found');
     }
@@ -762,7 +762,7 @@ class BaseModel {
             await this._removeUniqueConstraint(
               field,
               currentItem[field],
-              id,
+              this.getGlobalId(currentItem),
               constraint.constraintId
             )
           );
@@ -773,7 +773,7 @@ class BaseModel {
           await this._createUniqueConstraint(
             field,
             data[field],
-            id,
+            currentItem.getGlobalId(),
             constraint.constraintId
           )
         );
@@ -853,12 +853,14 @@ class BaseModel {
       transactItems.push({
         Update: {
           TableName: this.table,
-          Key: this.getKeyForGlobalId(id),
+          Key: this.getKeyForGlobalId(gid),
           UpdateExpression: updateExpression,
           ExpressionAttributeNames: Object.keys(filteredNames).length > 0 ? filteredNames : undefined,
           ExpressionAttributeValues: Object.keys(filteredValues).length > 0 ? filteredValues : undefined
         }
       });
+
+      console.log('Update transact items:', JSON.stringify(transactItems, null, 2));
 
       try {
         const response = await this.documentClient.transactWrite({
@@ -867,14 +869,15 @@ class BaseModel {
         });
         
         // Fetch the updated item since transactWrite doesn't return values
-        const updatedItem = await this.find(id);
+        const updatedItem = await this.find(gid);
         updatedItem._response = {
           ConsumedCapacity: response.ConsumedCapacity,
         };
         return updatedItem;
         
       } catch (error) {
-        await this.validateUniqueConstraints(data, id);
+        console.error('Transaction error:', error);
+        await this.validateUniqueConstraints(data, gid);
       }
     } else {
       const response = await this.documentClient.update({
@@ -890,8 +893,8 @@ class BaseModel {
     }
   }
 
-  static async delete(id) {
-    const item = await this.find(id);
+  static async delete(gid) {
+    const item = await this.find(gid);
     if (!item) {
       throw new Error('Item not found');
     }
@@ -911,20 +914,18 @@ class BaseModel {
     // Add unique constraint cleanup
     const uniqueConstraints = Object.values(this.uniqueConstraints || {});
     if (uniqueConstraints.length > 0) {
-      uniqueConstraints.forEach(constraint => {
+      for (const constraint of uniqueConstraints) {
         const value = item[constraint.field];
         if (value) {
-          transactItems.push({
-            Delete: {
-              TableName: this.table,
-              Key: {
-                _pk: this.formatUniqueConstraintKey(constraint.constraintId, this.modelPrefix, constraint.field, value),
-                _sk: UNIQUE_CONSTRAINT_KEY
-              }
-            }
-          });
+          const constraintOp = await this._removeUniqueConstraint(
+            constraint.field,
+            value,
+            item.getGlobalId(),
+            constraint.constraintId
+          );
+          transactItems.push(constraintOp);
         }
-      });
+      }
     }
 
     const response = await this.documentClient.transactWrite({
@@ -934,7 +935,7 @@ class BaseModel {
 
     // Return deleted item info with capacity information
     return {
-      userId: id,
+      userId: gid,
       _pk: item.data._pk,
       _sk: item.data._sk,
       _response: {
@@ -1045,24 +1046,22 @@ class BaseModel {
       throw new Error('Data object is required for getGlobalId call');
     }
 
+    const pkField = this.fields[this.primaryKey.pk];
+    const skField = this.fields[this.primaryKey.sk];
+
+    const pkValue = this.getPkValue(data);
+    const skValue = this.getSkValue(data);
+
     if (this.primaryKey.sk === 'modelPrefix') {
-      const pkField = this.fields[this.primaryKey.pk];
-      return pkField.toGsi(this.getPkValue(data));
-    } else if (this.primaryKey.pk === 'modelPrefix') {
-      const skField = this.fields[this.primaryKey.sk];
-      return skField.toGsi(this.getSkValue(data));
-    } else {
-      const pkField = this.fields[this.primaryKey.pk];
-      const skField = this.fields[this.primaryKey.sk];
-  
-      // make sure these are encoded as strings
-      const pkValue = pkField.toGsi(this.getPkValue(data));
-      const skValue = skField.toGsi(this.getSkValue(data));
-  
-      if (pkValue !== undefined && skValue !== undefined && 
-        pkValue !== null && skValue !== null) {
-        return pkValue + GID_SEPARATOR + skValue;
+      if (pkValue !== undefined && pkValue !== null) {
+        return pkField.toGsi(pkValue);
       }
+    } else if (this.primaryKey.pk === 'modelPrefix') {
+      if (skValue !== undefined && skValue !== null) {
+        return skField.toGsi(skValue);
+      }
+    } else if (pkValue !== undefined && skValue !== undefined && pkValue !== null && skValue !== null) {
+      return pkField.toGsi(pkValue) + GID_SEPARATOR + skField.toGsi(skValue);
     }
     
     throw new Error(`PK and SK must be defined to get a GID`);

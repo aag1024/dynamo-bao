@@ -1,14 +1,13 @@
 // test/unique.test.js
 const { 
-  initModels, 
-  ModelManager,
+  initModels,
   User,
-  Post,
-  UNIQUE_CONSTRAINT_ID1 
 } = require('../src');
 const { cleanupTestData, verifyCleanup } = require('./utils/test-utils');
-const { DescribeTableCommand } = require('@aws-sdk/client-dynamodb');
+const { ulid } = require('ulid');
 require('dotenv').config();
+
+let testId;
 
 beforeAll(async () => {
   // Initialize models
@@ -16,31 +15,26 @@ beforeAll(async () => {
     region: process.env.AWS_REGION,
     tableName: process.env.TABLE_NAME
   });
-
-  const docClient = ModelManager.getInstance().documentClient;
-  
-  try {
-    const tableInfo = await docClient.send(new DescribeTableCommand({
-      TableName: process.env.TABLE_NAME
-    }));
-    console.log('Table exists:', tableInfo.Table.TableName);
-    console.log('GSIs:', tableInfo.Table.GlobalSecondaryIndexes);
-  } catch (error) {
-    console.error('Failed to connect to DynamoDB:', error);
-    throw error;
-  }
 });
 
 beforeEach(async () => {
-  const docClient = ModelManager.getInstance().documentClient;
-  await cleanupTestData(docClient, process.env.TABLE_NAME);
-  await verifyCleanup(docClient, process.env.TABLE_NAME);
+  testId = ulid();
+  
+  initModels({
+    region: process.env.AWS_REGION,
+    tableName: process.env.TABLE_NAME,
+    test_id: testId
+  });
+
+  await cleanupTestData(testId);
+  await verifyCleanup(testId);
 });
 
 afterEach(async () => {
-  const docClient = ModelManager.getInstance().documentClient;
-  await cleanupTestData(docClient, process.env.TABLE_NAME);
-  await verifyCleanup(docClient, process.env.TABLE_NAME);
+  if (testId) {
+    await cleanupTestData(testId);
+    await verifyCleanup(testId);
+  }
 });
 
 describe('User Unique Constraints', () => {
@@ -108,7 +102,18 @@ describe('User Unique Constraints', () => {
       status: user.status,
       createdAt: user.createdAt
     });
+
+    console.log('updatedUser', updatedUser);
+
     expect(updatedUser.email).toBe('test2@example.com');
+
+    const user2 = await User.create({
+      name: 'Test User 1',
+      email: 'test1@example.com',
+      status: 'active',
+    });
+    expect(user2.email).toBe('test1@example.com');
+
   });
 
   test('should prevent updating user with existing email', async () => {

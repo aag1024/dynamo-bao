@@ -1,13 +1,15 @@
 const { 
     initModels, 
-    ModelManager,
     User,
     Post,
     Tag,
     TaggedPost 
 } = require('../src');
-const { cleanupTestData } = require('./utils/test-utils');
+const { cleanupTestData, verifyCleanup } = require('./utils/test-utils');
+const { ulid } = require('ulid');
 require('dotenv').config();
+
+let testId;
 
 beforeAll(async () => {
   initModels({
@@ -20,8 +22,16 @@ describe('TaggedPost Queries', () => {
   let testUser, testPost1, testPost2, testTag1, testTag2;
 
   beforeEach(async () => {
-    const docClient = ModelManager.getInstance().documentClient;
-    await cleanupTestData(docClient, process.env.TABLE_NAME);
+    testId = ulid();
+  
+    initModels({
+      region: process.env.AWS_REGION,
+      tableName: process.env.TABLE_NAME,
+      test_id: testId
+    });
+
+    await cleanupTestData(testId);
+    await verifyCleanup(testId);
 
     // Create test user
     testUser = await User.create({
@@ -71,12 +81,18 @@ describe('TaggedPost Queries', () => {
   });
 
   afterEach(async () => {
-    // Cleanup test data
+    if (testId) {
+        await cleanupTestData(testId);
+        await verifyCleanup(testId);
+      }
   });
 
   test('should query posts for a tag using primary key', async () => {
     const tag = await Tag.find(testTag1.tagId);
+    expect(tag.tagId).toBe(testTag1.tagId);
+
     const posts = await tag.queryPosts();
+    console.log("Query posts:", posts);
     
     expect(posts.items).toHaveLength(2);
     expect(posts.items.map(p => p.postId).sort()).toEqual(

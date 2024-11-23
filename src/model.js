@@ -189,11 +189,13 @@ class BaseModel {
       throw new Error('Data object is required for static getPkValue call');
     }
 
-    const rawValue = this.primaryKey.pk === 'modelPrefix' ? 
+    const pkValue = this.primaryKey.pk === 'modelPrefix' ? 
       this.modelPrefix : 
       data[this.primaryKey.pk];
 
-    return this.formatPrimaryKey(this.modelPrefix, rawValue);
+    console.log('getPkValue', pkValue);
+
+    return pkValue;
   }
 
   static getSkValue(data) {
@@ -569,7 +571,7 @@ class BaseModel {
         }
       }
       
-      if (pkValue !== undefined && skValue !== undefined) {
+      if (pkValue !== undefined && skValue !== undefined && index.indexId !== undefined) {
         console.log('indexKeys', {
           pkValue,
           skValue,
@@ -601,6 +603,8 @@ class BaseModel {
       throw new Error(`Index "${indexName}" not found in ${this.name} model`);
     }
 
+    console.log('queryByIndex', { indexName, pkValue });
+
     // Format the partition key
     let formattedPk;
     if (index instanceof PrimaryKeyConfig) {
@@ -608,6 +612,8 @@ class BaseModel {
     } else {
       formattedPk = this.formatGsiKey(this.modelPrefix, index.indexId || '', pkValue);
     }
+
+    console.log('formattedPk', formattedPk);
 
     const params = this.getBaseQueryParams(
       index instanceof PrimaryKeyConfig ? '_pk' : `_${index.indexId ? index.indexId + '_' : ''}pk`,
@@ -636,6 +642,8 @@ class BaseModel {
         params.ExpressionAttributeValues[':rv'] = formatRangeValue(options.rangeValue);
       }
     }
+
+    console.log('Query params:', JSON.stringify(params, null, 2));
 
     const response = await this.documentClient.query(params);
   
@@ -694,7 +702,7 @@ class BaseModel {
       }
     }
 
-    const pk = this.getPkValue(itemToCreate);
+    const pk = this.formatPrimaryKey(this.modelPrefix, this.getPkValue(itemToCreate));
     const mainItem = {
       _pk: pk,
       _sk: this.getSkValue(itemToCreate),
@@ -1049,7 +1057,7 @@ class BaseModel {
     const pkField = this.fields[this.primaryKey.pk];
     const skField = this.fields[this.primaryKey.sk];
 
-    const pkValue = this.getPkValue(data);
+    const pkValue = this.formatPrimaryKey(this.modelPrefix, this.getPkValue(data));
     const skValue = this.getSkValue(data);
 
     if (this.primaryKey.sk === 'modelPrefix') {

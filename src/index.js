@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const { ModelManager } = require('./model-manager');
 const { ModelRegistry } = require('./model-registry');
+
 const { 
     BaseModel,
     PrimaryKeyConfig,
@@ -52,24 +53,18 @@ const {
    */
   function registerModels(modelsDir = DEFAULT_MODELS_DIR) {
     const registry = ModelRegistry.getInstance();
-    const discoveredModels = {};
-  
-    // Find all .js files in directory and subdirectories
     const modelFiles = findModelFiles(modelsDir);
+    const models = {};
   
-    modelFiles.forEach(filePath => {
-      const model = require(filePath);
-      
-      // Each model file should export a class that extends BaseModel
-      Object.entries(model).forEach(([name, exp]) => {
-        if (typeof exp === 'function' && exp.prototype instanceof BaseModel) {
-          registry.register(exp);
-          discoveredModels[name] = exp;
-        }
+    modelFiles.forEach(file => {
+      const model = require(file);
+      Object.entries(model).forEach(([name, ModelClass]) => {
+        registry.register(ModelClass);
+        models[name] = ModelClass;
       });
     });
   
-    return discoveredModels;
+    return models;
   }
   
   /**
@@ -80,15 +75,27 @@ const {
    * @param {string} [config.modelsDir] - Directory containing model files
    */
   function initModels(config) {
-    // Register models from specified directory (or default)
-    const models = registerModels(config.modelsDir);
-    
-    // Initialize ModelManager with discovered models
-    return ModelManager.getInstance().init({
-      region: config.region,
-      tableName: config.tableName,
-      models
+    // First register all models with the registry
+    const models = registerModels();
+  
+    // Get/create manager instance with test_id
+    const manager = ModelManager.getInstance(config.test_id);
+  
+    // Register all models with this manager instance
+    Object.values(models).forEach(ModelClass => {
+      manager.registerModel(ModelClass);
     });
+  
+    // Initialize the manager
+    manager.init(config);
+  
+    console.log('Models initialized:', {
+      testId: config.test_id,
+      managerTestId: manager.getTestId(),
+      registeredModels: Array.from(manager._models.keys())
+    });
+  
+    return manager;
   }
   
   // Register models from default directory for direct import support

@@ -112,7 +112,7 @@ class DateTimeField extends BaseField {
       const timestamp = this.toDy(value);
       if (!timestamp) return '0';
       const result = timestamp.toString().padStart(20, '0');
-      console.log('Converting to GSI:', { value, timestamp, result });
+      // console.log('Converting to GSI:', { value, timestamp, result });
       return result;
     } catch (error) {
       console.warn('Error converting date for GSI:', error);

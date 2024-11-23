@@ -1,7 +1,7 @@
 // src/model.js
 const { ulid } = require('ulid');
 const { StringField, DateTimeField, RelatedFieldClass, RelatedField } = require('./fields');
-const { ModelRegistry } = require('./model-registry');
+const { ModelManager } = require('./model-manager');
 
 // Constants for GSI indexes
 const GSI_INDEX_ID1 = 'gsi1';
@@ -14,6 +14,7 @@ const UNIQUE_CONSTRAINT_ID2 = '_uc2';
 const UNIQUE_CONSTRAINT_ID3 = '_uc3';
 
 const GID_SEPARATOR = "##__SK__##";
+const UNIQUE_CONSTRAINT_KEY = "_raft_uc";
 
 class PrimaryKeyConfig {
   constructor(pk, sk = 'modelPrefix') {
@@ -58,6 +59,7 @@ class UniqueConstraintConfig {
 }
 
 class BaseModel {
+  static _test_id = null;
   static table = null;
   static documentClient = null;
   
@@ -67,6 +69,17 @@ class BaseModel {
   static primaryKey = null;
   static indexes = {};
   static uniqueConstraints = {};
+
+  static setTestId(test_id) {
+    this._test_id = test_id;
+    const manager = ModelManager.getInstance(test_id);
+    this.documentClient = manager.documentClient;
+    this.table = manager.tableName;
+  }
+
+  static get manager() {
+    return ModelManager.getInstance(this._test_id);
+  }
 
   static validateConfiguration() {
     if (!this.modelPrefix) {
@@ -133,7 +146,7 @@ class BaseModel {
 
     relatedIndexes.forEach(([indexName, index]) => {
       const sourceField = this.fields[index.pk];
-      const SourceModel = ModelRegistry.getInstance().get(sourceField.modelName);
+      const SourceModel = this.manager.getModel(sourceField.modelName);
       const CurrentModel = this;
 
       // Generate method name from index name
@@ -176,11 +189,11 @@ class BaseModel {
       throw new Error('Data object is required for static getPkValue call');
     }
 
-    if (this.primaryKey.pk === 'modelPrefix') {
-      return this.modelPrefix;
-    }
+    const rawValue = this.primaryKey.pk === 'modelPrefix' ? 
+      this.modelPrefix : 
+      data[this.primaryKey.pk];
 
-    return data[this.primaryKey.pk];
+    return this.formatPrimaryKey(this.modelPrefix, rawValue);
   }
 
   static getSkValue(data) {
@@ -202,41 +215,6 @@ class BaseModel {
     return this.constructor.getSkValue(this.data);
   }
 
-  static getIndexKeys(data) {
-    const indexKeys = {};
-    
-    Object.entries(this.indexes).forEach(([indexName, index]) => {
-      let pkValue, skValue;
-      
-      // Handle partition key
-      if (index.pk === 'modelPrefix') {
-        pkValue = this.modelPrefix;
-      } else {
-        const pkField = this.fields[index.pk];
-        pkValue = pkField.toGsi(data[index.pk]);
-      }
-      
-      // Handle sort key
-      if (index.sk === 'modelPrefix') {
-        skValue = this.modelPrefix;
-      } else {
-        const skField = this.fields[index.sk];
-        skValue = skField.toGsi(data[index.sk]);
-      }
-      
-      if (pkValue !== undefined && skValue !== undefined) {
-        // Format the GSI keys
-        const gsiPk = `${this.modelPrefix}#${index.indexId}#${pkValue}`;
-        const gsiSk = skValue;
-        
-        indexKeys[`_${index.indexId}_pk`] = gsiPk;
-        indexKeys[`_${index.indexId}_sk`] = gsiSk;
-      }
-    });
-    
-    return indexKeys;
-  }
-
   static getCapacityFromResponse(response) {
     if (!response) return [];
     const consumed = response.ConsumedCapacity;
@@ -256,15 +234,19 @@ class BaseModel {
   }
 
   static async _createUniqueConstraint(field, value, relatedId, constraintId = UNIQUE_CONSTRAINT_ID1) {
+    const testId = this.manager.getTestId();
+    const key = this.formatUniqueConstraintKey(constraintId, this.modelPrefix, field, value);
+
     return {
       Put: {
         TableName: this.table,
         Item: {
-          _pk: `_raft_uc#${constraintId}#${this.modelPrefix}#${field}:${value}`,
-          _sk: '_raft_uc',
-          uniqueValue: `${this.modelPrefix}:${field}:${value}`,
+          _pk: key,
+          _sk: UNIQUE_CONSTRAINT_KEY,
+          uniqueValue: key,
           relatedId: relatedId,
-          relatedModel: this.name
+          relatedModel: this.name,
+          _gsi_test_id: testId
         },
         ConditionExpression: 'attribute_not_exists(#pk) OR (relatedId = :relatedId AND relatedModel = :modelName)',
         ExpressionAttributeNames: {
@@ -283,8 +265,8 @@ class BaseModel {
       Delete: {
         TableName: this.table,
         Key: {
-          _pk: `_raft_uc#${constraintId}#${this.modelPrefix}#${field}:${value}`,
-          _sk: '_raft_uc'
+          _pk: this.formatUniqueConstraintKey(constraintId, this.modelPrefix, field, value),
+          _sk: UNIQUE_CONSTRAINT_KEY
         },
         ConditionExpression: 'relatedId = :relatedId AND relatedModel = :modelName',
         ExpressionAttributeValues: {
@@ -296,9 +278,11 @@ class BaseModel {
   }
 
   static async find(gid) {
+    const key = this.getKeyForGlobalId(gid);
+    console.log('find key', key);
     const result = await this.documentClient.get({
       TableName: this.table,
-      Key: this.getKeyForGlobalId(gid),
+      Key: key,
       ReturnConsumedCapacity: 'TOTAL'
     });
 
@@ -341,15 +325,21 @@ class BaseModel {
   }
 
   static formatGsiKey(modelPrefix, indexId, value) {
-    return `${modelPrefix}#${indexId}#${value}`;
+    const testId = this.manager.getTestId();
+    const baseKey = `${modelPrefix}#${indexId}#${value}`;
+    return testId ? `[${testId}]#${baseKey}` : baseKey;
   }
 
   static formatPrimaryKey(modelPrefix, value) {
-    return `${modelPrefix}#${value}`;
+    const testId = this.manager.getTestId();
+    const baseKey = `${modelPrefix}#${value}`;
+    return testId ? `[${testId}]#${baseKey}` : baseKey;
   }
 
   static formatUniqueConstraintKey(constraintId, modelPrefix, field, value) {
-    return `_raft_uc#${constraintId}#${modelPrefix}#${field}:${value}`;
+    const testId = this.manager.getTestId();
+    const baseKey = `${UNIQUE_CONSTRAINT_KEY}#${constraintId}#${modelPrefix}#${field}:${value}`;
+    return testId ? `[${testId}]#${baseKey}` : baseKey;
   }
 
   static getBaseQueryParams(pkFieldName, pkValue, options = {}) {
@@ -410,36 +400,116 @@ class BaseModel {
     };
   }
 
-  static async validateUniqueConstraints(error, data, currentId = null) {
-    if (error.name === 'TransactionCanceledException') {
-      for (const constraint of Object.values(this.uniqueConstraints)) {
-        if (data[constraint.field]) {
-          try {
-            const result = await this.documentClient.get({
-              TableName: this.table,
-              Key: {
-                _pk: this.formatUniqueConstraintKey(
-                  constraint.constraintId,
-                  this.modelPrefix,
-                  constraint.field,
-                  data[constraint.field]
-                ),
-                _sk: '_raft_uc'
-              }
-            });
-            
-            if (result.Item && (!currentId || result.Item.relatedId !== currentId)) {
-              throw new Error(`${constraint.field} must be unique`);
-            }
-          } catch (innerError) {
-            if (innerError.message.includes('must be unique')) {
-              throw innerError;
-            }
+  static async validateUniqueConstraints(data, currentId = null) {
+    console.log('validateUniqueConstraints called on', this.name, {
+      modelTestId: this._test_id,
+      managerTestId: this.manager.getTestId(),
+      instanceKey: this._test_id || 'default'
+    });
+
+    if (!this.uniqueConstraints) {
+      return;
+    }
+
+    const docClient = this.manager.documentClient;
+    const tableName = this.manager.tableName;
+
+    for (const [name, constraint] of Object.entries(this.uniqueConstraints)) {
+      const value = data[constraint.field];
+      if (!value) continue;
+
+      try {
+        const key = this.formatUniqueConstraintKey(
+          constraint.constraintId,
+          this.modelPrefix,
+          constraint.field,
+          value
+        );
+
+        console.log('Checking unique constraint:', {
+          key,
+          field: constraint.field,
+          value,
+          testId: this.manager.getTestId(),
+          managerTestId: this.manager.getTestId()
+        });
+
+        const result = await docClient.get({
+          TableName: tableName,
+          Key: {
+            _pk: key,
+            _sk: UNIQUE_CONSTRAINT_KEY
+          }
+        });
+        
+        if (result.Item) {
+          console.log('Found existing constraint:', result.Item);
+          if (!currentId || result.Item.relatedId !== currentId) {
+            throw new Error(`${constraint.field} must be unique`);
           }
         }
+      } catch (innerError) {
+        if (innerError.message.includes('must be unique')) {
+          throw innerError;
+        }
+        console.error('Error checking unique constraint:', innerError);
+        throw new Error(`Failed to validate ${constraint.field} uniqueness`);
       }
     }
-    throw error;
+  }
+
+  static async createUniqueConstraints(data, id) {
+    if (!this.uniqueConstraints) {
+      return [];
+    }
+
+    const items = [];
+    for (const [name, constraint] of Object.entries(this.uniqueConstraints)) {
+      const value = data[constraint.field];
+      if (!value) continue;
+
+      const key = this.formatUniqueConstraintKey(
+        constraint.constraintId,
+        this.modelPrefix,
+        constraint.field,
+        value
+      );
+
+      items.push({
+        _pk: key,
+        _sk: UNIQUE_CONSTRAINT_KEY,
+        relatedId: id,
+        _gsi_test_id: this._test_id,
+      });
+    }
+
+    return items;
+  }
+
+  static async deleteUniqueConstraints(data) {
+    if (!this.uniqueConstraints) {
+      return [];
+    }
+
+    const items = [];
+    for (const [name, constraint] of Object.entries(this.uniqueConstraints)) {
+      const value = data[constraint.field];
+      if (!value) continue;
+
+      const key = this.formatUniqueConstraintKey(
+        constraint.constraintId,
+        this.modelPrefix,
+        constraint.field,
+        value
+      );
+
+      items.push({
+        _pk: key,
+        _sk: UNIQUE_CONSTRAINT_KEY
+      });
+    }
+
+    return items;
   }
 
   static isModelPrefixGid(gid) {
@@ -482,7 +552,10 @@ class BaseModel {
         pkValue = this.modelPrefix;
       } else {
         const pkField = this.fields[index.pk];
-        pkValue = pkField.toGsi(data[index.pk]);
+        pkValue = data[index.pk];
+        if (pkValue !== undefined) {
+          pkValue = pkField.toGsi(pkValue);
+        }
       }
       
       // Handle sort key
@@ -490,10 +563,18 @@ class BaseModel {
         skValue = this.modelPrefix;
       } else {
         const skField = this.fields[index.sk];
-        skValue = skField.toGsi(data[index.sk]);
+        skValue = data[index.sk];
+        if (skValue !== undefined) {
+          skValue = skField.toGsi(skValue);
+        }
       }
       
       if (pkValue !== undefined && skValue !== undefined) {
+        console.log('indexKeys', {
+          pkValue,
+          skValue,
+          indexId: index.indexId
+        });
         const gsiPk = this.formatGsiKey(this.modelPrefix, index.indexId, pkValue);
         indexKeys[`_${index.indexId}_pk`] = gsiPk;
         indexKeys[`_${index.indexId}_sk`] = skValue;
@@ -570,6 +651,8 @@ class BaseModel {
   }
 
   static async create(data) {
+    // Validate unique constraints before attempting transaction
+    await this.validateUniqueConstraints(data);
     const itemToCreate = {};
     
     // First pass: Handle initial values for undefined fields
@@ -590,10 +673,16 @@ class BaseModel {
       }
     }
 
+    // Add test_id if we're in test mode
+    const testId = this.manager.getTestId();
+    if (testId) {
+      itemToCreate._gsi_test_id = testId;
+    }
+
     const transactItems = [];
 
     // Add unique constraint operations
-    for (const constraint of Object.values(this.uniqueConstraints)) {
+    for (const constraint of Object.values(this.uniqueConstraints || {})) {
       if (itemToCreate[constraint.field]) {
         const constraintOp = await this._createUniqueConstraint(
           constraint.field,
@@ -605,15 +694,21 @@ class BaseModel {
       }
     }
 
-    // Add the main item creation
+    const pk = this.getPkValue(itemToCreate);
     const mainItem = {
-      _pk: `${this.modelPrefix}#${this.getPkValue(itemToCreate)}`,
+      _pk: pk,
       _sk: this.getSkValue(itemToCreate),
       // Add GSI keys from index configuration
       ...this.getIndexKeys(itemToCreate),
       // Add the rest of the item data
       ...itemToCreate
     };
+
+    if (testId) {
+      mainItem._gsi_test_id = testId;
+    }
+
+    console.log('Creating item:', mainItem);
 
     transactItems.push({
       Put: {
@@ -640,7 +735,12 @@ class BaseModel {
       return instance;
       
     } catch (error) {
-      await this.validateUniqueConstraints(error, data);
+      console.error('Transaction error:', error);
+      if (error.name === 'TransactionCanceledException') {
+        // Re-validate unique constraints to get a better error message
+        await this.validateUniqueConstraints(data);
+      }
+      throw error;
     }
   }
 
@@ -774,7 +874,7 @@ class BaseModel {
         return updatedItem;
         
       } catch (error) {
-        await this.validateUniqueConstraints(error, data, id);
+        await this.validateUniqueConstraints(data, id);
       }
     } else {
       const response = await this.documentClient.update({
@@ -818,8 +918,8 @@ class BaseModel {
             Delete: {
               TableName: this.table,
               Key: {
-                _pk: `_raft_uc#${constraint.constraintId}#${this.modelPrefix}#${constraint.field}:${value}`,
-                _sk: '_raft_uc'
+                _pk: this.formatUniqueConstraintKey(constraint.constraintId, this.modelPrefix, constraint.field, value),
+                _sk: UNIQUE_CONSTRAINT_KEY
               }
             }
           });
@@ -907,7 +1007,7 @@ class BaseModel {
               return this._relatedObjects[fieldName];
             }
             
-            const Model = ModelRegistry.getInstance().get(field.modelName);
+            const Model = this.constructor.manager.getModel(field.modelName);
             this._relatedObjects[fieldName] = await Model.find(this[fieldName]);
             return this._relatedObjects[fieldName];
           };
@@ -955,6 +1055,7 @@ class BaseModel {
       const pkField = this.fields[this.primaryKey.pk];
       const skField = this.fields[this.primaryKey.sk];
   
+      // make sure these are encoded as strings
       const pkValue = pkField.toGsi(this.getPkValue(data));
       const skValue = skField.toGsi(this.getSkValue(data));
   
@@ -1039,7 +1140,7 @@ class BaseModel {
     if (!value) return null;
     
     // Get the related model class from the registry
-    const ModelClass = ModelRegistry.getInstance().get(field.modelName);
+    const ModelClass = this.constructor.manager.getModel(field.modelName);
     
     // If we already have a model instance, return it
     if (value instanceof ModelClass) {

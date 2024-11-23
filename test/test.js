@@ -10,6 +10,10 @@ const {
 const { DynamoDBClient, DescribeTableCommand } = require('@aws-sdk/client-dynamodb');
 const { cleanupTestData, verifyCleanup } = require('./utils/test-utils');
 require('dotenv').config();
+const { ulid } = require('ulid');
+const { QueryCommand } = require('@aws-sdk/lib-dynamodb');
+
+let testId;
 
 beforeAll(async () => {
   // Initialize models
@@ -33,15 +37,22 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
-  const docClient = ModelManager.getInstance().documentClient;
-  await cleanupTestData(docClient, process.env.TABLE_NAME);
-  await verifyCleanup(docClient, process.env.TABLE_NAME);
+  testId = ulid();
+  
+  initModels({
+    region: process.env.AWS_REGION,
+    tableName: process.env.TABLE_NAME,
+    test_id: testId
+  });
+
+  await cleanupTestData(testId);
+  await verifyCleanup(testId);
 });
 
 afterEach(async () => {
-  const docClient = ModelManager.getInstance().documentClient;
-  await cleanupTestData(docClient, process.env.TABLE_NAME);
-  await verifyCleanup(docClient, process.env.TABLE_NAME);
+  if (testId) {
+    await cleanupTestData(testId);
+  }
 });
 
 describe('User CRUD Operations', () => {
@@ -109,7 +120,6 @@ describe('User Unique Constraints', () => {
 
     const user = await User.create(userData);
     await User.delete(user.userId);
-
     const newUser = await User.create({
       name: 'New Test User',
       email: 'test@example.com',
@@ -216,40 +226,36 @@ describe('Date Range Queries', () => {
   });
 });
 
-describe('Test Utils', () => {
-  test('cleanup should remove all test data', async () => {
-    const docClient = ModelManager.getInstance().documentClient;
-    
-    const userData = {
-      name: 'Test User',
-      email: 'test@example.com',
-      external_id: 'ext1'
-    };
+test('should properly set test_id on models', async () => {
+  initModels({
+    region: process.env.AWS_REGION,
+    tableName: process.env.TABLE_NAME,
+    test_id: testId
+  });
 
-    await User.create(userData);
+  const user = await User.create({
+    name: 'Test User',
+    email: 'test@example.com',
+    external_id: 'ext1',
+    external_platform: 'platform1'
+  });
 
-    // Verify data exists
-    const initialScan = await docClient.scan({
-      TableName: process.env.TABLE_NAME
-    });
-    expect(initialScan.Items.length).toBeGreaterThan(0);
+  const manager = ModelManager.getInstance(testId);
+  const docClient = manager.documentClient;
+  const result = await docClient.send(new QueryCommand({
+    TableName: process.env.TABLE_NAME,
+    IndexName: 'gsi_test',
+    KeyConditionExpression: '#testId = :testId',
+    ExpressionAttributeNames: {
+      '#testId': '_gsi_test_id'
+    },
+    ExpressionAttributeValues: {
+      ':testId': testId
+    }
+  }));
 
-    // Cleanup
-    await cleanupTestData(docClient, process.env.TABLE_NAME);
-
-    // Verify cleanup
-    const scanResult = await docClient.scan({
-      TableName: process.env.TABLE_NAME,
-      FilterExpression: 'begins_with(#pk, :prefix1) OR begins_with(#pk, :prefix2)',
-      ExpressionAttributeNames: {
-        '#pk': '_pk'
-      },
-      ExpressionAttributeValues: {
-        ':prefix1': 'u#',
-        ':prefix2': 'p#'
-      }
-    });
-
-    expect(scanResult.Items.length).toBe(0);
+  expect(result.Items.length).toBe(3);
+  result.Items.forEach(item => {
+    expect(item._gsi_test_id).toBe(testId);
   });
 });

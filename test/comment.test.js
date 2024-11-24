@@ -1,49 +1,60 @@
 const { 
     initModels, 
     ModelManager,
-    User, 
-    Post,
-    Comment
   } = require('../src');
   const { cleanupTestData, verifyCleanup } = require('./utils/test-utils');
+  const { ulid } = require('ulid');
   require('dotenv').config();
   
-  let testUser, testPost;
+  let testUser, testPost, testId;
   
   describe('Comment Model', () => {
     beforeAll(async () => {
-      initModels({
-        region: process.env.AWS_REGION,
-        tableName: process.env.TABLE_NAME
-      });
+        // Initialize models
+        initModels({
+            region: process.env.AWS_REGION,
+            tableName: process.env.TABLE_NAME
+          });
     });
   
     beforeEach(async () => {
-      const docClient = ModelManager.getInstance().documentClient;
-      await cleanupTestData(docClient, process.env.TABLE_NAME);
-      await verifyCleanup(docClient, process.env.TABLE_NAME);
+        testId = ulid();
+
+        initModels({
+            region: process.env.AWS_REGION,
+            tableName: process.env.TABLE_NAME,
+            test_id: testId
+        });
+
+        await cleanupTestData(testId);
+        await verifyCleanup(testId);
+
+        User = ModelManager.getInstance(testId).getModel('User');
+        Post = ModelManager.getInstance(testId).getModel('Post');
+        Comment = ModelManager.getInstance(testId).getModel('Comment');
   
-      // Create a test user and post for each test
-      testUser = await User.create({
-        name: 'Test User',
-        email: `test${Date.now()}@example.com`,
-        external_id: `ext${Date.now()}`,
-        external_platform: 'platform1',
-        role: 'user',
-        status: 'active'
-      });
-  
-      testPost = await Post.create({
-        userId: testUser.userId,
-        title: 'Test Post',
-        content: 'Test Content'
-      });
+        // Create a test user and post for each test
+        testUser = await User.create({
+            name: 'Test User',
+            email: `test${Date.now()}@example.com`,
+            external_id: `ext${Date.now()}`,
+            external_platform: 'platform1',
+            role: 'user',
+            status: 'active'
+        });
+    
+        testPost = await Post.create({
+            userId: testUser.userId,
+            title: 'Test Post',
+            content: 'Test Content'
+        });
     });
   
     afterEach(async () => {
-      const docClient = ModelManager.getInstance().documentClient;
-      await cleanupTestData(docClient, process.env.TABLE_NAME);
-      await verifyCleanup(docClient, process.env.TABLE_NAME);
+        if (testId) {
+            await cleanupTestData(testId);
+            await verifyCleanup(testId);
+        }
     });
   
     describe('Basic CRUD Operations', () => {

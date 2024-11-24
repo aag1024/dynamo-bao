@@ -1,14 +1,14 @@
 // test/capacity.test.js
 const { 
     initModels, 
-    ModelManager,
-    User, 
+    ModelManager
 } = require('../src');
 const { cleanupTestData, verifyCleanup } = require('./utils/test-utils');
 const { verifyCapacityUsage } = require('./dynamoTestUtils');
+const { ulid } = require('ulid');
 require('dotenv').config();
 
-let totalConsumedCapacity = 0;
+let totalConsumedCapacity = 0, testId;
 
 // Add helper function to track capacity
 async function sumConsumedCapacity() {
@@ -23,16 +23,28 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
-  const docClient = ModelManager.getInstance().documentClient;
-  await cleanupTestData(docClient, process.env.TABLE_NAME);
-  await verifyCleanup(docClient, process.env.TABLE_NAME);
-  totalConsumedCapacity = 0;  // Reset capacity counter
+    testId = ulid();
+
+    initModels({
+        region: process.env.AWS_REGION,
+        tableName: process.env.TABLE_NAME,
+        test_id: testId
+    });
+
+    if (testId) {
+        await cleanupTestData(testId);
+        await verifyCleanup(testId);
+    }
+
+    User = ModelManager.getInstance(testId).getModel('User');
+    totalConsumedCapacity = 0;  // Reset capacity counter
 });
 
 afterEach(async () => {
-  const docClient = ModelManager.getInstance().documentClient;
-  await cleanupTestData(docClient, process.env.TABLE_NAME);
-  await verifyCleanup(docClient, process.env.TABLE_NAME);
+    if (testId) {
+        await cleanupTestData(testId);
+        await verifyCleanup(testId);
+    }
 });
 
 describe('Capacity Usage Tests', () => {
@@ -84,7 +96,7 @@ describe('Capacity Usage Tests', () => {
         status: user.status
       }),
       0,     // Expected RCU - reads are eventually consistent
-      12.0   // Expected WCU - for update with unique constraint changes
+      16.0   // Expected WCU - for update with unique constraint changes (assuming running in test)
     );
     expect(result.email).toBe('new-email@example.com');
   });

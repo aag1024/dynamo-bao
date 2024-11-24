@@ -1,8 +1,6 @@
 const { 
   initModels, 
   ModelManager,
-  User, 
-  Post
 } = require('../src');
 const { cleanupTestData, verifyCleanup } = require('./utils/test-utils');
 const { ulid } = require('ulid');
@@ -30,6 +28,9 @@ describe('Post Model', () => {
 
     await cleanupTestData(testId);
     await verifyCleanup(testId);
+
+    User = ModelManager.getInstance(testId).getModel('User');
+    Post = ModelManager.getInstance(testId).getModel('Post');
 
     // Create a test user with unique values for each test
     testUser = await User.create({

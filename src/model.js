@@ -462,64 +462,6 @@ class BaseModel {
     }
   }
 
-  // static async createUniqueConstraints(data, id) {
-  //   if (!this.uniqueConstraints) {
-  //     return [];
-  //   }
-
-  //   const items = [];
-  //   for (const [name, constraint] of Object.entries(this.uniqueConstraints)) {
-  //     const value = data[constraint.field];
-  //     if (!value) continue;
-
-  //     const key = this.formatUniqueConstraintKey(
-  //       constraint.constraintId,
-  //       this.modelPrefix,
-  //       constraint.field,
-  //       value
-  //     );
-
-  //     items.push({
-  //       _pk: key,
-  //       _sk: UNIQUE_CONSTRAINT_KEY,
-  //       relatedId: id,
-  //       _gsi_test_id: this._test_id,
-  //     });
-  //   }
-
-  //   return items;
-  // }
-
-  // static async deleteUniqueConstraints(data) {
-  //   if (!this.uniqueConstraints) {
-  //     return [];
-  //   }
-
-  //   const items = [];
-  //   for (const [name, constraint] of Object.entries(this.uniqueConstraints)) {
-  //     const value = data[constraint.field];
-  //     if (!value) continue;
-
-  //     const key = this.formatUniqueConstraintKey(
-  //       constraint.constraintId,
-  //       this.modelPrefix,
-  //       constraint.field,
-  //       value
-  //     );
-
-  //     items.push({
-  //       _pk: key,
-  //       _sk: UNIQUE_CONSTRAINT_KEY
-  //     });
-  //   }
-
-  //   return items;
-  // }
-
-  // static isModelPrefixGid(gid) {
-  //   return gid.indexOf(GID_SEPARATOR) === -1;
-  // }
-
   static getDyKeyForPkSk(pkSk) {
     if (this.primaryKey.sk === 'modelPrefix') {
       return {
@@ -886,7 +828,7 @@ class BaseModel {
         await this.validateUniqueConstraints(data, primaryId);
       }
     } else {
-      const pkSk = this.primaryIdToPkSk(primaryId);
+      const pkSk = this.parsePrimaryId(primaryId);
       const response = await this.documentClient.update({
         TableName: this.table,
         Key: this.getDyKeyForPkSk(pkSk),
@@ -941,13 +883,8 @@ class BaseModel {
     });
 
     // Return deleted item info with capacity information
-    return {
-      _pk: item.data._pk,
-      _sk: item.data._sk,
-      _response: {
-        ConsumedCapacity: response.ConsumedCapacity
-      }
-    };
+    item._response = response;
+    return item;
   }
 
   constructor(data = {}) {
@@ -1094,7 +1031,7 @@ class BaseModel {
       }
   
       if (primaryId.indexOf(GID_SEPARATOR) !== -1) {
-        const [pk, sk] = gid.split(GID_SEPARATOR);
+        const [pk, sk] = primaryId.split(GID_SEPARATOR);
         return {pk, sk};
       } else {
         if (this.primaryKey.pk === 'modelPrefix') {
@@ -1105,22 +1042,6 @@ class BaseModel {
           throw new Error(`Invalid primary ID: ${primaryId}`);
         }
       }
-  }
-
-  static primaryIdToPkSk(id) {
-    // if id has pk, sk, return id
-    // if primaryKey.pk is modelPrefix and id is not an object, return { pk: modelPrefix, sk: id }
-    // if primaryKey.sk is modelPrefix and id is not an object, return { pk: id, sk: modelPrefix }
-    // otherwise, throw an error
-    if (typeof id === 'object') {
-      return id;
-    } else if (this.primaryKey.pk === 'modelPrefix') {
-      return { pk: this.modelPrefix, sk: id };
-    } else if (this.primaryKey.sk === 'modelPrefix') {
-      return { pk: id, sk: this.modelPrefix };
-    } else {
-      throw new Error(`Invalid primary ID: ${id}`);
-    }
   }
 
   // Get only changed fields

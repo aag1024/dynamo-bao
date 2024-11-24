@@ -1,5 +1,4 @@
 const { ulid, decodeTime } = require('ulid');
-const { ModelRegistry } = require('./model-registry');
 
 class BaseField {
   constructor(options = {}) {

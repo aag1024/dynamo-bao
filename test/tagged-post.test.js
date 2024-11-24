@@ -1,9 +1,6 @@
 const { 
-    initModels, 
-    User,
-    Post,
-    Tag,
-    TaggedPost 
+    initModels,
+    ModelManager
 } = require('../src');
 const { cleanupTestData, verifyCleanup } = require('./utils/test-utils');
 const { ulid } = require('ulid');
@@ -32,6 +29,11 @@ describe('TaggedPost Queries', () => {
 
     await cleanupTestData(testId);
     await verifyCleanup(testId);
+
+    User = ModelManager.getInstance(testId).getModel('User');
+    Post = ModelManager.getInstance(testId).getModel('Post');
+    Tag = ModelManager.getInstance(testId).getModel('Tag');
+    TaggedPost = ModelManager.getInstance(testId).getModel('TaggedPost');
 
     // Create test user
     testUser = await User.create({

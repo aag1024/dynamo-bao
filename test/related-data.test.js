@@ -1,8 +1,6 @@
 const { 
     initModels, 
     ModelManager,
-    User,
-    Post
   } = require('../src');
   const { cleanupTestData, verifyCleanup } = require('./utils/test-utils');
   const { ulid } = require('ulid');
@@ -26,6 +24,9 @@ const {
             tableName: process.env.TABLE_NAME,
             test_id: testId
         });
+
+        User = ModelManager.getInstance(testId).getModel('User');
+        Post = ModelManager.getInstance(testId).getModel('Post');
 
         await cleanupTestData(testId);
         await verifyCleanup(testId);

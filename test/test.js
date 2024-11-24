@@ -1,7 +1,6 @@
 const { 
     initModels,
     ModelManager,
-    User,
   } = require('../src');
 const { DescribeTableCommand } = require('@aws-sdk/client-dynamodb');
 const { cleanupTestData, verifyCleanup } = require('./utils/test-utils');
@@ -43,6 +42,8 @@ beforeEach(async () => {
 
   await cleanupTestData(testId);
   await verifyCleanup(testId);
+
+  User = ModelManager.getInstance(testId).getModel('User');
 });
 
 afterEach(async () => {

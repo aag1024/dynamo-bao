@@ -2,7 +2,6 @@
 const fs = require('fs');
 const path = require('path');
 const { ModelManager } = require('./model-manager');
-const { ModelRegistry } = require('./model-registry');
 
 const { 
     BaseModel,
@@ -22,11 +21,6 @@ const {
   // Default models directory is relative to this file
   const DEFAULT_MODELS_DIR = path.join(__dirname, 'models');
   
-  /**
-   * Recursively discovers model files in a directory
-   * @param {string} dir - Directory to search
-   * @returns {string[]} Array of file paths
-   */
   function findModelFiles(dir) {
     let results = [];
     const items = fs.readdirSync(dir);
@@ -46,20 +40,19 @@ const {
     return results;
   }
   
-  /**
-   * Registers models from the specified directory
-   * @param {string} [modelsDir] - Directory containing model files
-   * @returns {Object} Object containing all discovered models
-   */
-  function registerModels(modelsDir = DEFAULT_MODELS_DIR) {
-    const registry = ModelRegistry.getInstance();
+  function registerModels(manager = null, modelsDir = DEFAULT_MODELS_DIR) {
+    // If no manager provided, use the default instance
+    if (!manager) {
+      manager = ModelManager.getInstance();
+    }
+  
     const modelFiles = findModelFiles(modelsDir);
     const models = {};
   
     modelFiles.forEach(file => {
       const model = require(file);
       Object.entries(model).forEach(([name, ModelClass]) => {
-        registry.register(ModelClass);
+        manager.registerModel(ModelClass);
         models[name] = ModelClass;
       });
     });
@@ -67,24 +60,10 @@ const {
     return models;
   }
   
-  /**
-   * Initializes the model system
-   * @param {Object} config - Configuration object
-   * @param {string} config.region - AWS region
-   * @param {string} config.tableName - DynamoDB table name
-   * @param {string} [config.modelsDir] - Directory containing model files
-   */
-  function initModels(config) {
-    // First register all models with the registry
-    const models = registerModels();
-  
+  function initModels(config) {  
     // Get/create manager instance with test_id
     const manager = ModelManager.getInstance(config.test_id);
-  
-    // Register all models with this manager instance
-    Object.values(models).forEach(ModelClass => {
-      manager.registerModel(ModelClass);
-    });
+    registerModels(manager);
   
     // Initialize the manager
     manager.init(config);
@@ -98,7 +77,6 @@ const {
     return manager;
   }
   
-  // Register models from default directory for direct import support
   const defaultModels = registerModels();
   
   module.exports = {

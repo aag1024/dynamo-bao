@@ -1,7 +1,7 @@
 // test/unique.test.js
 const { 
   initModels,
-  User,
+  ModelManager
 } = require('../src');
 const { cleanupTestData, verifyCleanup } = require('./utils/test-utils');
 const { ulid } = require('ulid');
@@ -28,6 +28,8 @@ beforeEach(async () => {
 
   await cleanupTestData(testId);
   await verifyCleanup(testId);
+
+  User = ModelManager.getInstance(testId).getModel('User');
 });
 
 afterEach(async () => {

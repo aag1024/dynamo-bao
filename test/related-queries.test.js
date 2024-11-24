@@ -1,10 +1,6 @@
 const { 
     initModels, 
-    ModelManager,
-    User,
-    Post,
-    Tag,
-    TaggedPost 
+    ModelManager
 } = require('../src');
 const { cleanupTestData, verifyCleanup } = require('./utils/test-utils');
 const { ulid } = require('ulid');
@@ -31,7 +27,12 @@ describe('Related Field Queries', () => {
 
     await cleanupTestData(testId);
     await verifyCleanup(testId);
-    
+
+    User = ModelManager.getInstance(testId).getModel('User');
+    Post = ModelManager.getInstance(testId).getModel('Post');
+    Tag = ModelManager.getInstance(testId).getModel('Tag');
+    TaggedPost = ModelManager.getInstance(testId).getModel('TaggedPost');
+
     // Create test user
     testUser = await User.create({
       name: 'Test User',

@@ -1,11 +1,12 @@
 const { initModels } = require('../src');
 const { ModelManager } = require('../src/model-manager');
-const { ModelRegistry } = require('../src/model-registry');
 const { BaseModel, PrimaryKeyConfig } = require('../src/model');
 const { StringField, CounterField } = require('../src/fields');
 const { cleanupTestData, verifyCleanup } = require('./utils/test-utils');
-const { verifyCapacityUsage } = require('./dynamoTestUtils');
+const { ulid } = require('ulid');
 require('dotenv').config();
+
+let testId;
 
 class TestCounter extends BaseModel {
   static modelPrefix = 'tc';
@@ -24,27 +25,36 @@ describe('Counter Field Tests', () => {
   let testCounter;
 
   beforeAll(async () => {
-    // First initialize the ModelManager
-    const manager = ModelManager.getInstance();
-    manager.init({
+    // Initialize models
+    initModels({
+        region: process.env.AWS_REGION,
+        tableName: process.env.TABLE_NAME
+    });
+  });
+
+  beforeEach(async () => {
+    testId = ulid();
+  
+    initModels({
       region: process.env.AWS_REGION,
-      tableName: process.env.TABLE_NAME
+      tableName: process.env.TABLE_NAME,
+      test_id: testId
     });
 
     // Then register the TestCounter model
-    ModelRegistry.getInstance().register(TestCounter);
-    
+    const manager = ModelManager.getInstance(testId);
+    manager.registerModel(TestCounter);
+
     // Set up the model manually since it's not in the models directory
     TestCounter.documentClient = manager.documentClient;
     TestCounter.table = manager.tableName;
     TestCounter.validateConfiguration();
     TestCounter.registerRelatedIndexes();
-  });
 
-  beforeEach(async () => {
-    const docClient = ModelManager.getInstance().documentClient;
-    await cleanupTestData(docClient, process.env.TABLE_NAME);
-    await verifyCleanup(docClient, process.env.TABLE_NAME);
+    if (testId) {
+        await cleanupTestData(testId);
+        await verifyCleanup(testId);
+    }
 
     // Create a new counter for each test
     testCounter = await TestCounter.create({
@@ -56,9 +66,10 @@ describe('Counter Field Tests', () => {
   });
 
   afterEach(async () => {
-    const docClient = ModelManager.getInstance().documentClient;
-    await cleanupTestData(docClient, process.env.TABLE_NAME);
-    await verifyCleanup(docClient, process.env.TABLE_NAME);
+    if (testId) {
+        await cleanupTestData(testId);
+        await verifyCleanup(testId);
+      }
   });
 
   test('should initialize with default value', async () => {

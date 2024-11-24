@@ -69,7 +69,7 @@ const {
           text: 'Test Comment'
         });
   
-        const foundComment = await Comment.find(comment.getGlobalId());
+        const foundComment = await Comment.find(comment.getPrimaryId());
         expect(foundComment.text).toBe('Test Comment');
         expect(foundComment.authorId).toBe(testUser.userId);
       });
@@ -81,12 +81,12 @@ const {
           text: 'Test Comment'
         });
   
-        await Comment.update(comment.getGlobalId(), {
+        await Comment.update(comment.getPrimaryId(), {
           text: 'Updated Comment',
           numLikes: 1
         });
   
-        const updatedComment = await Comment.find(comment.getGlobalId());
+        const updatedComment = await Comment.find(comment.getPrimaryId());
         expect(updatedComment.text).toBe('Updated Comment');
         expect(updatedComment.numLikes).toBe(1);
       });
@@ -98,7 +98,7 @@ const {
           text: 'Test Comment'
         });
   
-        await Comment.delete(comment.getGlobalId());
+        await Comment.delete(comment.getPrimaryId());
       });
     });
   
@@ -181,7 +181,7 @@ const {
         comment.text = 'Updated Text';
         await comment.save();
   
-        const updatedComment = await Comment.find(comment.getGlobalId());
+        const updatedComment = await Comment.find(comment.getPrimaryId());
         expect(updatedComment.text).toBe('Updated Text');
       });
     });

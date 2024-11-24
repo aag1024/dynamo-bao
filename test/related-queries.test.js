@@ -6,11 +6,12 @@ const {
     Tag,
     TaggedPost 
 } = require('../src');
-const { cleanupTestData } = require('./utils/test-utils');
+const { cleanupTestData, verifyCleanup } = require('./utils/test-utils');
+const { ulid } = require('ulid');
 require('dotenv').config();
 
 describe('Related Field Queries', () => {
-  let testUser, testPosts, testTags;
+  let testUser, testPosts, testTags, testId;
 
   beforeAll(async () => {
     initModels({
@@ -20,8 +21,16 @@ describe('Related Field Queries', () => {
   });
 
   beforeEach(async () => {
-    const docClient = ModelManager.getInstance().documentClient;
-    await cleanupTestData(docClient, process.env.TABLE_NAME);
+    testId = ulid();
+  
+    initModels({
+      region: process.env.AWS_REGION,
+      tableName: process.env.TABLE_NAME,
+      test_id: testId
+    });
+
+    await cleanupTestData(testId);
+    await verifyCleanup(testId);
     
     // Create test user
     testUser = await User.create({
@@ -71,8 +80,10 @@ describe('Related Field Queries', () => {
   });
 
   afterEach(async () => {
-    const docClient = ModelManager.getInstance().documentClient;
-    await cleanupTestData(docClient, process.env.TABLE_NAME);
+    if (testId) {
+        await cleanupTestData(testId);
+        await verifyCleanup(testId);
+      }
   });
 
   describe('Direct Relationships', () => {

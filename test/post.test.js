@@ -5,9 +5,10 @@ const {
   Post
 } = require('../src');
 const { cleanupTestData, verifyCleanup } = require('./utils/test-utils');
+const { ulid } = require('ulid');
 require('dotenv').config();
 
-let testUser;
+let testUser, testId;
 
 describe('Post Model', () => {
   beforeAll(async () => {
@@ -19,9 +20,16 @@ describe('Post Model', () => {
   });
 
   beforeEach(async () => {
-    const docClient = ModelManager.getInstance().documentClient;
-    await cleanupTestData(docClient, process.env.TABLE_NAME);
-    await verifyCleanup(docClient, process.env.TABLE_NAME);
+    testId = ulid();
+  
+    initModels({
+      region: process.env.AWS_REGION,
+      tableName: process.env.TABLE_NAME,
+      test_id: testId
+    });
+
+    await cleanupTestData(testId);
+    await verifyCleanup(testId);
 
     // Create a test user with unique values for each test
     testUser = await User.create({
@@ -35,9 +43,10 @@ describe('Post Model', () => {
   });
 
   afterEach(async () => {
-    const docClient = ModelManager.getInstance().documentClient;
-    await cleanupTestData(docClient, process.env.TABLE_NAME);
-    await verifyCleanup(docClient, process.env.TABLE_NAME);
+    if (testId) {
+      await cleanupTestData(testId);
+      await verifyCleanup(testId);
+    }
   });
 
   describe('RelatedField - User', () => {

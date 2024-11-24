@@ -272,7 +272,7 @@ class RelatedField extends BaseField {
       throw new Error('Field is required');
     }
     // Allow both string IDs and model instances
-    if (value && typeof value !== 'string' && (!value.getGlobalId || typeof value.getGlobalId !== 'function')) {
+    if (value && typeof value !== 'string' && (!value.getPrimaryId || typeof value.getPrimaryId !== 'function')) {
       throw new Error('Related field value must be a string ID or model instance');
     }
     return true;
@@ -281,8 +281,8 @@ class RelatedField extends BaseField {
   toDy(value) {
     if (!value) return null;
     // If we're given a model instance, get its ID
-    if (typeof value === 'object' && value.getGlobalId) {
-      return value.getGlobalId();
+    if (typeof value === 'object' && value.getPrimaryId) {
+      return value.getPrimaryId();
     }
     return value;
   }

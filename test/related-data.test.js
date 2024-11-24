@@ -2,15 +2,14 @@ const {
     initModels, 
     ModelManager,
     User,
-    Post,
-    Tag,
-    TaggedPost 
+    Post
   } = require('../src');
-  const { cleanupTestData } = require('./utils/test-utils');
+  const { cleanupTestData, verifyCleanup } = require('./utils/test-utils');
+  const { ulid } = require('ulid');
   require('dotenv').config();
   
   describe('Related Data Loading', () => {
-    let testUser, testPosts, testTags;
+    let testUser, testPosts, testId;
   
     beforeAll(async () => {
       initModels({
@@ -20,8 +19,16 @@ const {
     });
   
     beforeEach(async () => {
-      const docClient = ModelManager.getInstance().documentClient;
-      await cleanupTestData(docClient, process.env.TABLE_NAME);
+        testId = ulid();
+
+        initModels({
+            region: process.env.AWS_REGION,
+            tableName: process.env.TABLE_NAME,
+            test_id: testId
+        });
+
+        await cleanupTestData(testId);
+        await verifyCleanup(testId);
       
       // Create test user
       testUser = await User.create({
@@ -49,8 +56,10 @@ const {
     });
   
     afterEach(async () => {
-      const docClient = ModelManager.getInstance().documentClient;
-      await cleanupTestData(docClient, process.env.TABLE_NAME);
+        if (testId) {
+            await cleanupTestData(testId);
+            await verifyCleanup(testId);
+          }
     });
   
     test('should load related data independently for different instances', async () => {

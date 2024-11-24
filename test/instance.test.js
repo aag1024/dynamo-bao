@@ -3,10 +3,11 @@ const {
     ModelManager,
     User, 
 } = require('../src');
-const { cleanupTestData } = require('./utils/test-utils');
+const { cleanupTestData, verifyCleanup } = require('./utils/test-utils');
+const { ulid } = require('ulid');
 require('dotenv').config();
 
-let testUser;
+let testUser, testId;
 
 describe('Instance Methods', () => {
     beforeAll(async () => {
@@ -18,7 +19,16 @@ describe('Instance Methods', () => {
       });
 
   beforeEach(async () => {
-    const docClient = ModelManager.getInstance().documentClient;
+    testId = ulid();
+  
+    initModels({
+      region: process.env.AWS_REGION,
+      tableName: process.env.TABLE_NAME,
+      test_id: testId
+    });
+
+    await cleanupTestData(testId);
+    await verifyCleanup(testId);
 
     // Create a test user for each test
     testUser = await User.create({
@@ -32,8 +42,10 @@ describe('Instance Methods', () => {
   });
 
   afterEach(async () => {
-    const docClient = ModelManager.getInstance().documentClient;
-    await cleanupTestData(docClient, process.env.TABLE_NAME);
+    if (testId) {
+        await cleanupTestData(testId);
+        await verifyCleanup(testId);
+      }
   });
 
   test('should track changes correctly', async () => {

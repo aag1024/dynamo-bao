@@ -279,12 +279,14 @@ class BaseModel {
     };
   }
 
-  static async find(gid) {
-    const key = this.getKeyForGlobalId(gid);
-    console.log('find key', key);
+  static async find(primaryId) {
+    console.log('find primaryId', {primaryId});
+    const pkSk = this.parsePrimaryId(primaryId);
+    const dyKey = this.getDyKeyForPkSk(pkSk);
+    console.log('find key', {primaryId, dyKey});
     const result = await this.documentClient.get({
       TableName: this.table,
-      Key: key,
+      Key: dyKey,
       ReturnConsumedCapacity: 'TOTAL'
     });
 
@@ -514,31 +516,26 @@ class BaseModel {
   //   return items;
   // }
 
-  static isModelPrefixGid(gid) {
-    return gid.indexOf(GID_SEPARATOR) === -1;
-  }
+  // static isModelPrefixGid(gid) {
+  //   return gid.indexOf(GID_SEPARATOR) === -1;
+  // }
 
-  static getKeyForGlobalId(gid) {
-    if (this.isModelPrefixGid(gid)) {
-      if (this.primaryKey.sk === 'modelPrefix') {
-        return {
-          _pk: this.formatPrimaryKey(this.modelPrefix, gid),
-          _sk: this.modelPrefix
-        };
-      }
-      else if (this.primaryKey.pk === 'modelPrefix') {
-        return {
-          _pk: this.modelPrefix,
-          _sk: gid
-        };
-      } else {
-        throw new Error(`Primary key must be modelPrefix to use a modelPrefix GID: ${gid}`);
-      }
-    } else {
-      const id = this.parseGlobalId(gid);
+  static getDyKeyForPkSk(pkSk) {
+    if (this.primaryKey.sk === 'modelPrefix') {
       return {
-        _pk: this.formatPrimaryKey(this.modelPrefix, id.pk),
-        _sk: id.sk
+        _pk: this.formatPrimaryKey(this.modelPrefix, pkSk.pk),
+        _sk: this.modelPrefix
+      };
+    }
+    else if (this.primaryKey.pk === 'modelPrefix') {
+      return {
+        _pk: this.modelPrefix,
+        _sk: pkSk.sk
+      };
+    } else {
+      return {
+        _pk: this.formatPrimaryKey(this.modelPrefix, pkSk.pk),
+        _sk: pkSk.sk
       };
     }
   }
@@ -695,7 +692,7 @@ class BaseModel {
         const constraintOp = await this._createUniqueConstraint(
           constraint.field,
           itemToCreate[constraint.field],
-          this.getGlobalId(itemToCreate),
+          this.getPrimaryId(itemToCreate),
           constraint.constraintId
         );
         transactItems.push(constraintOp);
@@ -752,9 +749,10 @@ class BaseModel {
     }
   }
 
-  static async update(gid, data) {
-    const currentItem = await this.find(gid);
+  static async update(primaryId, data) {
+    const currentItem = await this.find(primaryId);
     if (!currentItem) {
+      console.error('Item not found', primaryId);
       throw new Error('Item not found');
     }
 
@@ -770,7 +768,7 @@ class BaseModel {
             await this._removeUniqueConstraint(
               field,
               currentItem[field],
-              this.getGlobalId(currentItem),
+              currentItem.getPrimaryId(),
               constraint.constraintId
             )
           );
@@ -781,7 +779,7 @@ class BaseModel {
           await this._createUniqueConstraint(
             field,
             data[field],
-            currentItem.getGlobalId(),
+            currentItem.getPrimaryId(),
             constraint.constraintId
           )
         );
@@ -861,7 +859,7 @@ class BaseModel {
       transactItems.push({
         Update: {
           TableName: this.table,
-          Key: this.getKeyForGlobalId(gid),
+          Key: this.getDyKeyForPkSk(this.parsePrimaryId(primaryId)),
           UpdateExpression: updateExpression,
           ExpressionAttributeNames: Object.keys(filteredNames).length > 0 ? filteredNames : undefined,
           ExpressionAttributeValues: Object.keys(filteredValues).length > 0 ? filteredValues : undefined
@@ -877,7 +875,7 @@ class BaseModel {
         });
         
         // Fetch the updated item since transactWrite doesn't return values
-        const updatedItem = await this.find(gid);
+        const updatedItem = await this.find(primaryId);
         updatedItem._response = {
           ConsumedCapacity: response.ConsumedCapacity,
         };
@@ -885,12 +883,13 @@ class BaseModel {
         
       } catch (error) {
         console.error('Transaction error:', error);
-        await this.validateUniqueConstraints(data, gid);
+        await this.validateUniqueConstraints(data, primaryId);
       }
     } else {
+      const pkSk = this.primaryIdToPkSk(primaryId);
       const response = await this.documentClient.update({
         TableName: this.table,
-        Key: this.getKeyForGlobalId(id),
+        Key: this.getDyKeyForPkSk(pkSk),
         UpdateExpression: updateExpression,
         ExpressionAttributeNames: Object.keys(filteredNames).length > 0 ? filteredNames : undefined,
         ExpressionAttributeValues: Object.keys(filteredValues).length > 0 ? filteredValues : undefined,
@@ -901,8 +900,8 @@ class BaseModel {
     }
   }
 
-  static async delete(gid) {
-    const item = await this.find(gid);
+  static async delete(primaryId) {
+    const item = await this.find(primaryId);
     if (!item) {
       throw new Error('Item not found');
     }
@@ -928,7 +927,7 @@ class BaseModel {
           const constraintOp = await this._removeUniqueConstraint(
             constraint.field,
             value,
-            item.getGlobalId(),
+            item.getPrimaryId(),
             constraint.constraintId
           );
           transactItems.push(constraintOp);
@@ -943,7 +942,6 @@ class BaseModel {
 
     // Return deleted item info with capacity information
     return {
-      userId: gid,
       _pk: item.data._pk,
       _sk: item.data._sk,
       _response: {
@@ -1032,47 +1030,97 @@ class BaseModel {
     delete this._relatedObjects[fieldName];
   }
 
-  getGlobalId() {
-    return this.constructor.getGlobalId(this.data);
-  }
-
-  static parseGlobalId(gid) {
-    if (!gid) {
-      throw new Error('Global ID is required to parse');
-    }
-
-    if (gid.indexOf(GID_SEPARATOR) === -1) {
-      return gid;
-    }
-
-    const [pk, sk] = gid.split(GID_SEPARATOR);
-    return { pk, sk };
-  }
-
-  static getGlobalId(data) {
+  // Returns the pk and sk values for a given object. These are encoded to work with
+  // dynamo string keys. No test prefix or model prefix is applied.
+  static getPrimaryKeyValues(data) {
     if (!data) {
-      throw new Error('Data object is required for getGlobalId call');
+      throw new Error('Data object is required for getPrimaryKeyValues call');
     }
 
     const pkField = this.fields[this.primaryKey.pk];
     const skField = this.fields[this.primaryKey.sk];
 
-    const pkValue = this.formatPrimaryKey(this.modelPrefix, this.getPkValue(data));
-    const skValue = this.getSkValue(data);
-
-    if (this.primaryKey.sk === 'modelPrefix') {
-      if (pkValue !== undefined && pkValue !== null) {
-        return pkField.toGsi(pkValue);
-      }
-    } else if (this.primaryKey.pk === 'modelPrefix') {
-      if (skValue !== undefined && skValue !== null) {
-        return skField.toGsi(skValue);
-      }
-    } else if (pkValue !== undefined && skValue !== undefined && pkValue !== null && skValue !== null) {
-      return pkField.toGsi(pkValue) + GID_SEPARATOR + skField.toGsi(skValue);
+    if (skField === undefined && this.primaryKey.sk !== 'modelPrefix') {
+      throw new Error(`SK field is required for getPkSk call`);
     }
+
+    if (pkField === undefined && this.primaryKey.pk !== 'modelPrefix') {
+      throw new Error(`PK field is required for getPkSk call`);
+    }
+
+    // If the field is set, use the GSI value, otherwise use the raw value
+    const pkValue = pkField ? pkField.toGsi(this.getPkValue(data)) : this.getPkValue(data);
+    const skValue = skField ? skField.toGsi(this.getSkValue(data)) : this.getSkValue(data);
+
+    if (pkValue === undefined || skValue === undefined || pkValue === null || skValue === null) {
+      throw new Error(`PK and SK must be defined to get a PkSk`);
+    }
+
+    let key = {
+      pk: pkValue,
+      sk: skValue
+    }
+
+    console.log("getPrimaryKeyValues", key);
+
+    return key;
+  }
+
+  static getPrimaryId(data) {
+    console.log("getPrimaryId", data);
+    const pkSk = this.getPrimaryKeyValues(data);
+    console.log("getPrimaryId", pkSk);
+
+    let primaryId;
+    if (this.primaryKey.pk === 'modelPrefix') {
+      primaryId = pkSk.sk;
+    } else if (this.primaryKey.sk === 'modelPrefix') {
+      primaryId = pkSk.pk;
+    } else {
+      primaryId = pkSk.pk + GID_SEPARATOR + pkSk.sk;
+    }
+
     
-    throw new Error(`PK and SK must be defined to get a GID`);
+    return primaryId;
+  }
+
+  getPrimaryId() {
+    return this.constructor.getPrimaryId(this.data);
+  }
+
+  static parsePrimaryId(primaryId) {
+      if (!primaryId) {
+        throw new Error('Primary ID is required to parse');
+      }
+  
+      if (primaryId.indexOf(GID_SEPARATOR) !== -1) {
+        const [pk, sk] = gid.split(GID_SEPARATOR);
+        return {pk, sk};
+      } else {
+        if (this.primaryKey.pk === 'modelPrefix') {
+          return { pk: this.modelPrefix, sk: primaryId };
+        } else if (this.primaryKey.sk === 'modelPrefix') {
+          return { pk: primaryId, sk: this.modelPrefix };
+        } else {
+          throw new Error(`Invalid primary ID: ${primaryId}`);
+        }
+      }
+  }
+
+  static primaryIdToPkSk(id) {
+    // if id has pk, sk, return id
+    // if primaryKey.pk is modelPrefix and id is not an object, return { pk: modelPrefix, sk: id }
+    // if primaryKey.sk is modelPrefix and id is not an object, return { pk: id, sk: modelPrefix }
+    // otherwise, throw an error
+    if (typeof id === 'object') {
+      return id;
+    } else if (this.primaryKey.pk === 'modelPrefix') {
+      return { pk: this.modelPrefix, sk: id };
+    } else if (this.primaryKey.sk === 'modelPrefix') {
+      return { pk: id, sk: this.modelPrefix };
+    } else {
+      throw new Error(`Invalid primary ID: ${id}`);
+    }
   }
 
   // Get only changed fields
@@ -1102,7 +1150,8 @@ class BaseModel {
     }
 
     const changes = this.getChanges();
-    await this.constructor.update(this.getGlobalId(), changes);
+    console.log("update primaryId", this.data);
+    await this.constructor.update(this.getPrimaryId(), changes);
     
     // Reset change tracking after successful save
     this._resetChangeTracking();

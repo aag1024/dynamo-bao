@@ -239,17 +239,22 @@ class BaseModel {
     const testId = this.manager.getTestId();
     const key = this.formatUniqueConstraintKey(constraintId, this.modelPrefix, field, value);
 
+    let item = {
+      _pk: key,
+      _sk: UNIQUE_CONSTRAINT_KEY,
+      uniqueValue: key,
+      relatedId: relatedId,
+      relatedModel: this.name,
+    };
+
+    if (testId) {
+      item._gsi_test_id = testId;
+    }
+
     return {
       Put: {
         TableName: this.table,
-        Item: {
-          _pk: key,
-          _sk: UNIQUE_CONSTRAINT_KEY,
-          uniqueValue: key,
-          relatedId: relatedId,
-          relatedModel: this.name,
-          _gsi_test_id: testId
-        },
+        Item: item,
         ConditionExpression: 'attribute_not_exists(#pk) OR (relatedId = :relatedId AND relatedModel = :modelName)',
         ExpressionAttributeNames: {
           '#pk': '_pk'

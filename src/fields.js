@@ -303,8 +303,15 @@ class CounterField extends BaseField {
 
   validate(value) {
     super.validate(value);
-    if (value !== undefined && !Number.isInteger(value)) {
-      throw new Error('CounterField value must be an integer');
+    if (value !== undefined) {
+      // Accept increment/decrement operations (e.g., '+1', '-5')
+      if (typeof value === 'string' && /^[+-]\d+$/.test(value)) {
+        return true;
+      }
+      // Accept regular integer values
+      if (!Number.isInteger(value)) {
+        throw new Error('CounterField value must be an integer');
+      }
     }
     return true;
   }
@@ -314,10 +321,10 @@ class CounterField extends BaseField {
   }
 
   toDy(value) {
-    if (value === undefined || value === null) {
-      return this.getInitialValue();
+    if (typeof value === 'string' && (value.startsWith('+') || value.startsWith('-'))) {
+      return value;
     }
-    return Number(value);
+    return super.toDy(value);
   }
 
   fromDy(value) {
@@ -366,6 +373,49 @@ class CounterField extends BaseField {
   }
 }
 
+class BinaryField extends BaseField {
+  validate(value) {
+    super.validate(value);
+    if (value !== undefined && value !== null && !(value instanceof Buffer)) {
+      throw new Error('BinaryField value must be a Buffer');
+    }
+    return true;
+  }
+
+  toDy(value) {
+    if (!value) return null;
+    
+    return value;
+  }
+
+  fromDy(value) {
+    if (!value) return null;
+    return value;
+  }
+
+  toGsi(value) {
+    throw new Error('BinaryField does not support GSI conversion');
+  }
+}
+
+class VersionField extends ULIDField {
+  constructor(options = {}) {
+    super({
+      ...options,
+      required: true
+    });
+  }
+
+  getInitialValue() {
+    return ulid();
+  }
+
+  toDy(value) {
+    // Always generate a new ULID when saving
+    return ulid();
+  }
+}
+
 // Factory functions for creating field instances
 const createStringField = (options) => new StringField(options);
 const createDateTimeField = (options) => new DateTimeField(options);
@@ -376,6 +426,8 @@ const createRelatedField = (modelName, options) => new RelatedField(modelName, o
 const createIntegerField = (options) => new IntegerField(options);
 const createFloatField = (options) => new FloatField(options);
 const createCounterField = (options) => new CounterField(options);
+const createBinaryField = (options) => new BinaryField(options);
+const createVersionField = (options) => new VersionField(options);
 
 // Export both the factory functions and the classes
 module.exports = {
@@ -389,6 +441,8 @@ module.exports = {
   IntegerField: createIntegerField,
   FloatField: createFloatField,
   CounterField: createCounterField,
+  BinaryField: createBinaryField,
+  VersionField: createVersionField,
   
   // Classes (for instanceof checks)
   StringFieldClass: StringField,
@@ -399,5 +453,7 @@ module.exports = {
   RelatedFieldClass: RelatedField,
   IntegerFieldClass: IntegerField,
   FloatFieldClass: FloatField,
-  CounterFieldClass: CounterField
+  CounterFieldClass: CounterField,
+  BinaryFieldClass: BinaryField,
+  VersionFieldClass: VersionField
 }; 

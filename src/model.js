@@ -602,119 +602,52 @@ class BaseModel {
     });
   }
 
-  static async create(data) {
-    // Validate unique constraints before attempting transaction
-    await this.validateUniqueConstraints(data);
-    const itemToCreate = {};
+  static async _saveItem(primaryId, data, options = {}) {
+    const { isNew = false } = options;
+    const currentItem = isNew ? null : await this.find(primaryId);
     
-    // First pass: Handle initial values for undefined fields
+    if (!isNew && !currentItem) {
+      throw new Error('Item not found');
+    }
+
+    // Validate unique constraints before attempting save
+    await this.validateUniqueConstraints(data, isNew ? null : primaryId);
+
+    const transactItems = [];
+    const itemToSave = {};
+    let hasUniqueConstraintChanges = false;
+    
+    // Handle fields
     for (const [key, field] of Object.entries(this.fields)) {
-      if (data[key] === undefined) {
+      if (data[key] === undefined && isNew) {
+        // Only set initial values during creation
         const initialValue = field.getInitialValue();
         if (initialValue !== undefined) {
           data[key] = initialValue;
         }
       }
-    }
 
-    // Second pass: Validate and convert to DynamoDB format
-    for (const [key, field] of Object.entries(this.fields)) {
       if (data[key] !== undefined) {
         field.validate(data[key]);
-        itemToCreate[key] = field.toDy(data[key]);
+        itemToSave[key] = field.toDy(data[key]);
       }
     }
 
-    // Add test_id if we're in test mode
-    const testId = this.manager.getTestId();
-    if (testId) {
-      itemToCreate._gsi_test_id = testId;
-    }
-
-    const transactItems = [];
-
-    // Add unique constraint operations
+    // Handle unique constraints
     for (const constraint of Object.values(this.uniqueConstraints || {})) {
-      if (itemToCreate[constraint.field]) {
-        const constraintOp = await this._createUniqueConstraint(
-          constraint.field,
-          itemToCreate[constraint.field],
-          this.getPrimaryId(itemToCreate),
-          constraint.constraintId
-        );
-        transactItems.push(constraintOp);
-      }
-    }
-
-    const pk = this.formatPrimaryKey(this.modelPrefix, this.getPkValue(itemToCreate));
-    const mainItem = {
-      _pk: pk,
-      _sk: this.getSkValue(itemToCreate),
-      // Add GSI keys from index configuration
-      ...this.getIndexKeys(itemToCreate),
-      // Add the rest of the item data
-      ...itemToCreate
-    };
-
-    if (testId) {
-      mainItem._gsi_test_id = testId;
-    }
-
-    transactItems.push({
-      Put: {
-        TableName: this.table,
-        Item: mainItem,
-        ConditionExpression: 'attribute_not_exists(#pk)',
-        ExpressionAttributeNames: {
-          '#pk': '_pk'
-        }
-      }
-    });
-
-    console.log('Create transact items:', JSON.stringify(transactItems, null, 2));
-
-    try {
-      const response = await this.documentClient.transactWrite({
-        TransactItems: transactItems,
-        ReturnConsumedCapacity: 'TOTAL'
-      });
-      
-      // Create a new instance with the created data and response
-      const instance = new this(mainItem);
-      instance._response = {
-        ConsumedCapacity: response.ConsumedCapacity,
-      };
-      return instance;
-      
-    } catch (error) {
-      console.error('Transaction error:', error);
-      if (error.name === 'TransactionCanceledException') {
-        // Re-validate unique constraints to get a better error message
-        await this.validateUniqueConstraints(data);
-      }
-      throw error;
-    }
-  }
-
-  static async update(primaryId, data) {
-    const currentItem = await this.find(primaryId);
-    if (!currentItem) {
-      console.error('Item not found', primaryId);
-      throw new Error('Item not found');
-    }
-
-    const transactItems = [];
-
-    // Handle unique constraint updates
-    for (const constraint of Object.values(this.uniqueConstraints)) {
       const field = constraint.field;
-      if (data[field] !== undefined && data[field] !== currentItem[field]) {
-        // Remove old constraint
-        if (currentItem[field]) {
+      const newValue = itemToSave[field];
+      const currentValue = currentItem?.[field];
+
+      if (newValue !== undefined && newValue !== currentValue) {
+        hasUniqueConstraintChanges = true;
+        
+        // Remove old constraint if updating
+        if (currentItem && currentValue) {
           transactItems.push(
             await this._removeUniqueConstraint(
               field,
-              currentItem[field],
+              currentValue,
               currentItem.getPrimaryId(),
               constraint.constraintId
             )
@@ -725,126 +658,156 @@ class BaseModel {
         transactItems.push(
           await this._createUniqueConstraint(
             field,
-            data[field],
-            currentItem.getPrimaryId(),
+            newValue,
+            primaryId,
             constraint.constraintId
           )
         );
       }
     }
 
-    // Initialize context for collecting expressions
-    const context = {
-      expressionAttributeNames: {},
-      expressionAttributeValues: {}
+    // Add test_id if we're in test mode
+    const testId = this.manager.getTestId();
+    if (testId) {
+      itemToSave._gsi_test_id = testId;
+    }
+
+    // Add GSI keys
+    const indexKeys = this.getIndexKeys(itemToSave);
+    Object.assign(itemToSave, indexKeys);
+
+    // Build update expression
+    const { updateExpression, names, values } = this._buildUpdateExpression(itemToSave);
+
+    // Create the update params
+    const updateParams = {
+      TableName: this.table,
+      Key: this.getDyKeyForPkSk(this.parsePrimaryId(primaryId)),
+      UpdateExpression: updateExpression,
+      ExpressionAttributeNames: names,
+      ExpressionAttributeValues: values,
+      ReturnValues: 'ALL_NEW'
     };
-    
-    const setParts = [];
-    const addParts = [];
-    
-    // Handle regular fields
-    for (const [fieldName, value] of Object.entries(data)) {
-      const field = this.fields[fieldName];
-      if (!field) continue;
 
-      const updateExpr = field.getUpdateExpression(fieldName, value, context);
+    // Add condition for new items
+    if (isNew) {
+      updateParams.ConditionExpression = 'attribute_not_exists(#pk)';
+      updateParams.ExpressionAttributeNames['#pk'] = '_pk';
+    }
+
+    try {
+      let response;
       
-      if (updateExpr && updateExpr.expression) {
-        if (updateExpr.type === 'ADD') {
-          addParts.push(updateExpr.expression);
-        } else if (updateExpr.type === 'SET') {
-          setParts.push(updateExpr.expression);
-        }
-      }
-    }
-    
-    // Build update expression parts
-    const updateParts = [];
-    if (setParts.length > 0) {
-      updateParts.push(`SET ${setParts.join(', ')}`);
-    }
-    if (addParts.length > 0) {
-      updateParts.push(`ADD ${addParts.join(', ')}`);
-    }
+      if (hasUniqueConstraintChanges) {
+        // Use transaction if we have unique constraint changes
+        transactItems.push({
+          Update: updateParams
+        });
 
-    const updateExpression = updateParts.join(' ');
-
-    // Clean up unused attribute names and values
-    const usedNames = new Set();
-    const usedValues = new Set();
-    
-    // Extract used names and values from all parts of the update expression
-    updateExpression.split(/[\s,()]+/).forEach(part => {
-      if (part.startsWith('#')) {
-        usedNames.add(part);
-      }
-      if (part.startsWith(':')) {
-        usedValues.add(part);
-      }
-    });
-
-    // Filter out unused names and values
-    const filteredNames = {};
-    const filteredValues = {};
-    
-    for (const [key, value] of Object.entries(context.expressionAttributeNames)) {
-      if (usedNames.has(key)) {
-        filteredNames[key] = value;
-      }
-    }
-    
-    for (const [key, value] of Object.entries(context.expressionAttributeValues)) {
-      // Include all values that start with the same prefix
-      const prefix = key.split('_')[0]; // In case we have suffixed values
-      if (usedValues.has(prefix)) {
-        filteredValues[key] = value;
-      }
-    }
-
-    // Use the filtered attributes in the update
-    if (transactItems.length > 0) {
-      transactItems.push({
-        Update: {
-          TableName: this.table,
-          Key: this.getDyKeyForPkSk(this.parsePrimaryId(primaryId)),
-          UpdateExpression: updateExpression,
-          ExpressionAttributeNames: Object.keys(filteredNames).length > 0 ? filteredNames : undefined,
-          ExpressionAttributeValues: Object.keys(filteredValues).length > 0 ? filteredValues : undefined
-        }
-      });
-
-      console.log('Update transact items:', JSON.stringify(transactItems, null, 2));
-
-      try {
-        const response = await this.documentClient.transactWrite({
+        response = await this.documentClient.transactWrite({
           TransactItems: transactItems,
           ReturnConsumedCapacity: 'TOTAL'
         });
         
-        // Fetch the updated item since transactWrite doesn't return values
-        const updatedItem = await this.find(primaryId);
-        updatedItem._response = {
+        // Fetch the item since transactWrite doesn't return values
+        const savedItem = await this.find(primaryId);
+        savedItem._response = {
           ConsumedCapacity: response.ConsumedCapacity,
         };
-        return updatedItem;
-        
-      } catch (error) {
-        console.error('Transaction error:', error);
-        await this.validateUniqueConstraints(data, primaryId);
+        return savedItem;
+      } else {
+        // Use simple update if no unique constraints are changing
+        response = await this.documentClient.update(updateParams);
+        const savedItem = this.fromDynamoDB(response.Attributes);
+        savedItem._response = {
+          ConsumedCapacity: response.ConsumedCapacity,
+        };
+        return savedItem;
       }
-    } else {
-      const pkSk = this.parsePrimaryId(primaryId);
-      const response = await this.documentClient.update({
-        TableName: this.table,
-        Key: this.getDyKeyForPkSk(pkSk),
-        UpdateExpression: updateExpression,
-        ExpressionAttributeNames: Object.keys(filteredNames).length > 0 ? filteredNames : undefined,
-        ExpressionAttributeValues: Object.keys(filteredValues).length > 0 ? filteredValues : undefined,
-        ReturnValues: 'ALL_NEW'
-      });
-
-      return this.fromDynamoDB(response.Attributes);
+    } catch (error) {
+      console.error('Save error:', error);
+      if (error.name === 'TransactionCanceledException') {
+        await this.validateUniqueConstraints(data, isNew ? null : primaryId);
+      }
+      throw error;
     }
+  }
+
+  static async create(data) {
+    // First process the data through _saveItem to handle auto-assigned fields
+    const processedData = {};
+    
+    // Handle fields and their initial values
+    for (const [key, field] of Object.entries(this.fields)) {
+      if (data[key] !== undefined) {
+        processedData[key] = data[key];
+      } else {
+        const initialValue = field.getInitialValue();
+        if (initialValue !== undefined) {
+          processedData[key] = initialValue;
+        }
+      }
+    }
+
+    // Now calculate primary key values using the processed data
+    const pkValue = this.getPkValue(processedData);
+    const skValue = this.getSkValue(processedData);
+    
+    // Format the primary key
+    const pk = this.formatPrimaryKey(this.modelPrefix, pkValue);
+    const primaryId = this.getPrimaryId({
+      ...processedData,
+      _pk: pk,
+      _sk: skValue
+    });
+
+    return this._saveItem(primaryId, processedData, { isNew: true });
+  }
+
+  static async update(primaryId, data) {
+    return this._saveItem(primaryId, data, { isNew: false });
+  }
+
+  static _buildUpdateExpression(data) {
+    const names = {};
+    const values = {};
+    const setParts = [];
+    const addParts = [];
+    
+    Object.entries(data).forEach(([key, value]) => {
+      const field = this.fields[key];
+      const attrName = `#${key}`;
+      const attrValue = `:${key}`;
+      
+      names[attrName] = key;
+      
+      // Special handling for CounterField operations
+      if (field?.constructor.name === 'CounterField' && typeof value === 'string') {
+        if (value.startsWith('+')) {
+          values[attrValue] = parseInt(value.substring(1), 10);
+          addParts.push(`${attrName} ${attrValue}`);
+        } else if (value.startsWith('-')) {
+          values[attrValue] = parseInt(value.substring(1), 10) * -1;
+          addParts.push(`${attrName} ${attrValue}`);
+        } else {
+          values[attrValue] = value;
+          setParts.push(`${attrName} = ${attrValue}`);
+        }
+      } else {
+        values[attrValue] = value;
+        setParts.push(`${attrName} = ${attrValue}`);
+      }
+    });
+    
+    const parts = [];
+    if (setParts.length > 0) parts.push(`SET ${setParts.join(', ')}`);
+    if (addParts.length > 0) parts.push(`ADD ${addParts.join(', ')}`);
+    
+    return {
+      updateExpression: parts.join(' '),
+      names,
+      values
+    };
   }
 
   static async delete(primaryId) {

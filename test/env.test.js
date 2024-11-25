@@ -29,8 +29,8 @@ describe('Basic test of Non-test environment', () => {
     const userData = {
       name: 'Test User 1',
       email: `${ulid()}@example.com`,
-      external_id: ulid(),
-      external_platform: ulid()
+      externalId: ulid(),
+      externalPlatform: ulid()
     };
 
     console.log('Creating user with data:', userData);
@@ -43,8 +43,8 @@ describe('Basic test of Non-test environment', () => {
       // Compare only the input fields that we explicitly provided
       expect(user.name).toBe(userData.name);
       expect(user.email).toBe(userData.email);
-      expect(user.external_id).toBe(userData.external_id);
-      expect(user.external_platform).toBe(userData.external_platform);
+      expect(user.externalId).toBe(userData.externalId);
+      expect(user.externalPlatform).toBe(userData.externalPlatform);
       
       // Verify date fields are Date instances
       expect(user.createdAt).toBeInstanceOf(Date);

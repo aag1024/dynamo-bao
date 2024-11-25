@@ -35,8 +35,8 @@ describe('Instance Methods', () => {
     testUser = await User.create({
       name: 'Test User',
       email: 'test@example.com',
-      external_id: 'ext1',
-      external_platform: 'platform1',
+      externalId: 'ext1',
+      externalPlatform: 'platform1',
       role: 'user',
       status: 'active'
     });
@@ -63,8 +63,8 @@ describe('Instance Methods', () => {
     const user = await User.create({
       name: 'Test User',
       email: 'test_save_fields@example.com',
-      external_id: 'ext_save_fields',
-      external_platform: 'platform1',
+      externalId: 'ext_save_fields',
+      externalPlatform: 'platform1',
       status: 'active'
     });
 
@@ -96,8 +96,8 @@ describe('Instance Methods', () => {
     const user = await User.create({
       name: 'Test User',
       email: 'test_multiple_changes@example.com',
-      external_id: 'ext_multiple_changes',
-      external_platform: 'platform1',
+      externalId: 'ext_multiple_changes',
+      externalPlatform: 'platform1',
       status: 'active'
     });
 
@@ -122,8 +122,8 @@ describe('Instance Methods', () => {
     const user = await User.create({
       name: 'Test User',
       email: 'test_no_changes@example.com',
-      external_id: 'ext_no_changes',
-      external_platform: 'platform1',
+      externalId: 'ext_no_changes',
+      externalPlatform: 'platform1',
       status: 'active'
     });
 
@@ -160,8 +160,8 @@ describe('Instance Methods', () => {
     const user2 = await User.create({
       name: 'Test User 2',
       email: 'test2@example.com',
-      external_id: 'ext2',
-      external_platform: 'platform1',
+      externalId: 'ext2',
+      externalPlatform: 'platform1',
       role: 'user',
       status: 'active'
     });

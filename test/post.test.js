@@ -36,8 +36,8 @@ describe('Post Model', () => {
     testUser = await User.create({
       name: 'Test User',
       email: `test${Date.now()}@example.com`, // Make email unique
-      external_id: `ext${Date.now()}`, // Make external_id unique
-      external_platform: 'platform1',
+      externalId: `ext${Date.now()}`, // Make externalId unique
+      externalPlatform: 'platform1',
       role: 'user',
       status: 'active'
     });
@@ -180,8 +180,8 @@ describe('Post Model', () => {
       const anotherUser = await User.create({
         name: 'Another User',
         email: `another${Date.now()}@example.com`, // Make email unique
-        external_id: `ext${Date.now()}2`, // Make external_id unique
-        external_platform: 'platform1',
+        externalId: `ext${Date.now()}2`, // Make externalId unique
+        externalPlatform: 'platform1',
         role: 'user',
         status: 'active'
       });

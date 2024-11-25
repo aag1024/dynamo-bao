@@ -37,8 +37,8 @@ const {
         testUser = await User.create({
             name: 'Test User',
             email: `test${Date.now()}@example.com`,
-            external_id: `ext${Date.now()}`,
-            external_platform: 'platform1',
+            externalId: `ext${Date.now()}`,
+            externalPlatform: 'platform1',
             role: 'user',
             status: 'active'
         });

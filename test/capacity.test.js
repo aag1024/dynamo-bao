@@ -123,8 +123,8 @@ describe('Query Capacity Tests', () => {
     const user = await User.create({
       name: 'Test User',
       email: 'test@example.com',
-      external_id: 'ext1',
-      external_platform: 'platform1',
+      externalId: 'ext1',
+      externalPlatform: 'platform1',
       role: 'user',
       status: 'active'
     });

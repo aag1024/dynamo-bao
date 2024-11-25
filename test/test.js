@@ -58,8 +58,8 @@ describe('User CRUD Operations', () => {
     const userData = {
       name: 'Test User 1',
       email: 'test1@example.com',
-      external_id: 'ext1',
-      external_platform: 'platform1'
+      externalId: 'ext1',
+      externalPlatform: 'platform1'
     };
 
     console.log('Creating user with data:', userData);
@@ -71,8 +71,8 @@ describe('User CRUD Operations', () => {
       // Compare only the input fields that we explicitly provided
       expect(user.name).toBe(userData.name);
       expect(user.email).toBe(userData.email);
-      expect(user.external_id).toBe(userData.external_id);
-      expect(user.external_platform).toBe(userData.external_platform);
+      expect(user.externalId).toBe(userData.externalId);
+      expect(user.externalPlatform).toBe(userData.externalPlatform);
       
       // Verify date fields are Date instances
       expect(user.createdAt).toBeInstanceOf(Date);
@@ -93,7 +93,7 @@ describe('User CRUD Operations', () => {
     const userData = {
       name: 'Test User 1',
       email: 'test1@example.com',
-      external_id: 'ext1'
+      externalId: 'ext1'
     };
 
     await User.create(userData);
@@ -102,7 +102,7 @@ describe('User CRUD Operations', () => {
       await User.create({
         name: 'Test User 2',
         email: 'test1@example.com',
-        external_id: 'ext2'
+        externalId: 'ext2'
       });
     }).rejects.toThrow('email must be unique');
   });
@@ -113,7 +113,7 @@ describe('User Unique Constraints', () => {
     const userData = {
       name: 'Test User',
       email: 'test@example.com',
-      external_id: 'ext1'
+      externalId: 'ext1'
     };
 
     const user = await User.create(userData);
@@ -121,11 +121,11 @@ describe('User Unique Constraints', () => {
     const newUser = await User.create({
       name: 'New Test User',
       email: 'test@example.com',
-      external_id: 'ext1'
+      externalId: 'ext1'
     });
 
     expect(newUser.email).toBe('test@example.com');
-    expect(newUser.external_id).toBe('ext1');
+    expect(newUser.externalId).toBe('ext1');
   });
 });
 
@@ -136,24 +136,24 @@ describe('GSI Queries', () => {
       User.create({
         name: 'Test User 1',
         email: 'test1@example.com',
-        external_id: 'ext1',
-        external_platform: 'platform1',
+        externalId: 'ext1',
+        externalPlatform: 'platform1',
         role: 'admin',
         status: 'active'
       }),
       User.create({
         name: 'Test User 2',
         email: 'test2@example.com',
-        external_id: 'ext2',
-        external_platform: 'platform1',
+        externalId: 'ext2',
+        externalPlatform: 'platform1',
         role: 'user',
         status: 'active'
       }),
       User.create({
         name: 'Test User 3',
         email: 'test3@example.com',
-        external_id: 'ext3',
-        external_platform: 'platform2',
+        externalId: 'ext3',
+        externalPlatform: 'platform2',
         role: 'user',
         status: 'inactive'
       })
@@ -163,7 +163,7 @@ describe('GSI Queries', () => {
   test('should query users by platform using byPlatform index', async () => {
     const platformUsers = await User.queryByIndex('byPlatform', 'platform1');
     expect(platformUsers.items).toHaveLength(2);
-    expect(platformUsers.items[0].external_platform).toBe('platform1');
+    expect(platformUsers.items[0].externalPlatform).toBe('platform1');
   });
 
   test('should query users by role using byRole index', async () => {
@@ -192,15 +192,15 @@ describe('Date Range Queries', () => {
       User.create({
         name: 'Test User 1',
         email: 'test1@example.com',
-        external_id: 'ext1',
-        external_platform: 'platform1',
+        externalId: 'ext1',
+        externalPlatform: 'platform1',
         status: 'active'
       }),
       User.create({
         name: 'Test User 2',
         email: 'test2@example.com',
-        external_id: 'ext2',
-        external_platform: 'platform1',
+        externalId: 'ext2',
+        externalPlatform: 'platform1',
         status: 'active'
       })
     ]);
@@ -234,8 +234,8 @@ test('should properly set test_id on models', async () => {
   const user = await User.create({
     name: 'Test User',
     email: 'test@example.com',
-    external_id: 'ext1',
-    external_platform: 'platform1'
+    externalId: 'ext1',
+    externalPlatform: 'platform1'
   });
 
   const manager = ModelManager.getInstance(testId);

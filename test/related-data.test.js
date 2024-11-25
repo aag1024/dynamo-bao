@@ -35,8 +35,8 @@ const {
       testUser = await User.create({
         name: 'Test User',
         email: `test${Date.now()}@example.com`,
-        external_id: `ext${Date.now()}`,
-        external_platform: 'platform1',
+        externalId: `ext${Date.now()}`,
+        externalPlatform: 'platform1',
         role: 'user',
         status: 'active'
       });
@@ -68,8 +68,8 @@ const {
       const user2 = await User.create({
         name: 'Second User',
         email: `test2${Date.now()}@example.com`,
-        external_id: `ext2${Date.now()}`,
-        external_platform: 'platform1',
+        externalId: `ext2${Date.now()}`,
+        externalPlatform: 'platform1',
         role: 'user',
         status: 'active'
       });
@@ -130,8 +130,8 @@ const {
       const newUser = await User.create({
         name: 'New User',
         email: `new${Date.now()}@example.com`,
-        external_id: `new${Date.now()}`,
-        external_platform: 'platform1',
+        externalId: `new${Date.now()}`,
+        externalPlatform: 'platform1',
         role: 'user',
         status: 'active'
       });

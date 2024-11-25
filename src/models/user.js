@@ -18,13 +18,10 @@ class User extends BaseModel {
   static fields = {
     userId: ULIDField({ autoAssign: true }),
     name: StringField({ required: true }),
-    email: StringField({ 
-      required: true,
-      pattern: /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-    }),
-    external_id: StringField({ required: true }),
-    external_platform: StringField({ required: true }),
-    profile_image_url: StringField(),
+    email: StringField({ required: true }),
+    externalId: StringField({ required: true }),
+    externalPlatform: StringField({ required: true }),
+    profileImageUrl: StringField(),
     role: StringField({ 
       required: true,
       defaultValue: 'user'
@@ -40,14 +37,14 @@ class User extends BaseModel {
   static primaryKey = PrimaryKeyConfig('userId');
 
   static indexes = {
-    byPlatform: IndexConfig('external_platform', 'userId', GSI_INDEX_ID1),
+    byPlatform: IndexConfig('externalPlatform', 'userId', GSI_INDEX_ID1),
     byRole: IndexConfig('role', 'status', GSI_INDEX_ID2),
     byStatus: IndexConfig('status', 'createdAt', GSI_INDEX_ID3)
   };
 
   static uniqueConstraints = {
     uniqueEmail: UniqueConstraintConfig('email', UNIQUE_CONSTRAINT_ID1),
-    uniqueExternalId: UniqueConstraintConfig('external_id', UNIQUE_CONSTRAINT_ID2)
+    uniqueExternalId: UniqueConstraintConfig('externalId', UNIQUE_CONSTRAINT_ID2)
   };
 }
 

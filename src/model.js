@@ -97,6 +97,29 @@ class BaseModel {
       throw new Error(`${this.name} must define a primaryKey`);
     }
 
+    // Ensure primary key fields are required
+    if (this.primaryKey.pk !== 'modelPrefix') {
+      const pkField = this.fields[this.primaryKey.pk];
+      if (!pkField) {
+        throw new Error(`Primary key field '${this.primaryKey.pk}' not found in ${this.name} fields`);
+      }
+      if (!pkField.required) {
+        console.warn(`Warning: Primary key field '${this.primaryKey.pk}' in ${this.name} was not explicitly marked as required. Marking as required automatically.`);
+        pkField.required = true;
+      }
+    }
+    
+    if (this.primaryKey.sk !== 'modelPrefix') {
+      const skField = this.fields[this.primaryKey.sk];
+      if (!skField) {
+        throw new Error(`Sort key field '${this.primaryKey.sk}' not found in ${this.name} fields`);
+      }
+      if (!skField.required) {
+        console.warn(`Warning: Sort key field '${this.primaryKey.sk}' in ${this.name} was not explicitly marked as required. Marking as required automatically.`);
+        skField.required = true;
+      }
+    }
+
     // Validate field names don't start with underscore
     Object.keys(this.fields).forEach(fieldName => {
       if (fieldName.startsWith('_')) {

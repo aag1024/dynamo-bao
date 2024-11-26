@@ -150,4 +150,110 @@ describe('Model Validation Tests', () => {
     });
     expect(optionalUpdate.optional).toBe('Optional Value');
   });
+
+  test('should automatically mark primary key fields as required', async () => {
+    class ImplicitRequiredModel extends BaseModel {
+      static modelPrefix = 'test';
+      static fields = {
+        id: StringField(), // Not explicitly required
+        sortKey: StringField(), // Not explicitly required
+        otherField: StringField()
+      };
+      static primaryKey = PrimaryKeyConfig('id', 'sortKey');
+    }
+
+    const manager = ModelManager.getInstance(testId);
+    manager.registerModel(ImplicitRequiredModel);
+    ImplicitRequiredModel.documentClient = manager.documentClient;
+    ImplicitRequiredModel.table = manager.tableName;
+    
+    // Should automatically mark fields as required during validation
+    ImplicitRequiredModel.validateConfiguration();
+
+    // Verify fields are now required by attempting to create without them
+    await expect(
+      ImplicitRequiredModel.create({
+        sortKey: 'test'
+      })
+    ).rejects.toThrow('Field is required');
+
+    await expect(
+      ImplicitRequiredModel.create({
+        id: 'test'
+      })
+    ).rejects.toThrow('Field is required');
+
+    // Should succeed with both primary key fields
+    const validModel = await ImplicitRequiredModel.create({
+      id: 'test',
+      sortKey: 'test'
+    });
+    expect(validModel).toBeDefined();
+  });
+
+  test('should work with single-field primary keys', async () => {
+    class SingleKeyModel extends BaseModel {
+      static modelPrefix = 'test';
+      static fields = {
+        id: StringField(), // Not explicitly required
+        otherField: StringField()
+      };
+      static primaryKey = PrimaryKeyConfig('id');
+    }
+
+    const manager = ModelManager.getInstance(testId);
+    manager.registerModel(SingleKeyModel);
+    SingleKeyModel.documentClient = manager.documentClient;
+    SingleKeyModel.table = manager.tableName;
+    
+    // Should automatically mark field as required during validation
+    SingleKeyModel.validateConfiguration();
+
+    // Verify field is now required
+    await expect(
+      SingleKeyModel.create({
+        otherField: 'test'
+      })
+    ).rejects.toThrow('Field is required');
+
+    // Should succeed with primary key field
+    const validModel = await SingleKeyModel.create({
+      id: 'test'
+    });
+    expect(validModel).toBeDefined();
+  });
+
+  test('should accept explicitly required primary key fields', async () => {
+    class ExplicitRequiredModel extends BaseModel {
+      static modelPrefix = 'test';
+      static fields = {
+        id: StringField({ required: true }),
+        sortKey: StringField({ required: true }),
+        otherField: StringField()
+      };
+      static primaryKey = PrimaryKeyConfig('id', 'sortKey');
+    }
+
+    const manager = ModelManager.getInstance(testId);
+    manager.registerModel(ExplicitRequiredModel);
+    ExplicitRequiredModel.documentClient = manager.documentClient;
+    ExplicitRequiredModel.table = manager.tableName;
+    
+    // Should validate without any warnings
+    ExplicitRequiredModel.validateConfiguration();
+
+    // Verify fields are required
+    await expect(
+      ExplicitRequiredModel.create({
+        sortKey: 'test'
+      })
+    ).rejects.toThrow('Field is required');
+
+    // Should succeed with both fields
+    const validModel = await ExplicitRequiredModel.create({
+      id: 'test',
+      sortKey: 'test'
+    });
+    expect(validModel).toBeDefined();
+  });
 }); 

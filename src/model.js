@@ -97,9 +97,30 @@ class BaseModel {
       throw new Error(`${this.name} must define a primaryKey`);
     }
 
+    // Validate field names don't start with underscore
+    Object.keys(this.fields).forEach(fieldName => {
+      if (fieldName.startsWith('_')) {
+        throw new Error(`Field name '${fieldName}' in ${this.name} cannot start with underscore`);
+      }
+    });
+
     const validIndexIds = [GSI_INDEX_ID1, GSI_INDEX_ID2, GSI_INDEX_ID3, undefined]; // undefined for PK-based indexes
     
+    // Validate index names and referenced fields
     Object.entries(this.indexes).forEach(([indexName, index]) => {
+      // Check if index name starts with underscore
+      if (indexName.startsWith('_')) {
+        throw new Error(`Index name '${indexName}' in ${this.name} cannot start with underscore`);
+      }
+
+      // Check if referenced fields start with underscore
+      if (index.pk !== 'modelPrefix' && index.pk.startsWith('_')) {
+        throw new Error(`Index '${indexName}' references invalid field '${index.pk}' (cannot start with underscore)`);
+      }
+      if (index.sk !== 'modelPrefix' && index.sk.startsWith('_')) {
+        throw new Error(`Index '${indexName}' references invalid field '${index.sk}' (cannot start with underscore)`);
+      }
+
       // Check if this index matches the primary key configuration
       const isPrimaryKeyIndex = (
         index instanceof PrimaryKeyConfig &&
@@ -107,12 +128,10 @@ class BaseModel {
         index.sk === this.primaryKey.sk
       );
 
-      // Allow undefined indexId only for primary key based indexes
       if (!validIndexIds.includes(index.indexId) && !isPrimaryKeyIndex) {
         throw new Error(`Invalid index ID ${index.indexId} in ${this.name}`);
       }
 
-      // Validate fields exist, accounting for modelPrefix
       if (index.pk !== 'modelPrefix' && !this.fields[index.pk]) {
         throw new Error(`Index ${indexName} references non-existent field ${index.pk}`);
       }
@@ -120,6 +139,14 @@ class BaseModel {
         throw new Error(`Index ${indexName} references non-existent field ${index.sk}`);
       }
     });
+
+    // Validate primary key fields don't start with underscore
+    if (this.primaryKey.pk !== 'modelPrefix' && this.primaryKey.pk.startsWith('_')) {
+      throw new Error(`Primary key field '${this.primaryKey.pk}' cannot start with underscore`);
+    }
+    if (this.primaryKey.sk !== 'modelPrefix' && this.primaryKey.sk.startsWith('_')) {
+      throw new Error(`Sort key field '${this.primaryKey.sk}' cannot start with underscore`);
+    }
 
     // Validate primary key fields exist
     if (this.primaryKey.pk !== 'modelPrefix' && !this.fields[this.primaryKey.pk]) {
@@ -851,6 +878,10 @@ class BaseModel {
       }
     }
 
+    Object.entries(this.fields).forEach(([fieldName, field]) => {
+      field.validate(processedData[fieldName], fieldName);
+    });
+
     // Now calculate primary key values using the processed data
     const pkValue = this.getPkValue(processedData);
     const skValue = this.getSkValue(processedData);
@@ -867,6 +898,13 @@ class BaseModel {
   }
 
   static async update(primaryId, data, options = {}) {
+    Object.entries(data).forEach(([fieldName, value]) => {
+      const field = this.fields[fieldName];
+      if (field) {
+        field.validate(value, fieldName);
+      }
+    });
+    
     return this._saveItem(primaryId, data, { 
       ...options,
       isNew: false

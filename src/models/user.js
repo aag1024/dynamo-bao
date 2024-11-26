@@ -19,8 +19,8 @@ class User extends BaseModel {
     userId: ULIDField({ autoAssign: true }),
     name: StringField({ required: true }),
     email: StringField({ required: true }),
-    externalId: StringField({ required: true }),
-    externalPlatform: StringField({ required: true }),
+    externalId: StringField(),
+    externalPlatform: StringField(),
     profileImageUrl: StringField(),
     role: StringField({ 
       required: true,

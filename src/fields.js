@@ -400,10 +400,22 @@ class CounterField extends BaseField {
 }
 
 class BinaryField extends BaseField {
+  getInitialValue() {
+    if (this.defaultValue) {
+      return typeof this.defaultValue === 'function' 
+        ? this.defaultValue() 
+        : this.defaultValue;
+    }
+    return null;
+  }
+
   validate(value) {
     super.validate(value);
-    if (value !== undefined && value !== null && !(value instanceof Buffer)) {
-      throw new Error('BinaryField value must be a Buffer');
+    if (value !== undefined && 
+        value !== null && 
+        !(value instanceof Buffer) && 
+        !(value instanceof Uint8Array)) {
+      throw new Error('BinaryField value must be a Buffer or Uint8Array');
     }
     return true;
   }

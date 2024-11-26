@@ -217,11 +217,11 @@ class BaseModel {
   }
 
   getPkValue() {
-    return this.constructor.getPkValue(this.data);
+    return this.constructor.getPkValue(this._data);
   }
 
   getSkValue() {
-    return this.constructor.getSkValue(this.data);
+    return this.constructor.getSkValue(this._data);
   }
 
   static getCapacityFromResponse(response) {
@@ -908,7 +908,11 @@ class BaseModel {
       }
 
       names[expression.attrNameKey] = expression.fieldName;
-      values[expression.attrValueKey] = expression.fieldValue;
+
+      if (expression.fieldValue !== null) {
+        values[expression.attrValueKey] = expression.fieldValue;
+      }
+      
     });
 
     if (setExpressions.length > 0) parts.push(`SET ${setExpressions.join(', ')}`);
@@ -933,8 +937,8 @@ class BaseModel {
         Delete: {
           TableName: this.table,
           Key: {
-            _pk: item.data._pk,
-            _sk: item.data._sk
+            _pk: item._data._pk,
+            _sk: item._data._sk
           }
         }
       }
@@ -969,10 +973,10 @@ class BaseModel {
 
   constructor(data = {}) {
     // Initialize data object with all DynamoDB attributes
-    this.data = {};
+    this._data = {};
     SYSTEM_FIELDS.forEach(key => {
       if (data[key] !== undefined) {
-        this.data[key] = data[key];
+        this._data[key] = data[key];
       }
     });
 
@@ -988,9 +992,8 @@ class BaseModel {
       } else {
         value = field.getInitialValue();
       }
-      
-      // Store both raw and converted values
-      this.data[fieldName] = data[fieldName];  // Raw DynamoDB value
+
+      this._data[fieldName] = value;
       
       // Define property getter/setter for converted value
       Object.defineProperty(this, fieldName, {
@@ -998,7 +1001,7 @@ class BaseModel {
         set: (newValue) => {
           if (newValue !== value) {
             value = newValue;
-            this.data[fieldName] = field.toDy(newValue);  // Update raw value
+            this._data[fieldName] = field.toDy(newValue);  // Update raw value
             this._changes.add(fieldName);
             if (field instanceof RelatedFieldClass) {
               delete this._relatedObjects[fieldName];
@@ -1031,7 +1034,7 @@ class BaseModel {
     });
 
     // Store original data for change tracking
-    this._originalData = { ...this.data };
+    this._originalData = { ...this._data };
   }
 
   clearRelatedCache(fieldName) {
@@ -1093,7 +1096,7 @@ class BaseModel {
   }
 
   getPrimaryId() {
-    return this.constructor.getPrimaryId(this.data);
+    return this.constructor.getPrimaryId(this._data);
   }
 
   static parsePrimaryId(primaryId) {
@@ -1119,7 +1122,7 @@ class BaseModel {
   getChanges() {
     const changes = {};
     for (const field of this._changes) {
-      changes[field] = this.data[field];
+      changes[field] = this._data[field];
     }
     return changes;
   }
@@ -1131,7 +1134,7 @@ class BaseModel {
 
   // Reset tracking after successful save
   _resetChangeTracking() {
-    this._originalData = { ...this.data };
+    this._originalData = { ...this._data };
     this._changes.clear();
   }
 
@@ -1157,8 +1160,8 @@ class BaseModel {
     
     // Copy any system fields
     SYSTEM_FIELDS.forEach(key => {
-      if (updatedObj.data[key] !== undefined) {
-        this.data[key] = updatedObj.data[key];
+      if (updatedObj._data[key] !== undefined) {
+        this._data[key] = updatedObj._data[key];
       }
     });
     

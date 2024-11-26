@@ -75,7 +75,8 @@ describe('Instance Methods', () => {
 
     expect(updateSpy).toHaveBeenCalledWith(
       user.userId,
-      { name: 'Updated Name' }
+      { name: 'Updated Name' },
+      expect.any(Object)
     );
 
     updateSpy.mockRestore();
@@ -112,7 +113,8 @@ describe('Instance Methods', () => {
       {
         name: 'Updated Name',
         status: 'inactive'
-      }
+      },
+      expect.any(Object)
     );
 
     updateSpy.mockRestore();

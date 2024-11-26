@@ -39,23 +39,36 @@ class BaseField {
     return this.fromDy(value);
   }
 
-  getUpdateExpression(fieldName, value, context = {}) {
+  getUpdateExpression(fieldName, value) {
     if (value === undefined) return null;
-    
-    // Default implementation just sets the value
-    context.expressionAttributeNames = context.expressionAttributeNames || {};
-    context.expressionAttributeValues = context.expressionAttributeValues || {};
     
     const attributeName = `#${fieldName}`;
     const attributeValue = `:${fieldName}`;
-    
-    context.expressionAttributeNames[attributeName] = fieldName;
-    context.expressionAttributeValues[attributeValue] = this.toDy(value);
+
+    if (value === null) {
+      return {
+        type: 'REMOVE',
+        expression: `${attributeName}`,
+        attrNameKey: attributeName,
+        attrValueKey: attributeValue,
+        fieldName: fieldName,
+        fieldValue: null
+      };
+    }
     
     return {
       type: 'SET',
-      expression: `${attributeName} = ${attributeValue}`
+      expression: `${attributeName} = ${attributeValue}`,
+      attrNameKey: attributeName,
+      attrValueKey: attributeValue,
+      fieldName: fieldName,
+      fieldValue: this.toDy(value)
     };
+  }
+
+  updateBeforeSave(value, currentObject) {
+    // Default implementation does nothing
+    return value;
   }
 }
 
@@ -210,6 +223,11 @@ class ModifiedDateField extends DateTimeField {
   toDy(value) {
     return Date.now();
   }
+
+  updateBeforeSave(value, currentObject) {
+    // Always update modified date before save
+    return Date.now();
+  }
 }
 
 class ULIDField extends BaseField {
@@ -334,38 +352,46 @@ class CounterField extends BaseField {
     return parseInt(value, 10);
   }
 
-  getUpdateExpression(fieldName, value, context = {}) {
-    if (value === undefined) {
-      // For new items, use the default value
-      value = this.getInitialValue();
-    }
-
-    context.expressionAttributeNames = context.expressionAttributeNames || {};
-    context.expressionAttributeValues = context.expressionAttributeValues || {};
+  getUpdateExpression(fieldName, value) {
+    if (value === undefined) return null;
 
     const attributeName = `#${fieldName}`;
     const attributeValue = `:${fieldName}`;
-    
-    context.expressionAttributeNames[attributeName] = fieldName;
+
+    let expObj = {
+      attrNameKey: attributeName,
+      attrValueKey: attributeValue,
+      type: 'SET',
+      expression: `${attributeName} = ${attributeValue}`,
+      fieldName: fieldName,
+      fieldValue: this.toDy(value)
+    };
+
+    console.log('CounterField - getUpdateExpression', fieldName, value);
+
+    if (value === null) {
+      expObj = {
+        ...expObj,
+        type: 'REMOVE',
+        expression: `${attributeName}`,
+        fieldValue: null
+      };
+    }
     
     // If the value is relative (has + or - prefix), use ADD
     if (typeof value === 'string' && (value.startsWith('+') || value.startsWith('-'))) {
       const numericValue = parseInt(value, 10);
-      context.expressionAttributeValues[attributeValue] = numericValue;
       
       // Return just the expression part without the ADD keyword
-      return {
+      expObj = {
+        ...expObj,
         type: 'ADD',
-        expression: `${attributeName} ${attributeValue}`
+        expression: `${attributeName} ${attributeValue}`,
+        fieldValue: numericValue,
       };
     }
     
-    // Return just the expression part without the SET keyword
-    context.expressionAttributeValues[attributeValue] = this.toDy(value);
-    return {
-      type: 'SET',
-      expression: `${attributeName} = ${attributeValue}`
-    };
+    return expObj;
   }
 
   toGsi(value) {
@@ -398,21 +424,42 @@ class BinaryField extends BaseField {
   }
 }
 
-class VersionField extends ULIDField {
+class VersionField extends BaseField {
   constructor(options = {}) {
     super({
       ...options,
       required: true
     });
+    this.defaultValue = options.defaultValue || ulid;
+  }
+
+  validate(value) {
+    super.validate(value);
+    if (value !== undefined) {
+      // Verify it's a valid ULID string
+      if (typeof value !== 'string' || value.length !== 26) {
+        throw new Error('VersionField value must be a valid ULID');
+      }
+    }
+    return true;
   }
 
   getInitialValue() {
+    return typeof this.defaultValue === 'function' 
+      ? this.defaultValue() 
+      : this.defaultValue;
+  }
+
+  updateBeforeSave(value) {
     return ulid();
   }
 
+  fromDy(value) {
+    return value || this.getInitialValue();
+  }
+
   toDy(value) {
-    // Always generate a new ULID when saving
-    return ulid();
+    return value || this.getInitialValue();
   }
 }
 

@@ -6,7 +6,7 @@ const {
   GSI_INDEX_ID1,
   GSI_INDEX_ID2
 } = require('../model');
-const { StringField, CreateDateField, ULIDField, RelatedField } = require('../fields');
+const { StringField, CreateDateField, ULIDField, RelatedField, VersionField } = require('../fields');
 
 class Post extends BaseModel {
   static modelPrefix = 'p';
@@ -17,6 +17,7 @@ class Post extends BaseModel {
     title: StringField({ required: true }),
     content: StringField({ required: true }),
     createdAt: CreateDateField(),
+    version: VersionField(),
   };
 
   static primaryKey = PrimaryKeyConfig('postId');

@@ -1,6 +1,5 @@
 // src/model.js
-const { ulid } = require('ulid');
-const { StringField, DateTimeField, RelatedFieldClass, RelatedField } = require('./fields');
+const { RelatedFieldClass, StringField } = require('./fields');
 const { ModelManager } = require('./model-manager');
 
 // Constants for GSI indexes
@@ -15,6 +14,14 @@ const UNIQUE_CONSTRAINT_ID3 = '_uc3';
 
 const GID_SEPARATOR = "##__SK__##";
 const UNIQUE_CONSTRAINT_KEY = "_raft_uc";
+
+const SYSTEM_FIELDS = [
+  '_pk', '_sk',
+  '_gsi1_pk', '_gsi1_sk',
+  '_gsi2_pk', '_gsi2_sk',
+  '_gsi3_pk', '_gsi3_sk',
+  '_gsi_test_id'
+];
 
 class PrimaryKeyConfig {
   constructor(pk, sk = 'modelPrefix') {
@@ -602,53 +609,74 @@ class BaseModel {
     });
   }
 
-  static async _saveItem(primaryId, data, options = {}) {
-    const { isNew = false } = options;
-    const currentItem = isNew ? null : await this.find(primaryId);
+  static async _saveItem(primaryId, jsUpdates, options = {}) {
+    const { 
+      isNew = false,
+      instanceObj = null,
+      constraints = {} 
+    } = options;
+
+    console.log('saveItem', primaryId);
+    
+    const currentItem = isNew ? null : instanceObj || await this.find(primaryId);
     
     if (!isNew && !currentItem) {
       throw new Error('Item not found');
     }
 
     // Validate unique constraints before attempting save
-    await this.validateUniqueConstraints(data, isNew ? null : primaryId);
+    await this.validateUniqueConstraints(jsUpdates, isNew ? null : primaryId);
 
     const transactItems = [];
-    const itemToSave = {};
+    const dyUpdatesToSave = {};
     let hasUniqueConstraintChanges = false;
     
-    // Handle fields
+    // Generate Dynamo Updates to save
     for (const [key, field] of Object.entries(this.fields)) {
-      if (data[key] === undefined && isNew) {
+      if (jsUpdates[key] === undefined && isNew) {
         // Only set initial values during creation
         const initialValue = field.getInitialValue();
         if (initialValue !== undefined) {
-          data[key] = initialValue;
+          jsUpdates[key] = initialValue;
         }
       }
 
-      if (data[key] !== undefined) {
-        field.validate(data[key]);
-        itemToSave[key] = field.toDy(data[key]);
+      if (jsUpdates[key] !== undefined) {
+        field.validate(jsUpdates[key]);
+        dyUpdatesToSave[key] = field.toDy(jsUpdates[key]);
+      } else {
+        if (typeof field.updateBeforeSave === 'function') {
+          const newValue = field.updateBeforeSave(jsUpdates[key]);
+          if (newValue !== jsUpdates[key]) {
+            dyUpdatesToSave[key] = newValue;
+          }
+        }
       }
+    }
+
+    if (jsUpdates.length === 0) {
+      return currentItem;
     }
 
     // Handle unique constraints
     for (const constraint of Object.values(this.uniqueConstraints || {})) {
-      const field = constraint.field;
-      const newValue = itemToSave[field];
-      const currentValue = currentItem?.[field];
+      const fieldName = constraint.field;
+      const field = this.fields[fieldName];
+      const dyNewValue = dyUpdatesToSave[fieldName];
+      const dyCurrentValue = currentItem?._originalData[fieldName];
 
-      if (newValue !== undefined && newValue !== currentValue) {
+      console.log('uniqueConstraint', field, dyCurrentValue, dyNewValue);
+
+      if (dyNewValue !== undefined && dyNewValue !== dyCurrentValue) {
         hasUniqueConstraintChanges = true;
         
         // Remove old constraint if updating
-        if (currentItem && currentValue) {
+        if (currentItem && dyCurrentValue) {
           transactItems.push(
             await this._removeUniqueConstraint(
-              field,
-              currentValue,
-              currentItem.getPrimaryId(),
+              fieldName,
+              dyCurrentValue,
+              primaryId,
               constraint.constraintId
             )
           );
@@ -657,8 +685,8 @@ class BaseModel {
         // Add new constraint
         transactItems.push(
           await this._createUniqueConstraint(
-            field,
-            newValue,
+            fieldName,
+            dyNewValue,
             primaryId,
             constraint.constraintId
           )
@@ -669,28 +697,86 @@ class BaseModel {
     // Add test_id if we're in test mode
     const testId = this.manager.getTestId();
     if (testId) {
-      itemToSave._gsi_test_id = testId;
+      console.log("savedTestId", testId, currentItem);
+      if (testId !== currentItem?._originalData._gsi_test_id) {
+        dyUpdatesToSave._gsi_test_id = testId;
+      }
     }
 
     // Add GSI keys
-    const indexKeys = this.getIndexKeys(itemToSave);
-    Object.assign(itemToSave, indexKeys);
+    const indexKeys = this.getIndexKeys(dyUpdatesToSave);
+    console.log('indexKeys', indexKeys);
+    Object.assign(dyUpdatesToSave, indexKeys);
 
-    // Build update expression
-    const { updateExpression, names, values } = this._buildUpdateExpression(itemToSave);
+    // Build the condition expression for the update/put
+    const conditionExpressions = [];
+    const conditionNames = {};
+    const conditionValues = {};
 
+    // Handle existence constraints
+    if (constraints.mustExist) {
+      conditionExpressions.push('attribute_exists(#pk)');
+      conditionNames['#pk'] = '_pk';
+    }
+    if (constraints.mustNotExist) {
+      conditionExpressions.push('attribute_not_exists(#pk)');
+      conditionNames['#pk'] = '_pk';
+    }
+
+    console.log('field matchconstraints', constraints);
+
+    // Handle field match constraints
+    if (constraints.fieldMatches) {
+      if (instanceObj === null) {
+        throw new Error('Instance object is required to check field matches');
+      }
+
+      const matchFields = Array.isArray(constraints.fieldMatches) 
+        ? constraints.fieldMatches 
+        : [constraints.fieldMatches];
+
+      matchFields.forEach((fieldName, index) => {
+        if (!this.fields[fieldName]) {
+          throw new Error(`Unknown field in fieldMatches constraint: ${fieldName}`);
+        }
+
+        const nameKey = `#match${index}`;
+        const valueKey = `:match${index}`;
+        
+        conditionExpressions.push(`${nameKey} = ${valueKey}`);
+        conditionNames[nameKey] = fieldName;
+        conditionValues[valueKey] = currentItem ? 
+          currentItem._originalData[fieldName] : 
+          undefined;
+      });
+    }
+
+    // When building update expression, pass both old and new data
+    const { updateExpression, names, values } = this._buildUpdateExpression(dyUpdatesToSave);
+
+    const dyKey = this.getDyKeyForPkSk(this.parsePrimaryId(primaryId));
+    console.log('dyKey', dyKey);
     // Create the update params
     const updateParams = {
       TableName: this.table,
-      Key: this.getDyKeyForPkSk(this.parsePrimaryId(primaryId)),
+      Key: dyKey,
       UpdateExpression: updateExpression,
-      ExpressionAttributeNames: names,
-      ExpressionAttributeValues: values,
+      ExpressionAttributeNames: {
+        ...names,
+        ...conditionNames
+      },
+      ExpressionAttributeValues: {
+        ...values,
+        ...conditionValues
+      },
       ReturnValues: 'ALL_NEW'
     };
 
-    // Add condition for new items
-    if (isNew) {
+    // Add condition expression if we have any conditions
+    if (conditionExpressions.length > 0) {
+      updateParams.ConditionExpression = conditionExpressions.join(' AND ');
+    } else if (isNew) {
+      // Default condition for new items if no other conditions specified
       updateParams.ConditionExpression = 'attribute_not_exists(#pk)';
       updateParams.ExpressionAttributeNames['#pk'] = '_pk';
     }
@@ -703,6 +789,8 @@ class BaseModel {
         transactItems.push({
           Update: updateParams
         });
+
+        console.log('transactItems', JSON.stringify(transactItems, null, 2));
 
         response = await this.documentClient.transactWrite({
           TransactItems: transactItems,
@@ -717,6 +805,8 @@ class BaseModel {
         return savedItem;
       } else {
         // Use simple update if no unique constraints are changing
+        console.log('updateParams', JSON.stringify(updateParams, null, 2));
+
         response = await this.documentClient.update(updateParams);
         const savedItem = this.fromDynamoDB(response.Attributes);
         savedItem._response = {
@@ -726,8 +816,20 @@ class BaseModel {
       }
     } catch (error) {
       console.error('Save error:', error);
+      if (error.name === 'ConditionalCheckFailedException') {
+        if (constraints.mustExist) {
+          throw new Error('Item must exist');
+        }
+        if (constraints.mustNotExist) {
+          throw new Error('Item must not exist');
+        }
+        if (constraints.fieldMatches) {
+          throw new Error('Field values have been modified');
+        }
+        throw new Error('Condition check failed');
+      }
       if (error.name === 'TransactionCanceledException') {
-        await this.validateUniqueConstraints(data, isNew ? null : primaryId);
+        await this.validateUniqueConstraints(jsUpdates, isNew ? null : primaryId);
       }
       throw error;
     }
@@ -761,52 +863,62 @@ class BaseModel {
       _sk: skValue
     });
 
-    return this._saveItem(primaryId, processedData, { isNew: true });
+    return await this._saveItem(primaryId, processedData, { isNew: true });
   }
 
-  static async update(primaryId, data) {
-    return this._saveItem(primaryId, data, { isNew: false });
+  static async update(primaryId, data, options = {}) {
+    return this._saveItem(primaryId, data, { 
+      ...options,
+      isNew: false
+     });
   }
 
-  static _buildUpdateExpression(data) {
+  static _buildUpdateExpression(dyUpdatesToSave) {
     const names = {};
     const values = {};
-    const setParts = [];
-    const addParts = [];
-    
-    Object.entries(data).forEach(([key, value]) => {
-      const field = this.fields[key];
-      const attrName = `#${key}`;
-      const attrValue = `:${key}`;
-      
-      names[attrName] = key;
-      
-      // Special handling for CounterField operations
-      if (field?.constructor.name === 'CounterField' && typeof value === 'string') {
-        if (value.startsWith('+')) {
-          values[attrValue] = parseInt(value.substring(1), 10);
-          addParts.push(`${attrName} ${attrValue}`);
-        } else if (value.startsWith('-')) {
-          values[attrValue] = parseInt(value.substring(1), 10) * -1;
-          addParts.push(`${attrName} ${attrValue}`);
+    const expressions = [];
+
+    console.log('dyUpdatesToSave', dyUpdatesToSave);
+
+    // Process all fields in the data
+    for (const [fieldName, value] of Object.entries(dyUpdatesToSave)) {
+        // Skip undefined values
+        if (value === undefined) continue;
+
+        if (SYSTEM_FIELDS.includes(fieldName)) {
+          expressions.push(StringField().getUpdateExpression(fieldName, value));
         } else {
-          values[attrValue] = value;
-          setParts.push(`${attrName} = ${attrValue}`);
+          const field = this.fields[fieldName];
+          expressions.push(field.getUpdateExpression(fieldName, value));  
         }
-      } else {
-        values[attrValue] = value;
-        setParts.push(`${attrName} = ${attrValue}`);
-      }
-    });
-    
+    }
+
     const parts = [];
-    if (setParts.length > 0) parts.push(`SET ${setParts.join(', ')}`);
-    if (addParts.length > 0) parts.push(`ADD ${addParts.join(', ')}`);
+    const setExpressions = [];
+    const addExpressions = [];
+    const removeExpressions = [];
+
+    expressions.forEach(expression => {
+      if (expression.type === 'SET') {
+        setExpressions.push(expression.expression);
+      } else if (expression.type === 'ADD') {
+        addExpressions.push(expression.expression);
+      } else if (expression.type === 'REMOVE') {
+        removeExpressions.push(expression.expression);
+      }
+
+      names[expression.attrNameKey] = expression.fieldName;
+      values[expression.attrValueKey] = expression.fieldValue;
+    });
+
+    if (setExpressions.length > 0) parts.push(`SET ${setExpressions.join(', ')}`);
+    if (addExpressions.length > 0) parts.push(`ADD ${addExpressions.join(', ')}`);
+    if (removeExpressions.length > 0) parts.push(`REMOVE ${removeExpressions.join(', ')}`);
     
     return {
-      updateExpression: parts.join(' '),
-      names,
-      values
+        updateExpression: parts.join(' '),
+        names,
+        values
     };
   }
 
@@ -858,16 +970,7 @@ class BaseModel {
   constructor(data = {}) {
     // Initialize data object with all DynamoDB attributes
     this.data = {};
-    
-    // Copy all DynamoDB system attributes
-    const systemKeys = [
-      '_pk', '_sk',
-      '_gsi1_pk', '_gsi1_sk',
-      '_gsi2_pk', '_gsi2_sk',
-      '_gsi3_pk', '_gsi3_sk'
-    ];
-    
-    systemKeys.forEach(key => {
+    SYSTEM_FIELDS.forEach(key => {
       if (data[key] !== undefined) {
         this.data[key] = data[key];
       }
@@ -1033,14 +1136,31 @@ class BaseModel {
   }
 
   // Instance method to save only changes
-  async save() {
+  async save(options = {}) {
     if (!this.hasChanges()) {
       return this; // No changes to save
     }
 
     const changes = this.getChanges();
-    console.log("update primaryId", this.data);
-    await this.constructor.update(this.getPrimaryId(), changes);
+    console.log("save() - changes", changes);
+    const updatedObj = await this.constructor.update(
+      this.getPrimaryId(), 
+      changes, 
+      { instanceObj: this, ...options });
+    
+    // Update this instance with the new values
+    Object.entries(this.constructor.fields).forEach(([fieldName, field]) => {
+      if (updatedObj[fieldName] !== undefined) {
+        this[fieldName] = updatedObj[fieldName];
+      }
+    });
+    
+    // Copy any system fields
+    SYSTEM_FIELDS.forEach(key => {
+      if (updatedObj.data[key] !== undefined) {
+        this.data[key] = updatedObj.data[key];
+      }
+    });
     
     // Reset change tracking after successful save
     this._resetChangeTracking();

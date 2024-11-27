@@ -38,13 +38,6 @@ class TestUser extends BaseModel {
 describe('Filter Expression Tests', () => {
   let users = [];
 
-  beforeAll(async () => {
-    initModels({
-      region: process.env.AWS_REGION,
-      tableName: process.env.TABLE_NAME
-    });
-  });
-
   beforeEach(async () => {
     testId = ulid();
   

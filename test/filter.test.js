@@ -75,7 +75,7 @@ describe('Filter Expression Tests', () => {
         status: 'active',
         isVerified: true,
         country: 'US',
-        lastLoginDate: new Date('2024-01-01').getTime(),
+        lastLoginDate: new Date('2024-01-01'),
         score: 100
       }),
       TestUser.create({
@@ -84,7 +84,7 @@ describe('Filter Expression Tests', () => {
         status: 'active',
         isVerified: false,
         country: 'CA',
-        lastLoginDate: new Date('2024-01-02').getTime(),
+        lastLoginDate: new Date('2024-01-02'),
         score: 150
       }),
       TestUser.create({
@@ -93,7 +93,7 @@ describe('Filter Expression Tests', () => {
         status: 'inactive',
         isVerified: true,
         country: 'UK',
-        lastLoginDate: new Date('2024-01-03').getTime(),
+        lastLoginDate: new Date('2024-01-03'),
         score: 75
       })
     ]);
@@ -195,7 +195,7 @@ describe('Filter Expression Tests', () => {
   test('should handle date field filtering', async () => {
     const result = await TestUser.queryByIndex('byStatus', 'active', {
       filter: {
-        lastLoginDate: { $lt: new Date('2024-01-02').getTime() }
+        lastLoginDate: { $lt: new Date('2024-01-02') }
       }
     });
 

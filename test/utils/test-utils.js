@@ -43,6 +43,7 @@ async function cleanupTestData(testId) {
 
       await Promise.all(deletePromises);
       logger.log('Cleanup complete');
+      await new Promise(resolve => setTimeout(resolve, 100));
     }
 
   } catch (err) {

@@ -645,28 +645,6 @@ class BaseModel {
       { ...options, indexName: index instanceof PrimaryKeyConfig ? undefined : (index.indexId || undefined) }
     );
 
-    // Add range key conditions if provided
-    if (options.rangeKey && options.rangeValue !== undefined) {
-      const skName = index instanceof PrimaryKeyConfig ? '_sk' : `_${index.indexId ? index.indexId + '_' : ''}sk`;
-      params.ExpressionAttributeNames['#sk'] = skName;
-
-      const formatRangeValue = (value) => {
-        if (index.sk === 'modelPrefix' ? null : this.fields[index.sk] && this.fields[index.sk].toGsi) {
-          return this.fields[index.sk].toGsi(value);
-        }
-        return value.toString();
-      };
-
-      if (options.rangeCondition === 'BETWEEN' && options.endRangeValue !== undefined) {
-        params.KeyConditionExpression += ' AND #sk BETWEEN :rv AND :erv';
-        params.ExpressionAttributeValues[':rv'] = formatRangeValue(options.rangeValue);
-        params.ExpressionAttributeValues[':erv'] = formatRangeValue(options.endRangeValue);
-      } else {
-        params.KeyConditionExpression += ` AND #sk ${options.rangeCondition} :rv`;
-        params.ExpressionAttributeValues[':rv'] = formatRangeValue(options.rangeValue);
-      }
-    }
-
     logger.debug('Query params:', JSON.stringify(params, null, 2));
 
     const response = await this.documentClient.query(params);
@@ -888,7 +866,7 @@ class BaseModel {
         return savedItem;
       }
     } catch (error) {
-      console.error('Save error:', error);
+      // console.error('Save error:', error);
       if (error.name === 'ConditionalCheckFailedException') {
         if (constraints.mustExist) {
           throw new Error('Item must exist');
@@ -899,8 +877,9 @@ class BaseModel {
         if (constraints.fieldMatches) {
           throw new Error('Field values have been modified');
         }
-        throw new Error('Condition check failed');
+        throw new Error('Condition check failed', error);
       }
+
       if (error.name === 'TransactionCanceledException') {
         await this.validateUniqueConstraints(jsUpdates, isNew ? null : primaryId);
       }

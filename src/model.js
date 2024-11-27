@@ -1,6 +1,7 @@
 // src/model.js
 const { RelatedFieldClass, StringField } = require('./fields');
 const { ModelManager } = require('./model-manager');
+const { FilterExpressionBuilder } = require('./filter-expression');
 
 // Constants for GSI indexes
 const GSI_INDEX_ID1 = 'gsi1';
@@ -413,7 +414,8 @@ class BaseModel {
       limit,
       startKey,
       direction = 'DESC',
-      indexName
+      indexName,
+      filter
     } = options;
 
     const params = {
@@ -436,6 +438,26 @@ class BaseModel {
 
     if (startKey) {
       params.ExclusiveStartKey = startKey;
+    }
+
+    // Add filter expression if provided
+    if (filter) {
+      const filterBuilder = new FilterExpressionBuilder();
+      const filterExpression = filterBuilder.build(filter, this);
+
+      if (filterExpression) {
+        params.FilterExpression = filterExpression.FilterExpression;
+        
+        // Merge expression attribute names and values
+        Object.assign(
+          params.ExpressionAttributeNames,
+          filterExpression.ExpressionAttributeNames
+        );
+        Object.assign(
+          params.ExpressionAttributeValues,
+          filterExpression.ExpressionAttributeValues
+        );
+      }
     }
 
     return params;

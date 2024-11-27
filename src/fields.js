@@ -475,6 +475,42 @@ class VersionField extends BaseField {
   }
 }
 
+class BooleanField extends BaseField {
+  validate(value) {
+    super.validate(value);
+    if (value !== undefined && value !== null && typeof value !== 'boolean') {
+      throw new Error('BooleanField value must be a boolean');
+    }
+    return true;
+  }
+
+  getInitialValue() {
+    return this.defaultValue !== undefined ? this.defaultValue : null;
+  }
+
+  toDy(value) {
+    if (value === undefined || value === null) {
+      return this.getInitialValue();
+    }
+    return Boolean(value);
+  }
+
+  fromDy(value) {
+    if (value === undefined || value === null) {
+      return this.getInitialValue();
+    }
+    return Boolean(value);
+  }
+
+  toGsi(value) {
+    if (value === undefined || value === null) {
+      return '';
+    }
+    // Convert to '0' or '1' for consistent string sorting
+    return value ? '1' : '0';
+  }
+}
+
 // Factory functions for creating field instances
 const createStringField = (options) => new StringField(options);
 const createDateTimeField = (options) => new DateTimeField(options);
@@ -487,6 +523,7 @@ const createFloatField = (options) => new FloatField(options);
 const createCounterField = (options) => new CounterField(options);
 const createBinaryField = (options) => new BinaryField(options);
 const createVersionField = (options) => new VersionField(options);
+const createBooleanField = (options) => new BooleanField(options);
 
 // Export both the factory functions and the classes
 module.exports = {
@@ -502,6 +539,7 @@ module.exports = {
   CounterField: createCounterField,
   BinaryField: createBinaryField,
   VersionField: createVersionField,
+  BooleanField: createBooleanField,
   
   // Classes (for instanceof checks)
   StringFieldClass: StringField,
@@ -514,5 +552,6 @@ module.exports = {
   FloatFieldClass: FloatField,
   CounterFieldClass: CounterField,
   BinaryFieldClass: BinaryField,
-  VersionFieldClass: VersionField
+  VersionFieldClass: VersionField,
+  BooleanFieldClass: BooleanField
 }; 

@@ -5,6 +5,7 @@ const {
 
 const { ulid } = require('ulid');
 require('dotenv').config();
+const { defaultLogger: logger } = require('../src/utils/logger');
 
 let testId;
 
@@ -33,12 +34,12 @@ describe('Basic test of Non-test environment', () => {
       externalPlatform: ulid()
     };
 
-    console.log('Creating user with data:', userData);
+    logger.log('Creating user with data:', userData);
     let user;
 
     try {
       user = await User.create(userData);
-      console.log('Created user:', user);
+      logger.log('Created user:', user);
       
       // Compare only the input fields that we explicitly provided
       expect(user.name).toBe(userData.name);

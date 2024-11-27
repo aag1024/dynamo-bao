@@ -5,6 +5,7 @@ const { StringField, VersionField } = require('../src/fields');
 const { cleanupTestData, verifyCleanup } = require('./utils/test-utils');
 const { ulid } = require('ulid');
 require('dotenv').config();
+const { defaultLogger: logger } = require('../src/utils/logger');
 
 let testId;
 
@@ -111,7 +112,7 @@ describe('Version Field Tests', () => {
     client1.name = 'Client 1 Update';
     await client1.save({ constraints: { fieldMatches: 'version' } });
 
-    console.log("VERSIONS", client1.version, testVersion.version);
+    logger.log("VERSIONS", client1.version, testVersion.version);
     expect(client1.version).not.toBe(testVersion.version);
 
     // Second client tries to update with old version

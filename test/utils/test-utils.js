@@ -1,5 +1,8 @@
+
+require('dotenv').config();
 const { ModelManager } = require('../../src/model-manager');
 const { QueryCommand, DeleteCommand } = require('@aws-sdk/lib-dynamodb');
+const { defaultLogger: logger } = require('../../src/utils/logger');
 
 async function cleanupTestData(testId) {
   if (!testId) {
@@ -39,7 +42,7 @@ async function cleanupTestData(testId) {
       );
 
       await Promise.all(deletePromises);
-      console.log('Cleanup complete');
+      logger.log('Cleanup complete');
     }
 
   } catch (err) {
@@ -50,7 +53,7 @@ async function cleanupTestData(testId) {
 
 async function verifyCleanup(testId) {
   if (!testId) {
-    console.log('No testId provided, skipping verification');
+    logger.log('No testId provided, skipping verification');
     return true;
   }
 

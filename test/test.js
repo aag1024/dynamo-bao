@@ -7,6 +7,7 @@ const { cleanupTestData, verifyCleanup } = require('./utils/test-utils');
 const { ulid } = require('ulid');
 const { QueryCommand } = require('@aws-sdk/lib-dynamodb');
 require('dotenv').config();
+const { defaultLogger: logger } = require('../src/utils/logger');
 
 let testId;
 
@@ -23,8 +24,8 @@ beforeAll(async () => {
     const tableInfo = await docClient.send(new DescribeTableCommand({
       TableName: process.env.TABLE_NAME
     }));
-    console.log('Table exists:', tableInfo.Table.TableName);
-    console.log('GSIs:', tableInfo.Table.GlobalSecondaryIndexes);
+    logger.log('Table exists:', tableInfo.Table.TableName);
+    logger.log('GSIs:', tableInfo.Table.GlobalSecondaryIndexes);
   } catch (error) {
     console.error('Failed to connect to DynamoDB:', error);
     throw error;
@@ -62,11 +63,11 @@ describe('User CRUD Operations', () => {
       externalPlatform: 'platform1'
     };
 
-    console.log('Creating user with data:', userData);
+    logger.log('Creating user with data:', userData);
     
     try {
       const user = await User.create(userData);
-      console.log('Created user:', user);
+      logger.log('Created user:', user);
       
       // Compare only the input fields that we explicitly provided
       expect(user.name).toBe(userData.name);

@@ -2,6 +2,7 @@
 const fs = require('fs');
 const path = require('path');
 const { ModelManager } = require('./model-manager');
+const { defaultLogger: logger } = require('./utils/logger');
 
 const { 
     BaseModel,
@@ -68,7 +69,7 @@ const {
     // Initialize the manager
     manager.init(config);
   
-    console.log('Models initialized:', {
+    logger.log('Models initialized:', {
       testId: config.test_id,
       managerTestId: manager.getTestId(),
       registeredModels: Array.from(manager._models.keys())

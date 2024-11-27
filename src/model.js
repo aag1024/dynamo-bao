@@ -2,6 +2,7 @@
 const { RelatedFieldClass, StringField } = require('./fields');
 const { ModelManager } = require('./model-manager');
 const { FilterExpressionBuilder } = require('./filter-expression');
+const { defaultLogger: logger } = require('./utils/logger');
 
 // Constants for GSI indexes
 const GSI_INDEX_ID1 = 'gsi1';
@@ -105,7 +106,7 @@ class BaseModel {
         throw new Error(`Primary key field '${this.primaryKey.pk}' not found in ${this.name} fields`);
       }
       if (!pkField.required) {
-        console.warn(`Warning: Primary key field '${this.primaryKey.pk}' in ${this.name} was not explicitly marked as required. Marking as required automatically.`);
+        logger.warn(`Warning: Primary key field '${this.primaryKey.pk}' in ${this.name} was not explicitly marked as required. Marking as required automatically.`);
         pkField.required = true;
       }
     }
@@ -116,7 +117,7 @@ class BaseModel {
         throw new Error(`Sort key field '${this.primaryKey.sk}' not found in ${this.name} fields`);
       }
       if (!skField.required) {
-        console.warn(`Warning: Sort key field '${this.primaryKey.sk}' in ${this.name} was not explicitly marked as required. Marking as required automatically.`);
+        logger.warn(`Warning: Sort key field '${this.primaryKey.sk}' in ${this.name} was not explicitly marked as required. Marking as required automatically.`);
         skField.required = true;
       }
     }
@@ -251,7 +252,7 @@ class BaseModel {
       this.modelPrefix : 
       data[this.primaryKey.pk];
 
-    console.log('getPkValue', pkValue);
+    logger.debug('getPkValue', pkValue);
 
     return pkValue;
   }
@@ -343,10 +344,10 @@ class BaseModel {
   }
 
   static async find(primaryId) {
-    console.log('find primaryId', {primaryId});
+    logger.debug('find primaryId', {primaryId});
     const pkSk = this.parsePrimaryId(primaryId);
     const dyKey = this.getDyKeyForPkSk(pkSk);
-    console.log('find key', {primaryId, dyKey});
+    logger.debug('find key', {primaryId, dyKey});
     const result = await this.documentClient.get({
       TableName: this.table,
       Key: dyKey,
@@ -489,7 +490,7 @@ class BaseModel {
   }
 
   static async validateUniqueConstraints(data, currentId = null) {
-    console.log('validateUniqueConstraints called on', this.name, {
+    logger.debug('validateUniqueConstraints called on', this.name, {
       modelTestId: this._test_id,
       managerTestId: this.manager.getTestId(),
       instanceKey: this._test_id || 'default'
@@ -514,7 +515,7 @@ class BaseModel {
           value
         );
 
-        console.log('Checking unique constraint:', {
+        logger.debug('Checking unique constraint:', {
           key,
           field: constraint.field,
           value,
@@ -531,7 +532,7 @@ class BaseModel {
         });
         
         if (result.Item) {
-          console.log('Found existing constraint:', result.Item);
+          logger.debug('Found existing constraint:', result.Item);
           if (!currentId || result.Item.relatedId !== currentId) {
             throw new Error(`${constraint.field} must be unique`);
           }
@@ -595,7 +596,7 @@ class BaseModel {
       }
       
       if (pkValue !== undefined && skValue !== undefined && index.indexId !== undefined) {
-        console.log('indexKeys', {
+        logger.debug('indexKeys', {
           pkValue,
           skValue,
           indexId: index.indexId
@@ -626,7 +627,7 @@ class BaseModel {
       throw new Error(`Index "${indexName}" not found in ${this.name} model`);
     }
 
-    console.log('queryByIndex', { indexName, pkValue });
+    logger.debug('queryByIndex', { indexName, pkValue });
 
     // Format the partition key
     let formattedPk;
@@ -636,7 +637,7 @@ class BaseModel {
       formattedPk = this.formatGsiKey(this.modelPrefix, index.indexId || '', pkValue);
     }
 
-    console.log('formattedPk', formattedPk);
+    logger.debug('formattedPk', formattedPk);
 
     const params = this.getBaseQueryParams(
       index instanceof PrimaryKeyConfig ? '_pk' : `_${index.indexId ? index.indexId + '_' : ''}pk`,
@@ -666,7 +667,7 @@ class BaseModel {
       }
     }
 
-    console.log('Query params:', JSON.stringify(params, null, 2));
+    logger.debug('Query params:', JSON.stringify(params, null, 2));
 
     const response = await this.documentClient.query(params);
   
@@ -688,7 +689,7 @@ class BaseModel {
       constraints = {} 
     } = options;
 
-    console.log('saveItem', primaryId);
+    logger.debug('saveItem', primaryId);
     
     const currentItem = isNew ? null : instanceObj || await this.find(primaryId);
     
@@ -737,7 +738,7 @@ class BaseModel {
       const dyNewValue = dyUpdatesToSave[fieldName];
       const dyCurrentValue = currentItem?._originalData[fieldName];
 
-      console.log('uniqueConstraint', field, dyCurrentValue, dyNewValue);
+      logger.debug('uniqueConstraint', field, dyCurrentValue, dyNewValue);
 
       if (dyNewValue !== undefined && dyNewValue !== dyCurrentValue) {
         hasUniqueConstraintChanges = true;
@@ -769,7 +770,7 @@ class BaseModel {
     // Add test_id if we're in test mode
     const testId = this.manager.getTestId();
     if (testId) {
-      console.log("savedTestId", testId, currentItem);
+      logger.debug("savedTestId", testId, currentItem);
       if (testId !== currentItem?._originalData._gsi_test_id) {
         dyUpdatesToSave._gsi_test_id = testId;
       }
@@ -777,7 +778,7 @@ class BaseModel {
 
     // Add GSI keys
     const indexKeys = this.getIndexKeys(dyUpdatesToSave);
-    console.log('indexKeys', indexKeys);
+    logger.debug('indexKeys', indexKeys);
     Object.assign(dyUpdatesToSave, indexKeys);
 
     // Build the condition expression for the update/put
@@ -795,7 +796,7 @@ class BaseModel {
       conditionNames['#pk'] = '_pk';
     }
 
-    console.log('field matchconstraints', constraints);
+    logger.debug('field matchconstraints', constraints);
 
     // Handle field match constraints
     if (constraints.fieldMatches) {
@@ -827,7 +828,7 @@ class BaseModel {
     const { updateExpression, names, values } = this._buildUpdateExpression(dyUpdatesToSave);
 
     const dyKey = this.getDyKeyForPkSk(this.parsePrimaryId(primaryId));
-    console.log('dyKey', dyKey);
+    logger.debug('dyKey', dyKey);
     // Create the update params
     const updateParams = {
       TableName: this.table,
@@ -862,7 +863,7 @@ class BaseModel {
           Update: updateParams
         });
 
-        console.log('transactItems', JSON.stringify(transactItems, null, 2));
+        logger.debug('transactItems', JSON.stringify(transactItems, null, 2));
 
         response = await this.documentClient.transactWrite({
           TransactItems: transactItems,
@@ -877,7 +878,7 @@ class BaseModel {
         return savedItem;
       } else {
         // Use simple update if no unique constraints are changing
-        console.log('updateParams', JSON.stringify(updateParams, null, 2));
+        logger.debug('updateParams', JSON.stringify(updateParams, null, 2));
 
         response = await this.documentClient.update(updateParams);
         const savedItem = this.fromDynamoDB(response.Attributes);
@@ -961,7 +962,7 @@ class BaseModel {
     const values = {};
     const expressions = [];
 
-    console.log('dyUpdatesToSave', dyUpdatesToSave);
+    logger.debug('dyUpdatesToSave', dyUpdatesToSave);
 
     // Process all fields in the data
     for (const [fieldName, value] of Object.entries(dyUpdatesToSave)) {
@@ -1155,15 +1156,15 @@ class BaseModel {
       sk: skValue
     }
 
-    console.log("getPrimaryKeyValues", key);
+    logger.debug("getPrimaryKeyValues", key);
 
     return key;
   }
 
   static getPrimaryId(data) {
-    console.log("getPrimaryId", data);
+    logger.debug("getPrimaryId", data);
     const pkSk = this.getPrimaryKeyValues(data);
-    console.log("getPrimaryId", pkSk);
+    logger.debug("getPrimaryId", pkSk);
 
     let primaryId;
     if (this.primaryKey.pk === 'modelPrefix') {
@@ -1228,7 +1229,7 @@ class BaseModel {
     }
 
     const changes = this.getChanges();
-    console.log("save() - changes", changes);
+    logger.debug("save() - changes", changes);
     const updatedObj = await this.constructor.update(
       this.getPrimaryId(), 
       changes, 

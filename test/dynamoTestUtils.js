@@ -1,4 +1,5 @@
 // test/dynamoTestUtils.js
+const { defaultLogger: logger } = require('../src/utils/logger');
 
 function extractCapacityUnits(capacity) {
     if (!capacity) return { read: 0, write: 0 };
@@ -41,10 +42,10 @@ function extractCapacityUnits(capacity) {
   }
   
   function printCapacityUsage(operation, capacity, duration) {
-    console.log(`\nOperation Capacity Usage:`);
-    console.log(`- Read Capacity Units (RCU): ${capacity.ReadCapacityUnits || 0}`);
-    console.log(`- Write Capacity Units (WCU): ${capacity.WriteCapacityUnits || 0}`);
-    console.log(`- Duration: ${duration}ms`);
+    logger.log(`\nOperation Capacity Usage:`);
+    logger.log(`- Read Capacity Units (RCU): ${capacity.ReadCapacityUnits || 0}`);
+    logger.log(`- Write Capacity Units (WCU): ${capacity.WriteCapacityUnits || 0}`);
+    logger.log(`- Duration: ${duration}ms`);
   }
   
   async function verifyCapacityUsage(operation, expectedRCU, expectedWCU, allowance = 2.0) {
@@ -64,8 +65,8 @@ function extractCapacityUnits(capacity) {
     const wcuWithinRange = Math.abs((totalCapacity.WriteCapacityUnits || 0) - expectedWCU) <= allowance;
   
     if (!rcuWithinRange || !wcuWithinRange) {
-      console.log('Actual capacity:', totalCapacity);
-      console.log('Expected RCU:', expectedRCU, 'WCU:', expectedWCU);
+      logger.log('Actual capacity:', totalCapacity);
+      logger.log('Expected RCU:', expectedRCU, 'WCU:', expectedWCU);
       throw new Error(
         `Unexpected capacity usage!\n` +
         `RCU: Expected ~${expectedRCU}, got ${totalCapacity.ReadCapacityUnits || 0}\n` +

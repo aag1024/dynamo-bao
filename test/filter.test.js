@@ -132,7 +132,7 @@ describe('Filter Expression Tests', () => {
 
   test('should filter userId with $beginsWith operator', async () => {
     const johnDoe = users[0];
-    const prefix = johnDoe.userId.substring(0, 10);
+    const prefix = johnDoe.userId.substring(0, 20);
     const result = await TestUser.queryByIndex('byStatus', 'active', {
       filter: { 
         userId: { $beginsWith: prefix }

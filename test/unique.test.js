@@ -6,6 +6,7 @@ const {
 const { cleanupTestData, verifyCleanup } = require('./utils/test-utils');
 const { ulid } = require('ulid');
 require('dotenv').config();
+const { defaultLogger: logger } = require('../src/utils/logger');
 
 let testId;
 
@@ -105,7 +106,7 @@ describe('User Unique Constraints', () => {
       createdAt: user.createdAt
     });
 
-    console.log('updatedUser', updatedUser);
+    logger.log('updatedUser', updatedUser);
 
     expect(updatedUser.email).toBe('test2@example.com');
 

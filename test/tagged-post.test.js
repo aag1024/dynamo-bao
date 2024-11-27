@@ -5,6 +5,7 @@ const {
 const { cleanupTestData, verifyCleanup } = require('./utils/test-utils');
 const { ulid } = require('ulid');
 require('dotenv').config();
+const { defaultLogger: logger } = require('../src/utils/logger');
 
 let testId;
 
@@ -94,7 +95,7 @@ describe('TaggedPost Queries', () => {
     expect(tag.tagId).toBe(testTag1.tagId);
 
     const posts = await tag.queryPosts();
-    console.log("Query posts:", posts);
+    logger.log("Query posts:", posts);
     
     expect(posts.items).toHaveLength(2);
     expect(posts.items.map(p => p.postId).sort()).toEqual(

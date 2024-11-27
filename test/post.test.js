@@ -5,6 +5,7 @@ const {
 const { cleanupTestData, verifyCleanup } = require('./utils/test-utils');
 const { ulid } = require('ulid');
 require('dotenv').config();
+const { defaultLogger: logger } = require('../src/utils/logger');
 
 let testUser, testId;
 
@@ -162,10 +163,10 @@ describe('Post Model', () => {
     });
 
     test('should query all posts using allPosts index', async () => {
-      console.log('Post.indexes:', Post.indexes);
-      console.log('Post.modelPrefix:', Post.modelPrefix);
+      logger.log('Post.indexes:', Post.indexes);
+      logger.log('Post.modelPrefix:', Post.modelPrefix);
       const result = await Post.queryByIndex('allPosts', 'p');
-      console.log('Query result:', JSON.stringify(result, null, 2));
+      logger.log('Query result:', JSON.stringify(result, null, 2));
       expect(result.items).toHaveLength(2);
       expect(result.items[0].title).toBeDefined();
     });

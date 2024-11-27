@@ -1,5 +1,7 @@
+require('dotenv').config();
 const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
 const { DynamoDBDocument } = require('@aws-sdk/lib-dynamodb');
+const { defaultLogger: logger } = require('./utils/logger');
 
 class ModelManager {
   static _instances = new Map();
@@ -23,7 +25,7 @@ class ModelManager {
   }
 
   registerModel(ModelClass) {
-    console.log('Registering model:', {
+    logger.log('Registering model:', {
       name: ModelClass.name,
       testId: this._test_id
     });
@@ -66,7 +68,7 @@ class ModelManager {
     if (!ModelClass) {
       throw new Error(`Model ${modelName} not found`);
     }
-    // console.log('Getting model:', {
+    // logger.log('Getting model:', {
     //   name: modelName,
     //   testId: this._test_id,
     //   modelTestId: ModelClass._test_id,

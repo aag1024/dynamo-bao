@@ -1,4 +1,6 @@
+require('dotenv').config();
 const { ulid, decodeTime } = require('ulid');
+const { defaultLogger: logger } = require('./utils/logger');
 
 class BaseField {
   constructor(options = {}) {
@@ -124,7 +126,7 @@ class DateTimeField extends BaseField {
       const timestamp = this.toDy(value);
       if (!timestamp) return '0';
       const result = timestamp.toString().padStart(20, '0');
-      // console.log('Converting to GSI:', { value, timestamp, result });
+      // logger.log('Converting to GSI:', { value, timestamp, result });
       return result;
     } catch (error) {
       console.warn('Error converting date for GSI:', error);
@@ -367,7 +369,7 @@ class CounterField extends BaseField {
       fieldValue: this.toDy(value)
     };
 
-    console.log('CounterField - getUpdateExpression', fieldName, value);
+    logger.log('CounterField - getUpdateExpression', fieldName, value);
 
     if (value === null) {
       expObj = {

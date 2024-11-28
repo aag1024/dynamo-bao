@@ -3,6 +3,7 @@ const { RelatedFieldClass, StringField } = require('./fields');
 const { ModelManager } = require('./model-manager');
 const { FilterExpressionBuilder } = require('./filter-expression');
 const { defaultLogger: logger } = require('./utils/logger');
+const { KeyConditionBuilder } = require('./key-condition');
 
 // Constants for GSI indexes
 const GSI_INDEX_ID1 = 'gsi1';
@@ -410,46 +411,55 @@ class BaseModel {
     return testId ? `[${testId}]#${baseKey}` : baseKey;
   }
 
-  static getBaseQueryParams(pkFieldName, pkValue, options = {}) {
-    const {
-      limit,
-      startKey,
-      direction = 'DESC',
-      indexName,
-      filter
-    } = options;
-
+  static getBaseQueryParams(pkFieldName, pkValue, skCondition, options = {}) {
+    const keyBuilder = new KeyConditionBuilder();
+    let keyConditionExpression = `#pk = :pk`;
+    const expressionNames = { '#pk': pkFieldName };
+    const expressionValues = { ':pk': pkValue };
+  
+    if (skCondition) {
+      const skExpr = keyBuilder.buildKeyCondition(
+        this, 
+        options.indexName, 
+        skCondition,
+        options.gsiIndexId ? `_${options.gsiIndexId}_sk` : '_sk'  // Use GSI-specific sort key name
+      );
+      if (skExpr) {
+        keyConditionExpression += ` AND ${skExpr.condition}`;
+        Object.assign(expressionNames, skExpr.names);
+        Object.assign(expressionValues, skExpr.values);
+      }
+    }
+  
     const params = {
       TableName: this.table,
-      KeyConditionExpression: '#pk = :pk',
-      ExpressionAttributeNames: {
-        '#pk': pkFieldName
-      },
-      ExpressionAttributeValues: {
-        ':pk': pkValue
-      },
-      ScanIndexForward: direction === 'ASC',
-      IndexName: indexName,
+      KeyConditionExpression: keyConditionExpression,
+      ExpressionAttributeNames: expressionNames,
+      ExpressionAttributeValues: expressionValues,
+      ScanIndexForward: options.direction !== 'DESC',
       ReturnConsumedCapacity: 'TOTAL'
     };
-
-    if (limit) {
-      params.Limit = limit;
+  
+    // Add the IndexName if gsiIndexId is provided
+    if (options.gsiIndexId) {
+      params.IndexName = options.gsiIndexId;
     }
-
-    if (startKey) {
-      params.ExclusiveStartKey = startKey;
+  
+    if (options.limit) {
+      params.Limit = options.limit;
     }
-
+  
+    if (options.startKey) {
+      params.ExclusiveStartKey = options.startKey;
+    }
+  
     // Add filter expression if provided
-    if (filter) {
+    if (options.filter) {
       const filterBuilder = new FilterExpressionBuilder();
-      const filterExpression = filterBuilder.build(filter, this);
-
+      const filterExpression = filterBuilder.build(options.filter, this);
+  
       if (filterExpression) {
         params.FilterExpression = filterExpression.FilterExpression;
-        
-        // Merge expression attribute names and values
         Object.assign(
           params.ExpressionAttributeNames,
           filterExpression.ExpressionAttributeNames
@@ -460,7 +470,7 @@ class BaseModel {
         );
       }
     }
-
+  
     return params;
   }
 
@@ -610,10 +620,11 @@ class BaseModel {
     return indexKeys;
   }
 
-  static async queryByPrimaryKey(pkValue, options = {}) {
+  static async queryByPrimaryKey(pkValue, skCondition = null, options = {}) {
     const params = this.getBaseQueryParams(
       '_pk',
       this.formatPrimaryKey(this.modelPrefix, pkValue),
+      skCondition,
       options
     );
 
@@ -621,39 +632,66 @@ class BaseModel {
     return this.processQueryResponse(response, options);
   }
 
-  static async queryByIndex(indexName, pkValue, options = {}) {
+  static async queryByIndex(indexName, pkValue, skCondition = null, options = {}) {
     const index = this.indexes[indexName];
     if (!index) {
       throw new Error(`Index "${indexName}" not found in ${this.name} model`);
     }
-
-    logger.debug('queryByIndex', { indexName, pkValue });
-
-    // Format the partition key
+  
+    // Format the partition key using the field's toGsi method
     let formattedPk;
     if (index instanceof PrimaryKeyConfig) {
       formattedPk = this.formatPrimaryKey(this.modelPrefix, pkValue);
     } else {
-      formattedPk = this.formatGsiKey(this.modelPrefix, index.indexId || '', pkValue);
+      const pkField = this.fields[index.pk];
+      const gsiValue = pkField.toGsi(pkValue);
+      formattedPk = this.formatGsiKey(this.modelPrefix, index.indexId, gsiValue);
     }
-
-    logger.debug('formattedPk', formattedPk);
-
-    const params = this.getBaseQueryParams(
-      index instanceof PrimaryKeyConfig ? '_pk' : `_${index.indexId ? index.indexId + '_' : ''}pk`,
-      formattedPk,
-      { ...options, indexName: index instanceof PrimaryKeyConfig ? undefined : (index.indexId || undefined) }
-    );
-
-    logger.debug('Query params:', JSON.stringify(params, null, 2));
-
-    const response = await this.documentClient.query(params);
   
-    // If this is a paginated query, track how many items we've seen
+    // Convert sort key condition values using the field's toGsi method
+    let formattedSkCondition = null;
+    if (skCondition) {
+      const [[fieldName, condition]] = Object.entries(skCondition);
+      const field = this.fields[index.sk];  // Use the index's sort key field
+      
+      // Convert the values in the condition using the field's toGsi method
+      if (typeof condition === 'object' && condition.$between) {
+        formattedSkCondition = {
+          [fieldName]: {  // Keep the original field name for validation
+            $between: condition.$between.map(value => field.toGsi(value))
+          }
+        };
+      } else if (typeof condition === 'object' && condition.$beginsWith) {
+        formattedSkCondition = {
+          [fieldName]: {  // Keep the original field name for validation
+            $beginsWith: field.toGsi(condition.$beginsWith)
+          }
+        };
+      } else {
+        formattedSkCondition = {
+          [fieldName]: field.toGsi(condition)  // Keep the original field name for validation
+        };
+      }
+    }
+  
+    const params = this.getBaseQueryParams(
+      index instanceof PrimaryKeyConfig ? '_pk' : `_${index.indexId}_pk`,
+      formattedPk,
+      formattedSkCondition,
+      { 
+        ...options, 
+        indexName,
+        gsiIndexId: index.indexId,
+        gsiSortKeyName: `_${index.indexId}_sk`  // Pass the GSI sort key name
+      }
+    );
+  
+    const response = await this.documentClient.query(params);
+    
     const totalItems = options.startKey ? 
       (options.previousCount || 0) + response.Items.length :
       response.Items.length;
-  
+    
     return this.processQueryResponse(response, { 
       ...options, 
       totalItems 

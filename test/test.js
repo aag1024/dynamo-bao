@@ -207,9 +207,11 @@ describe('Date Range Queries', () => {
     ]);
     const endDate = new Date();
 
-    const result = await User.queryByIndex('byStatus', 'active', {
-      skValue: { between: [startDate, endDate] }
-    });
+    const result = await User.queryByIndex(
+      'byStatus',
+      'active',
+      { createdAt: { $between: [startDate, endDate] } }
+    );
 
     expect(result.items.length).toBeGreaterThan(0);
     result.items.forEach(user => {

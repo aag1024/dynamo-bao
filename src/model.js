@@ -91,6 +91,21 @@ class BaseModel {
     return ModelManager.getInstance(this._test_id);
   }
 
+  static getField(fieldName) {
+    let fieldDef;
+    if (SYSTEM_FIELDS.includes(fieldName) || fieldName === 'modelPrefix') {
+      fieldDef = StringField();
+    } else {
+      fieldDef = this.fields[fieldName];
+    }
+
+    if (!fieldDef) {
+      throw new Error(`Field ${fieldName} not found in ${this.name} fields`);
+    }
+
+    return fieldDef;
+  }
+
   static validateConfiguration() {
     if (!this.modelPrefix) {
       throw new Error(`${this.name} must define a modelPrefix`);
@@ -101,26 +116,16 @@ class BaseModel {
     }
 
     // Ensure primary key fields are required
-    if (this.primaryKey.pk !== 'modelPrefix') {
-      const pkField = this.fields[this.primaryKey.pk];
-      if (!pkField) {
-        throw new Error(`Primary key field '${this.primaryKey.pk}' not found in ${this.name} fields`);
-      }
-      if (!pkField.required) {
-        logger.warn(`Warning: Primary key field '${this.primaryKey.pk}' in ${this.name} was not explicitly marked as required. Marking as required automatically.`);
-        pkField.required = true;
-      }
+    const pkField = this.getField(this.primaryKey.pk);
+    if (!pkField.required) {
+      logger.warn(`Warning: Primary key field '${this.primaryKey.pk}' in ${this.name} was not explicitly marked as required. Marking as required automatically.`);
+      pkField.required = true;
     }
     
-    if (this.primaryKey.sk !== 'modelPrefix') {
-      const skField = this.fields[this.primaryKey.sk];
-      if (!skField) {
-        throw new Error(`Sort key field '${this.primaryKey.sk}' not found in ${this.name} fields`);
-      }
-      if (!skField.required) {
-        logger.warn(`Warning: Sort key field '${this.primaryKey.sk}' in ${this.name} was not explicitly marked as required. Marking as required automatically.`);
-        skField.required = true;
-      }
+    const skField = this.getField(this.primaryKey.sk);
+    if (!skField.required) {
+      logger.warn(`Warning: Sort key field '${this.primaryKey.sk}' in ${this.name} was not explicitly marked as required. Marking as required automatically.`);
+      skField.required = true;
     }
 
     // Validate field names don't start with underscore
@@ -158,29 +163,10 @@ class BaseModel {
         throw new Error(`Invalid index ID ${index.indexId} in ${this.name}`);
       }
 
-      if (index.pk !== 'modelPrefix' && !this.fields[index.pk]) {
-        throw new Error(`Index ${indexName} references non-existent field ${index.pk}`);
-      }
-      if (index.sk !== 'modelPrefix' && !this.fields[index.sk]) {
-        throw new Error(`Index ${indexName} references non-existent field ${index.sk}`);
-      }
+      // These will throw errors if the fields don't exist
+      const idxPkField = this.getField(index.pk);
+      const idxSkField = this.getField(index.sk);
     });
-
-    // Validate primary key fields don't start with underscore
-    if (this.primaryKey.pk !== 'modelPrefix' && this.primaryKey.pk.startsWith('_')) {
-      throw new Error(`Primary key field '${this.primaryKey.pk}' cannot start with underscore`);
-    }
-    if (this.primaryKey.sk !== 'modelPrefix' && this.primaryKey.sk.startsWith('_')) {
-      throw new Error(`Sort key field '${this.primaryKey.sk}' cannot start with underscore`);
-    }
-
-    // Validate primary key fields exist
-    if (this.primaryKey.pk !== 'modelPrefix' && !this.fields[this.primaryKey.pk]) {
-      throw new Error(`Primary key field '${this.primaryKey.pk}' not found in ${this.name} fields`);
-    }
-    if (this.primaryKey.sk !== 'modelPrefix' && !this.fields[this.primaryKey.sk]) {
-      throw new Error(`Sort key field '${this.primaryKey.sk}' not found in ${this.name} fields`);
-    }
 
     // Validate unique constraints
     const validConstraintIds = [UNIQUE_CONSTRAINT_ID1, UNIQUE_CONSTRAINT_ID2, UNIQUE_CONSTRAINT_ID3];
@@ -189,7 +175,7 @@ class BaseModel {
         throw new Error(`Invalid constraint ID ${constraint.constraintId} in ${this.name}`);
       }
       
-      if (!this.fields[constraint.field]) {
+      if (!this.getField(constraint.field)) {
         throw new Error(
           `Unique constraint field '${constraint.field}' not found in ${this.name} fields`
         );
@@ -200,12 +186,12 @@ class BaseModel {
   static registerRelatedIndexes() {
     // Find all indexes where the partition key is a RelatedField
     const relatedIndexes = Object.entries(this.indexes).filter(([_, index]) => {
-      const pkField = this.fields[index.pk];
+      const pkField = this.getField(index.pk);
       return pkField instanceof RelatedFieldClass;
     });
 
     relatedIndexes.forEach(([indexName, index]) => {
-      const sourceField = this.fields[index.pk];
+      const sourceField = this.getField(index.pk);
       const SourceModel = this.manager.getModel(sourceField.modelName);
       const CurrentModel = this;
 
@@ -578,7 +564,7 @@ class BaseModel {
       if (index.pk === 'modelPrefix') {
         pkValue = this.modelPrefix;
       } else {
-        const pkField = this.fields[index.pk];
+        const pkField = this.getField(index.pk);
         pkValue = data[index.pk];
         if (pkValue !== undefined) {
           pkValue = pkField.toGsi(pkValue);
@@ -589,7 +575,7 @@ class BaseModel {
       if (index.sk === 'modelPrefix') {
         skValue = this.modelPrefix;
       } else {
-        const skField = this.fields[index.sk];
+        const skField = this.getField(index.sk);
         skValue = data[index.sk];
         if (skValue !== undefined) {
           skValue = skField.toGsi(skValue);
@@ -634,7 +620,7 @@ class BaseModel {
     if (index instanceof PrimaryKeyConfig) {
       formattedPk = this.formatPrimaryKey(this.modelPrefix, pkValue);
     } else {
-      const pkField = this.fields[index.pk];
+      const pkField = this.getField(index.pk);
       const gsiValue = pkField.toGsi(pkValue);
       formattedPk = this.formatGsiKey(this.modelPrefix, index.indexId, gsiValue);
     }
@@ -643,7 +629,7 @@ class BaseModel {
     let formattedSkCondition = null;
     if (skCondition) {
       const [[fieldName, condition]] = Object.entries(skCondition);
-      const field = this.fields[index.sk];  // Use the index's sort key field
+      const field = this.getField(index.sk);  // Use the index's sort key field
       
       // Convert the values in the condition using the field's toGsi method
       if (typeof condition === 'object' && condition.$between) {
@@ -741,7 +727,7 @@ class BaseModel {
     // Handle unique constraints
     for (const constraint of Object.values(this.uniqueConstraints || {})) {
       const fieldName = constraint.field;
-      const field = this.fields[fieldName];
+      const field = this.getField(fieldName);
       const dyNewValue = dyUpdatesToSave[fieldName];
       const dyCurrentValue = currentItem?._originalData[fieldName];
 
@@ -816,7 +802,7 @@ class BaseModel {
         : [constraints.fieldMatches];
 
       matchFields.forEach((fieldName, index) => {
-        if (!this.fields[fieldName]) {
+        if (!this.getField(fieldName)) {
           throw new Error(`Unknown field in fieldMatches constraint: ${fieldName}`);
         }
 
@@ -953,7 +939,7 @@ class BaseModel {
 
   static async update(primaryId, data, options = {}) {
     Object.entries(data).forEach(([fieldName, value]) => {
-      const field = this.fields[fieldName];
+      const field = this.getField(fieldName);
       if (field) {
         field.validate(value, fieldName);
       }
@@ -977,12 +963,8 @@ class BaseModel {
         // Skip undefined values
         if (value === undefined) continue;
 
-        if (SYSTEM_FIELDS.includes(fieldName)) {
-          expressions.push(StringField().getUpdateExpression(fieldName, value));
-        } else {
-          const field = this.fields[fieldName];
-          expressions.push(field.getUpdateExpression(fieldName, value));  
-        }
+        const field = this.getField(fieldName);
+        expressions.push(field.getUpdateExpression(fieldName, value));  
     }
 
     const parts = [];
@@ -1140,8 +1122,8 @@ class BaseModel {
       throw new Error('Data object is required for getPrimaryKeyValues call');
     }
 
-    const pkField = this.fields[this.primaryKey.pk];
-    const skField = this.fields[this.primaryKey.sk];
+    const pkField = this.getField(this.primaryKey.pk);
+    const skField = this.getField(this.primaryKey.sk);
 
     if (skField === undefined && this.primaryKey.sk !== 'modelPrefix') {
       throw new Error(`SK field is required for getPkSk call`);

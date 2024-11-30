@@ -395,11 +395,16 @@ class BaseModel {
     const expressionValues = { ':pk': pkValue };
   
     if (skCondition) {
+      logger.log('Building key condition for:', {
+        condition: skCondition,
+        gsiSortKeyName: options.gsiIndexId ? `_${options.gsiIndexId}_sk` : '_sk'
+      });
+      
       const skExpr = keyBuilder.buildKeyCondition(
         this, 
-        options.indexName, 
+        options.indexName || 'primary', 
         skCondition,
-        options.gsiIndexId ? `_${options.gsiIndexId}_sk` : '_sk'  // Use GSI-specific sort key name
+        options.gsiIndexId ? `_${options.gsiIndexId}_sk` : '_sk'
       );
       if (skExpr) {
         keyConditionExpression += ` AND ${skExpr.condition}`;
@@ -614,6 +619,15 @@ class BaseModel {
     if (!index) {
       throw new Error(`Index "${indexName}" not found in ${this.name} model`);
     }
+
+
+    // Validate sort key field if condition is provided
+    if (skCondition) {
+      const [[fieldName]] = Object.entries(skCondition);
+      if (fieldName !== index.sk) {
+        throw new Error(`Field "${fieldName}" is not the sort key for index "${indexName}"`);
+      }
+    }
   
     // Format the partition key using the field's toGsi method
     let formattedPk;
@@ -649,12 +663,13 @@ class BaseModel {
           [fieldName]: field.toGsi(condition)  // Keep the original field name for validation
         };
       }
+
     }
   
     const params = this.getBaseQueryParams(
       index instanceof PrimaryKeyConfig ? '_pk' : `_${index.indexId}_pk`,
       formattedPk,
-      formattedSkCondition,
+      skCondition ? { [index.sk]: skCondition[index.sk] } : null,
       { 
         ...options, 
         indexName,
@@ -663,7 +678,27 @@ class BaseModel {
       }
     );
   
+    // Add debug logging
+    logger.log('DynamoDB Query Params:', {
+      TableName: params.TableName,
+      IndexName: params.IndexName,
+      KeyConditionExpression: params.KeyConditionExpression,
+      ExpressionAttributeNames: params.ExpressionAttributeNames,
+      ExpressionAttributeValues: params.ExpressionAttributeValues
+    });
+
     const response = await this.documentClient.query(params);
+  
+    // Add debug logging
+    logger.log('DynamoDB Response:', {
+      Count: response.Count,
+      ScannedCount: response.ScannedCount,
+      Items: response.Items?.map(item => ({
+        name: item.name,
+        category: item.category,
+        status: item.status
+      }))
+    });
     
     const totalItems = options.startKey ? 
       (options.previousCount || 0) + response.Items.length :
@@ -1326,4 +1361,5 @@ module.exports = {
   UNIQUE_CONSTRAINT_ID2,
   UNIQUE_CONSTRAINT_ID3,
 };
+
 

@@ -10,14 +10,6 @@ const { defaultLogger: logger } = require('../src/utils/logger');
 let testUser, testId;
 
 describe('Post Model', () => {
-  beforeAll(async () => {
-    // Initialize models
-    initModels({
-      region: process.env.AWS_REGION,
-      tableName: process.env.TABLE_NAME
-    });
-  });
-
   beforeEach(async () => {
     testId = ulid();
   

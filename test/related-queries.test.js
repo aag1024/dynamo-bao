@@ -9,13 +9,6 @@ require('dotenv').config();
 describe('Related Field Queries', () => {
   let testUser, testPosts, testTags, testId;
 
-  beforeAll(async () => {
-    initModels({
-      region: process.env.AWS_REGION,
-      tableName: process.env.TABLE_NAME
-    });
-  });
-
   beforeEach(async () => {
     testId = ulid();
   
@@ -100,16 +93,19 @@ describe('Related Field Queries', () => {
 
     test('should handle pagination in direct relationships', async () => {
       const user = await User.find(testUser.userId);
-      const firstPage = await user.queryPosts(1, null, 'DESC');
+      const firstPage = await user.queryPosts(null, {
+        limit: 1,
+        direction: 'DESC'
+      });
       
       expect(firstPage.items).toHaveLength(1);
       expect(firstPage.lastEvaluatedKey).toBeDefined();
 
-      const secondPage = await user.queryPosts(
-        2, 
-        firstPage.lastEvaluatedKey,
-        'DESC'
-      );
+      const secondPage = await user.queryPosts(null, {
+        limit: 2,
+        startKey: firstPage.lastEvaluatedKey,
+        direction: 'DESC'
+      });
       
       expect(secondPage.items).toHaveLength(1);
       expect(secondPage.lastEvaluatedKey).toBeUndefined();
@@ -140,16 +136,19 @@ describe('Related Field Queries', () => {
 
     test('should handle pagination in mapping relationships', async () => {
       const tag = await Tag.find(testTags[0].tagId);
-      const firstPage = await tag.queryPosts(1, null, 'DESC');
+      const firstPage = await tag.queryPosts(null, {
+        limit: 1,
+        direction: 'DESC'
+      });
       
       expect(firstPage.items).toHaveLength(1);
       expect(firstPage.lastEvaluatedKey).toBeDefined();
 
-      const secondPage = await tag.queryPosts(
-        2, 
-        firstPage.lastEvaluatedKey,
-        'DESC'
-      );
+      const secondPage = await tag.queryPosts(null, {
+        limit: 2,
+        startKey: firstPage.lastEvaluatedKey,
+        direction: 'DESC'
+      });
       
       expect(secondPage.items).toHaveLength(1);
       expect(secondPage.lastEvaluatedKey).toBeUndefined();
@@ -160,7 +159,10 @@ describe('Related Field Queries', () => {
   describe('Related Data Loading in Queries', () => {
     test('should load all related data when requested', async () => {
       const user = await User.find(testUser.userId);
-      const posts = await user.queryPosts(null, null, 'DESC', { 
+      const posts = await user.queryPosts(null, {
+        limit: null,
+        startKey: null,
+        direction: 'DESC',
         loadRelated: true 
       });
       
@@ -173,7 +175,9 @@ describe('Related Field Queries', () => {
 
     test('should load specific related fields', async () => {
       const user = await User.find(testUser.userId);
-      const posts = await user.queryPosts(null, null, 'DESC', { 
+      const posts = await user.queryPosts(null, {
+        limit: null,
+        direction: 'DESC',
         loadRelated: true,
         relatedFields: ['userId']
       });
@@ -187,7 +191,9 @@ describe('Related Field Queries', () => {
 
     test('should work with pagination when loading related data', async () => {
       const user = await User.find(testUser.userId);
-      const firstPage = await user.queryPosts(1, null, 'DESC', { 
+      const firstPage = await user.queryPosts(null, {
+        limit: 1,
+        direction: 'DESC',
         loadRelated: true 
       });
       
@@ -195,7 +201,10 @@ describe('Related Field Queries', () => {
       expect(firstPage.lastEvaluatedKey).toBeDefined();
       expect(firstPage.items[0].getRelated('userId')).toBeDefined();
 
-      const secondPage = await user.queryPosts(1, firstPage.lastEvaluatedKey, 'DESC', { 
+      const secondPage = await user.queryPosts(null, {
+        limit: 1,
+        startKey: firstPage.lastEvaluatedKey,
+        direction: 'DESC',
         loadRelated: true 
       });
       

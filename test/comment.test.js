@@ -238,12 +238,17 @@ const {
         ]);
 
         // Get first page
-        const firstPage = await testPost.queryComments(1);
+        const firstPage = await testPost.queryComments(null, {
+          limit: 1
+        });
         expect(firstPage.items).toHaveLength(1);
         expect(firstPage.lastEvaluatedKey).toBeDefined();
 
         // Get second page
-        const secondPage = await testPost.queryComments(1, firstPage.lastEvaluatedKey);
+        const secondPage = await testPost.queryComments(null, {
+          limit: 1,
+          startKey: firstPage.lastEvaluatedKey
+        });
         expect(secondPage.items).toHaveLength(1);
         expect(secondPage.lastEvaluatedKey).toBeUndefined();
         

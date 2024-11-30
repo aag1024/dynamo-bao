@@ -9,13 +9,6 @@ const { defaultLogger: logger } = require('../src/utils/logger');
 
 let testId;
 
-beforeAll(async () => {
-  initModels({
-    region: process.env.AWS_REGION,
-    tableName: process.env.TABLE_NAME
-  });
-});
-
 describe('TaggedPost Queries', () => {
   let testUser, testPost1, testPost2, testTag1, testTag2;
 
@@ -124,16 +117,19 @@ describe('TaggedPost Queries', () => {
 
   test('should handle pagination for posts by tag', async () => {
     const tag = await Tag.find(testTag1.tagId);
-    const firstPage = await tag.queryPosts(1, null, 'DESC');
+    const firstPage = await tag.queryPosts(null, {
+      limit: 1,
+      direction: 'DESC'
+    });
     
     expect(firstPage.items).toHaveLength(1);
     expect(firstPage.lastEvaluatedKey).toBeDefined();
 
-    const secondPage = await tag.queryPosts(
-      2, 
-      firstPage.lastEvaluatedKey,
-      'DESC'
-    );
+    const secondPage = await tag.queryPosts(null, {
+      limit: 2,
+      startKey: firstPage.lastEvaluatedKey,
+      direction: 'DESC'
+    });
     
     expect(secondPage.items).toHaveLength(1);
     expect(secondPage.lastEvaluatedKey).toBeUndefined();

@@ -220,23 +220,14 @@ class BaseModel {
 
       // Add the query method to the source model with separate pagination params
       SourceModel.prototype[methodName] = async function(
-        limit = null,
-        startKey = null,
-        direction = 'DESC',
+        skCondition = null,
         options = {}
       ) {
-        // Convert the startKey back to the correct format if it exists
-        const queryOptions = {
-          ...options,
-          limit,
-          direction,
-          startKey: startKey ? JSON.parse(JSON.stringify(startKey)) : null
-        };
-
         const results = await CurrentModel.queryByIndex(
           indexName,
           this.getPkValue(),
-          queryOptions
+          skCondition,
+          options
         );
 
         return results;

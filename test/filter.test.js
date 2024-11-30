@@ -100,7 +100,7 @@ describe('Filter Expression Tests', () => {
   });
 
   test('should filter with simple equality', async () => {
-    const result = await TestUser.queryByIndex('byStatus', 'active', {
+    const result = await TestUser.queryByIndex('byStatus', 'active', null, {
       filter: { isVerified: true }
     });
 
@@ -110,7 +110,7 @@ describe('Filter Expression Tests', () => {
 
   test('should filter by auto-assigned userId', async () => {
     const johnDoe = users[0];
-    const result = await TestUser.queryByIndex('byStatus', 'active', {
+    const result = await TestUser.queryByIndex('byStatus', 'active', null, {
       filter: { userId: johnDoe.userId }
     });
 
@@ -120,7 +120,7 @@ describe('Filter Expression Tests', () => {
 
   test('should filter userId with $in operator', async () => {
     const [john, jane] = users;
-    const result = await TestUser.queryByIndex('byStatus', 'active', {
+    const result = await TestUser.queryByIndex('byStatus', 'active', null, {
       filter: { 
         userId: { $in: [john.userId, jane.userId] }
       }
@@ -133,7 +133,7 @@ describe('Filter Expression Tests', () => {
   test('should filter userId with $beginsWith operator', async () => {
     const johnDoe = users[0];
     const prefix = johnDoe.userId.substring(0, 20);
-    const result = await TestUser.queryByIndex('byStatus', 'active', {
+    const result = await TestUser.queryByIndex('byStatus', 'active', null, {
       filter: { 
         userId: { $beginsWith: prefix }
       }
@@ -144,7 +144,7 @@ describe('Filter Expression Tests', () => {
   });
 
   test('should filter with comparison operators', async () => {
-    const result = await TestUser.queryByIndex('byStatus', 'active', {
+    const result = await TestUser.queryByIndex('byStatus', 'active', null, {
       filter: { 
         age: { $gt: 25 },
         score: { $lte: 150 }
@@ -156,7 +156,7 @@ describe('Filter Expression Tests', () => {
   });
 
   test('should filter with complex logical operators', async () => {
-    const result = await TestUser.queryByIndex('byStatus', 'active', {
+    const result = await TestUser.queryByIndex('byStatus', 'active', null, {
       filter: {
         $or: [
           { 
@@ -175,7 +175,7 @@ describe('Filter Expression Tests', () => {
   });
 
   test('should filter with $not operator', async () => {
-    const result = await TestUser.queryByIndex('byStatus', 'active', {
+    const result = await TestUser.queryByIndex('byStatus', 'active', null, {
       filter: {
         $not: { country: 'US' }
       }
@@ -186,7 +186,7 @@ describe('Filter Expression Tests', () => {
   });
 
   test('should handle date field filtering', async () => {
-    const result = await TestUser.queryByIndex('byStatus', 'active', {
+    const result = await TestUser.queryByIndex('byStatus', 'active', null, {
       filter: {
         lastLoginDate: { $lt: new Date('2024-01-02') }
       }
@@ -198,7 +198,7 @@ describe('Filter Expression Tests', () => {
 
   test('should reject invalid field names', async () => {
     await expect(
-      TestUser.queryByIndex('byStatus', 'active', {
+      TestUser.queryByIndex('byStatus', 'active', null, {
         filter: { invalidField: 'value' }
       })
     ).rejects.toThrow('Unknown field in filter: invalidField');
@@ -206,14 +206,14 @@ describe('Filter Expression Tests', () => {
 
   test('should reject invalid operators', async () => {
     await expect(
-      TestUser.queryByIndex('byStatus', 'active', {
+      TestUser.queryByIndex('byStatus', 'active', null, {
         filter: { age: { $invalid: 25 } }
       })
     ).rejects.toThrow('Invalid operator $invalid for field age');
   });
 
   test('should handle empty filter object', async () => {
-    const result = await TestUser.queryByIndex('byStatus', 'active', {
+    const result = await TestUser.queryByIndex('byStatus', 'active', null, {
       filter: {}
     });
 
@@ -221,7 +221,7 @@ describe('Filter Expression Tests', () => {
   });
 
   test('should handle multiple field conditions', async () => {
-    const result = await TestUser.queryByIndex('byStatus', 'active', {
+    const result = await TestUser.queryByIndex('byStatus', 'active', null, {
       filter: {
         age: { $gte: 25 },
         score: { $lt: 125 },

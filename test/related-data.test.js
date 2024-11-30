@@ -9,13 +9,6 @@ const {
   describe('Related Data Loading', () => {
     let testUser, testPosts, testId;
   
-    beforeAll(async () => {
-      initModels({
-        region: process.env.AWS_REGION,
-        tableName: process.env.TABLE_NAME
-      });
-    });
-  
     beforeEach(async () => {
         testId = ulid();
 

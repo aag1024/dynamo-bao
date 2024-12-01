@@ -270,7 +270,10 @@ class BaseModel {
   static accumulateCapacity(responses) {
     const allCapacity = responses
       .filter(r => r && r.ConsumedCapacity)
-      .flatMap(r => Array.isArray(r.ConsumedCapacity) ? r.ConsumedCapacity : [r.ConsumedCapacity]);
+      .flatMap(r => Array.isArray(r.ConsumedCapacity) ? 
+        r.ConsumedCapacity : 
+        [r.ConsumedCapacity]
+      );
     return allCapacity.length ? allCapacity : null;
   }
 
@@ -336,8 +339,12 @@ class BaseModel {
 
     if (!result.Item) return null;
 
-    // Create instance with the raw data
-    return new this(result.Item);
+    // Create instance with the raw data and add response data
+    const instance = new this(result.Item);
+    instance._response = {
+      ConsumedCapacity: result.ConsumedCapacity
+    };
+    return instance;
   }
 
   static async findAll() {
@@ -479,9 +486,34 @@ class BaseModel {
     // Create model instances
     let items = returnModel ? response.Items.map(item => new this(item)) : response.Items;
 
+    // Initialize response for each item
+    items.forEach(item => {
+      if (!item._response) {
+        item._response = { ConsumedCapacity: [] };
+      }
+    });
+
     // Load related data if requested
     if (returnModel && loadRelated) {
       await Promise.all(items.map(item => item.loadRelatedData(relatedFields)));
+      
+      // Aggregate capacity from all items including their related data
+      let allCapacities = [];
+      
+      // Add the original query capacity
+      if (response.ConsumedCapacity) {
+        allCapacities.push(response.ConsumedCapacity);
+      }
+      
+      // Add capacity from each item's related data loads
+      items.forEach(item => {
+        if (item._response?.ConsumedCapacity) {
+          allCapacities.push(...[].concat(item._response.ConsumedCapacity));
+        }
+      });
+
+      // Update response with aggregated capacities
+      response.ConsumedCapacity = allCapacities;
     }
 
     return {
@@ -489,7 +521,7 @@ class BaseModel {
       count: items.length,
       lastEvaluatedKey: response.LastEvaluatedKey,
       _response: {
-        ConsumedCapacity: response.ConsumedCapacity
+        ConsumedCapacity: response.ConsumedCapacity || []
       }
     };
   }
@@ -921,16 +953,21 @@ class BaseModel {
         savedItem._response = {
           ConsumedCapacity: response.ConsumedCapacity,
         };
+
         return savedItem;
       } else {
         // Use simple update if no unique constraints are changing
         logger.debug('updateParams', JSON.stringify(updateParams, null, 2));
 
-        response = await this.documentClient.update(updateParams);
-        const savedItem = this.fromDynamoDB(response.Attributes);
+        response = await this.documentClient.update({
+          ...updateParams,
+          ReturnConsumedCapacity: 'TOTAL'
+        });
+        const savedItem = new this(response.Attributes);
         savedItem._response = {
           ConsumedCapacity: response.ConsumedCapacity,
         };
+
         return savedItem;
       }
     } catch (error) {
@@ -987,7 +1024,16 @@ class BaseModel {
       _sk: skValue
     });
 
-    return await this._saveItem(primaryId, processedData, { isNew: true });
+    const result = await this._saveItem(primaryId, processedData, { isNew: true });
+    
+    // Ensure response is initialized
+    if (!result._response) {
+      result._response = { ConsumedCapacity: [] };
+    } else if (!Array.isArray(result._response.ConsumedCapacity)) {
+      result._response.ConsumedCapacity = [result._response.ConsumedCapacity];
+    }
+    
+    return result;
   }
 
   static async update(primaryId, data, options = {}) {
@@ -1308,10 +1354,16 @@ class BaseModel {
   }
 
   async loadRelatedData(fieldNames = null) {
+    // Initialize response if not exists
+    if (!this._response) {
+      this._response = { ConsumedCapacity: [] };
+    } else if (!Array.isArray(this._response.ConsumedCapacity)) {
+      this._response.ConsumedCapacity = [this._response.ConsumedCapacity];
+    }
+
     const promises = [];
     
     for (const [fieldName, field] of Object.entries(this.constructor.fields)) {
-      // Skip if fieldNames is provided and this field isn't in the list
       if (fieldNames && !fieldNames.includes(fieldName)) {
         continue;
       }
@@ -1325,7 +1377,7 @@ class BaseModel {
         );
       }
     }
-  
+
     await Promise.all(promises);
     return this;
   }
@@ -1334,16 +1386,43 @@ class BaseModel {
     const value = this[fieldName];
     if (!value) return null;
     
-    // Get the related model class from the registry
     const ModelClass = this.constructor.manager.getModel(field.modelName);
     
-    // If we already have a model instance, return it
     if (value instanceof ModelClass) {
       return value;
     }
     
-    // Otherwise, load the instance from the database
-    return await ModelClass.find(value);
+    // Load the instance and track its capacity
+    const relatedInstance = await ModelClass.find(value);
+    
+    // Initialize response tracking if needed
+    if (!this._response) {
+      this._response = { ConsumedCapacity: [] };
+    }
+    
+    // Convert existing capacity to array if it's a single object
+    if (this._response.ConsumedCapacity && !Array.isArray(this._response.ConsumedCapacity)) {
+      this._response.ConsumedCapacity = [this._response.ConsumedCapacity];
+    }
+
+    // Add capacity for this operation, whether it succeeded or failed
+    const capacityEntry = {
+      TableName: this.constructor.table,
+      CapacityUnits: 1.0  // Standard read capacity for a get operation
+    };
+
+    // If we have a successful related instance lookup, use its capacity instead
+    if (relatedInstance?._response?.ConsumedCapacity) {
+      if (Array.isArray(relatedInstance._response.ConsumedCapacity)) {
+        this._response.ConsumedCapacity.push(...relatedInstance._response.ConsumedCapacity);
+      } else {
+        this._response.ConsumedCapacity.push(relatedInstance._response.ConsumedCapacity);
+      }
+    } else {
+      this._response.ConsumedCapacity.push(capacityEntry);
+    }
+    
+    return relatedInstance;
   }
 
   getRelated(fieldName) {

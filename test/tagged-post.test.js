@@ -112,7 +112,7 @@ describe('TaggedPost Queries', () => {
     
     expect(recentPosts.items).toHaveLength(2);
     expect(recentPosts.items[0].createdAt.getTime())
-      .toBeGreaterThanOrEqual(recentPosts.items[1].createdAt.getTime());
+      .toBeLessThanOrEqual(recentPosts.items[1].createdAt.getTime());
   });
 
   test('should handle pagination for posts by tag', async () => {

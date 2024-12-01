@@ -80,6 +80,8 @@ class BaseModel {
   static indexes = {};
   static uniqueConstraints = {};
 
+  static defaultQueryLimit = 100;
+
   static setTestId(test_id) {
     this._test_id = test_id;
     const manager = ModelManager.getInstance(test_id);
@@ -419,16 +421,18 @@ class BaseModel {
       ExpressionAttributeNames: expressionNames,
       ExpressionAttributeValues: expressionValues,
       ScanIndexForward: options.direction !== 'DESC',
-      ReturnConsumedCapacity: 'TOTAL'
+      ReturnConsumedCapacity: 'TOTAL',
+      Limit: options.limit || this.defaultQueryLimit
     };
   
+    // Add Select:COUNT for countOnly queries
+    if (options.countOnly) {
+      params.Select = 'COUNT';
+    }
+
     // Add the IndexName if gsiIndexId is provided
     if (options.gsiIndexId) {
       params.IndexName = options.gsiIndexId;
-    }
-  
-    if (options.limit) {
-      params.Limit = options.limit;
     }
   
     if (options.startKey) {
@@ -457,6 +461,15 @@ class BaseModel {
   }
 
   static async processQueryResponse(response, options = {}) {
+    if (options.countOnly) {
+      return {
+        count: response.Count,
+        _response: {
+          ConsumedCapacity: response.ConsumedCapacity
+        }
+      };
+    }
+
     const {
       returnModel = true,
       loadRelated = false,
@@ -700,9 +713,14 @@ class BaseModel {
       }))
     });
     
-    const totalItems = options.startKey ? 
-      (options.previousCount || 0) + response.Items.length :
-      response.Items.length;
+    let totalItems;
+    if (options.countOnly) {
+      totalItems = response.Count;
+    } else if (options.startKey) {
+      totalItems = (options.previousCount || 0) + response.Items.length;
+    } else {
+      totalItems = response.Items.length;
+    }
     
     return this.processQueryResponse(response, { 
       ...options, 

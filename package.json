@@ -1,16 +1,28 @@
 {
-    "name": "raftjs-dynamo",
-    "version": "1.0.0",
-    "description": "DynamoDB single table pattern library for JavaScript",
+    "name": "dynamo-bao",
+    "version": "0.1.0",
+    "description": "Simple yet powerful Dynamo object wrapper in JavaScript",
     "main": "src/index.js",
     "scripts": {
-        "test": "jest",
-        "test:watch": "jest --watch",
-        "test:unique": "node test/unique.test.js",
-        "test:capacity": "node test/capacity.test.js",
-        "deploy": "serverless deploy",
-        "remove": "serverless remove",
-        "check-table": "node scripts/check-table.js"
+        "test": "jest"
+    },
+    "files": [
+        "src/",
+        "README.md",
+        "LICENSE"
+    ],
+    "keywords": [
+        "dynamodb",
+        "aws",
+        "database",
+        "orm",
+        "nosql"
+    ],
+    "author": "Adrian Graham",
+    "license": "MIT",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/adriangraham/dynamo-bao.git"
     },
     "dependencies": {
         "@aws-sdk/client-dynamodb": "^3.521.0",

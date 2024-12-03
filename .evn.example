@@ -1,3 +1,3 @@
 AWS_REGION=us-west-2
-TABLE_NAME=raftjs-dynamo-dev
+TABLE_NAME=dynamo-bao-dev
 LOG_LEVEL=DEBUG

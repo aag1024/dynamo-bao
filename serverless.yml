@@ -1,4 +1,4 @@
-service: raftjs-dynamo
+service: dynamo-bao-table
 
 frameworkVersion: '3'
 
@@ -73,6 +73,6 @@ resources:
             Projection:
               ProjectionType: ALL
         TimeToLiveSpecification:
-          AttributeName: _ttl
+          AttributeName: ttl
           Enabled: true
           

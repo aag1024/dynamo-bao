@@ -34,7 +34,7 @@ describe('Version Field Tests', () => {
   
     dynamoBao.initModels({
       ...testConfig,
-      test_id: testId
+      testId: testId
     });
 
     await cleanupTestData(testId);

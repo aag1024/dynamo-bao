@@ -69,7 +69,7 @@ class UniqueConstraintConfig {
 }
 
 class BaseModel {
-  static _test_id = null;
+  static _testId = null;
   static table = null;
   static documentClient = null;
   
@@ -82,15 +82,15 @@ class BaseModel {
 
   static defaultQueryLimit = 100;
 
-  static setTestId(test_id) {
-    this._test_id = test_id;
-    const manager = ModelManager.getInstance(test_id);
+  static setTestId(testId) {
+    this._testId = testId;
+    const manager = ModelManager.getInstance(testId);
     this.documentClient = manager.documentClient;
     this.table = manager.tableName;
   }
 
   static get manager() {
-    return ModelManager.getInstance(this._test_id);
+    return ModelManager.getInstance(this._testId);
   }
 
   static getField(fieldName) {
@@ -584,9 +584,9 @@ class BaseModel {
 
   static async validateUniqueConstraints(data, currentId = null) {
     logger.debug('validateUniqueConstraints called on', this.name, {
-      modelTestId: this._test_id,
+      modelTestId: this._testId,
       managerTestId: this.manager.getTestId(),
-      instanceKey: this._test_id || 'default'
+      instanceKey: this._testId || 'default'
     });
 
     if (!this.uniqueConstraints) {
@@ -905,7 +905,7 @@ class BaseModel {
       }
     }
 
-    // Add test_id if we're in test mode
+    // Add testId if we're in test mode
     const testId = this.manager.getTestId();
     if (testId) {
       logger.debug("savedTestId", testId, currentItem);

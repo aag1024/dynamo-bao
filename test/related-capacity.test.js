@@ -12,7 +12,7 @@ describe('Capacity Tracking', () => {
     const manager = dynamoBao.initModels({
       ...testConfig,
       tableName: process.env.TABLE_NAME,
-      test_id: testId
+      testId: testId
     });
 
     await cleanupTestData(testId);

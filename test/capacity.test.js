@@ -16,7 +16,7 @@ beforeEach(async () => {
 
     const manager = dynamoBao.initModels({
         ...testConfig,
-        test_id: testId
+        testId: testId
     });
 
     if (testId) {

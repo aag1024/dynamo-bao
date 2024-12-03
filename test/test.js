@@ -30,7 +30,7 @@ beforeEach(async () => {
   
   const manager = dynamoBao.initModels({
     ...testConfig,
-    test_id: testId
+    testId: testId
   });
 
   await cleanupTestData(testId);
@@ -219,10 +219,10 @@ describe('Date Range Queries', () => {
   });
 });
 
-test('should properly set test_id on models', async () => {
+test('should properly set testId on models', async () => {
   const manager = dynamoBao.initModels({
     ...testConfig,
-    test_id: testId
+    testId: testId
   });
 
   const user = await User.create({

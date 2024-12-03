@@ -85,8 +85,8 @@ function findModelFiles(dir) {
         }
     };
 
-    // Get/create manager instance with test_id
-    const manager = ModelManager.getInstance(finalConfig.test_id);
+    // Get/create manager instance with testId
+    const manager = ModelManager.getInstance(finalConfig.testId);
 
     // First pass to register models
     const registeredModels = _registerModels(manager);
@@ -95,7 +95,7 @@ function findModelFiles(dir) {
     manager.init(finalConfig);
   
     logger.log('Models initialized:', {
-        testId: finalConfig.test_id,
+        testId: finalConfig.testId,
         managerTestId: manager.getTestId(),
         registeredModels: Array.from(manager._models.keys())
     });

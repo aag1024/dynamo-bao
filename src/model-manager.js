@@ -9,15 +9,15 @@ class ModelManager {
     this._initialized = false;
     this._docClient = null;
     this._tableName = null;
-    this._test_id = null;
+    this._testId = null;
     this._models = new Map();
   }
 
-  static getInstance(test_id = null) {
-    const key = test_id || 'default';
+  static getInstance(testId = null) {
+    const key = testId || 'default';
     if (!ModelManager._instances.has(key)) {
       const instance = new ModelManager();
-      instance._test_id = test_id;
+      instance._testId = testId;
       ModelManager._instances.set(key, instance);
     }
     return ModelManager._instances.get(key);
@@ -29,11 +29,11 @@ class ModelManager {
     });
     this._docClient = DynamoDBDocument.from(client);
     this._tableName = config.db.tableName;
-    this._test_id = config.test_id || this._test_id;
+    this._testId = config.testId || this._testId;
 
     // Initialize all registered models
     for (const [_, ModelClass] of this._models) {
-      ModelClass._test_id = this._test_id;
+      ModelClass._testId = this._testId;
       ModelClass.documentClient = this._docClient;
       ModelClass.table = this._tableName;
       ModelClass.validateConfiguration();
@@ -56,7 +56,7 @@ class ModelManager {
   // Registry methods
   registerModel(ModelClass) {
     this._models.set(ModelClass.name, ModelClass);
-    ModelClass._test_id = this._test_id;
+    ModelClass._testId = this._testId;
     if (this._initialized) {
       ModelClass.documentClient = this._docClient;
       ModelClass.table = this._tableName;
@@ -77,7 +77,7 @@ class ModelManager {
   }
 
   getTestId() {
-    return this._test_id;
+    return this._testId;
   }
 
   // Helper method for debugging

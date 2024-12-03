@@ -11,7 +11,7 @@ describe('Related Data Loading', () => {
 
         const manager = dynamoBao.initModels({
             ...testConfig,
-            test_id: testId
+            testId: testId
         });
 
         User = manager.getModel('User');

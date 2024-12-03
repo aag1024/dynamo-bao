@@ -11,7 +11,7 @@ let testUser, testPost, testId;
 
         const manager = dynamoBao.initModels({
             ...testConfig,
-            test_id: testId
+            testId: testId
         });
 
         await cleanupTestData(testId);

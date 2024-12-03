@@ -46,7 +46,7 @@ describe('Key Condition Tests', () => {
   
     const manager = dynamoBao.initModels({
       ...testConfig,
-      test_id: testId
+      testId: testId
     });
   
     manager.registerModel(TestUser);

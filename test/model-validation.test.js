@@ -12,7 +12,7 @@ describe('Model Validation Tests', () => {
 
     manager = dynamoBao.initModels({
       ...testConfig,
-      test_id: testId
+      testId: testId
     });
   });
 

@@ -28,7 +28,7 @@ describe('Counter Field Tests', () => {
   
     const manager = dynamoBao.initModels({
       ...testConfig,
-      test_id: testId
+      testId: testId
     });
 
     // Then register the TestCounter model

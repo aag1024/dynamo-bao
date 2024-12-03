@@ -9,8 +9,14 @@ const {
   GSI_INDEX_ID3,
   UNIQUE_CONSTRAINT_ID1,
   UNIQUE_CONSTRAINT_ID2
-} = require('../model');
-const { StringField, CreateDateField, ModifiedDateField, ULIDField } = require('../fields');
+} = require('../../src/model');
+
+const { 
+  StringField, 
+  CreateDateField, 
+  ModifiedDateField, 
+  ULIDField 
+} = require('../../src/fields');
 
 class User extends BaseModel {
   static modelPrefix = 'u';

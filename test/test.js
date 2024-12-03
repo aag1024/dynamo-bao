@@ -1,7 +1,4 @@
-const { 
-    initModels,
-    ModelManager,
-  } = require('../src');
+const { initModels } = require('../src');
 const { DescribeTableCommand } = require('@aws-sdk/client-dynamodb');
 const { cleanupTestData, verifyCleanup } = require('./utils/test-utils');
 const { ulid } = require('ulid');
@@ -13,12 +10,12 @@ let testId;
 
 beforeAll(async () => {
   // Initialize models
-  initModels({
+  const manager = initModels({
     region: process.env.AWS_REGION,
     tableName: process.env.TABLE_NAME
   });
 
-  const docClient = ModelManager.getInstance().documentClient;
+  const docClient = manager.documentClient;
   
   try {
     const tableInfo = await docClient.send(new DescribeTableCommand({
@@ -35,7 +32,7 @@ beforeAll(async () => {
 beforeEach(async () => {
   testId = ulid();
   
-  initModels({
+  const manager = initModels({
     region: process.env.AWS_REGION,
     tableName: process.env.TABLE_NAME,
     test_id: testId
@@ -44,7 +41,7 @@ beforeEach(async () => {
   await cleanupTestData(testId);
   await verifyCleanup(testId);
 
-  User = ModelManager.getInstance(testId).getModel('User');
+  User = manager.getModel('User');
 });
 
 afterEach(async () => {
@@ -228,7 +225,7 @@ describe('Date Range Queries', () => {
 });
 
 test('should properly set test_id on models', async () => {
-  initModels({
+  const manager = initModels({
     region: process.env.AWS_REGION,
     tableName: process.env.TABLE_NAME,
     test_id: testId
@@ -241,7 +238,6 @@ test('should properly set test_id on models', async () => {
     externalPlatform: 'platform1'
   });
 
-  const manager = ModelManager.getInstance(testId);
   const docClient = manager.documentClient;
   const result = await docClient.send(new QueryCommand({
     TableName: process.env.TABLE_NAME,

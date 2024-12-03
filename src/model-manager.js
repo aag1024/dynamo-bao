@@ -6,7 +6,7 @@ const { defaultLogger: logger } = require('./utils/logger');
 class ModelManager {
   static _instances = new Map();
   
-  constructor() {
+  constructor(config = {}) {
     this._initialized = false;
     this._docClient = null;
     this._tableName = null;

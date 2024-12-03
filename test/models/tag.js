@@ -3,8 +3,13 @@ const {
   PrimaryKeyConfig,
   IndexConfig,
   GSI_INDEX_ID1
-} = require('../model');
-const { StringField, CreateDateField, ULIDField } = require('../fields');
+} = require('../../src/model');
+
+const { 
+  StringField, 
+  CreateDateField, 
+  ULIDField 
+} = require('../../src/fields');
 
 class Tag extends BaseModel {
   static modelPrefix = 't';

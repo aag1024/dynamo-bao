@@ -4,8 +4,12 @@ const {
   IndexConfig,
   GSI_INDEX_ID1,
   GSI_INDEX_ID2
-} = require('../model');
-const { CreateDateField, RelatedField } = require('../fields');
+} = require('../../src/model');
+
+const { 
+  CreateDateField, 
+  RelatedField 
+} = require('../../src/fields');
 
 class TaggedPost extends BaseModel {
   static modelPrefix = 'tp';

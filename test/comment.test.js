@@ -9,14 +9,6 @@ const {
   let testUser, testPost, testId;
   
   describe('Comment Model', () => {
-    beforeAll(async () => {
-        // Initialize models
-        initModels({
-            region: process.env.AWS_REGION,
-            tableName: process.env.TABLE_NAME
-          });
-    });
-  
     beforeEach(async () => {
         testId = ulid();
 

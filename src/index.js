@@ -1,4 +1,5 @@
 // src/index.js
+require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 const { ModelManager } = require('./model-manager');
@@ -20,7 +21,7 @@ const {
   } = require('./model');
   
   // Default models directory is relative to this file
-  const DEFAULT_MODELS_DIR = path.join(__dirname, 'models');
+  const MODELS_DIR = process.env.MODELS_DIR || null;
   
   function findModelFiles(dir) {
     let results = [];
@@ -41,13 +42,12 @@ const {
     return results;
   }
   
-  function registerModels(manager = null, modelsDir = DEFAULT_MODELS_DIR) {
-    // If no manager provided, use the default instance
-    if (!manager) {
-      manager = ModelManager.getInstance();
+  function _registerModels(manager = null) {
+    if (!MODELS_DIR) {
+      return;
     }
   
-    const modelFiles = findModelFiles(modelsDir);
+    const modelFiles = findModelFiles(MODELS_DIR);
     const models = {};
   
     modelFiles.forEach(file => {
@@ -64,9 +64,11 @@ const {
   function initModels(config) {  
     // Get/create manager instance with test_id
     const manager = ModelManager.getInstance(config.test_id);
-    registerModels(manager);
+
+    // First pass to register models
+    const registeredModels = _registerModels(manager);
   
-    // Initialize the manager
+    // Initialize the manager & 2nd model registration pass
     manager.init(config);
   
     logger.log('Models initialized:', {
@@ -74,16 +76,17 @@ const {
       managerTestId: manager.getTestId(),
       registeredModels: Array.from(manager._models.keys())
     });
+
+    manager.models = registeredModels;
   
     return manager;
   }
   
-  const defaultModels = registerModels();
+  const defaultModels = initModels({}).models;
   
   module.exports = {
     // Initialize function
     initModels,
-    registerModels,  // Expose registration function for custom directories
     
     // Core classes
     BaseModel,

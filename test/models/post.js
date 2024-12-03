@@ -5,8 +5,15 @@ const {
   IndexConfig,
   GSI_INDEX_ID1,
   GSI_INDEX_ID2
-} = require('../model');
-const { StringField, CreateDateField, ULIDField, RelatedField, VersionField } = require('../fields');
+} = require('../../src/model');
+
+const { 
+  StringField, 
+  CreateDateField, 
+  ULIDField, 
+  RelatedField, 
+  VersionField 
+} = require('../../src/fields');
 
 class Post extends BaseModel {
   static modelPrefix = 'p';

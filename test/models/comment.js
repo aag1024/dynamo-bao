@@ -9,14 +9,14 @@ const {
   RelatedField, 
   IntegerField, 
   CreateDateField, 
-  ULIDField 
+  UlidField 
 } = require('../../src/fields');
   
 class Comment extends BaseModel {
   static modelPrefix = 'c';
   
   static fields = {
-    commentId: ULIDField({ autoAssign: true }),
+    commentId: UlidField({ autoAssign: true }),
     authorId: RelatedField('User'),
     postId: RelatedField('Post'),
     text: StringField(),

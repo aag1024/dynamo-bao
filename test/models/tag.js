@@ -8,14 +8,14 @@ const {
 const { 
   StringField, 
   CreateDateField, 
-  ULIDField 
+  UlidField 
 } = require('../../src/fields');
 
 class Tag extends BaseModel {
   static modelPrefix = 't';
   
   static fields = {
-    tagId: ULIDField({ autoAssign: true }),
+    tagId: UlidField({ autoAssign: true }),
     name: StringField({ required: true }),
     createdAt: CreateDateField(),
   };

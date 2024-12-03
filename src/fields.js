@@ -232,7 +232,7 @@ class ModifiedDateField extends DateTimeField {
   }
 }
 
-class ULIDField extends BaseField {
+class UlidField extends BaseField {
   constructor(options = {}) {
     super({
       ...options,
@@ -546,7 +546,7 @@ const createStringField = (options) => new StringField(options);
 const createDateTimeField = (options) => new DateTimeField(options);
 const createCreateDateField = (options) => new CreateDateField(options);
 const createModifiedDateField = (options) => new ModifiedDateField(options);
-const createULIDField = (options) => new ULIDField(options);
+const createUlidField = (options) => new UlidField(options);
 const createRelatedField = (modelName, options) => new RelatedField(modelName, options);
 const createIntegerField = (options) => new IntegerField(options);
 const createFloatField = (options) => new FloatField(options);
@@ -563,7 +563,7 @@ module.exports = {
   DateTimeField: createDateTimeField,
   CreateDateField: createCreateDateField,
   ModifiedDateField: createModifiedDateField,
-  ULIDField: createULIDField,
+  UlidField: createUlidField,
   RelatedField: createRelatedField,
   IntegerField: createIntegerField,
   FloatField: createFloatField,
@@ -578,7 +578,7 @@ module.exports = {
   DateTimeFieldClass: DateTimeField,
   CreateDateFieldClass: CreateDateField,
   ModifiedDateFieldClass: ModifiedDateField,
-  ULIDFieldClass: ULIDField,
+  UlidFieldClass: UlidField,
   RelatedFieldClass: RelatedField,
   IntegerFieldClass: IntegerField,
   FloatFieldClass: FloatField,

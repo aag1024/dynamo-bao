@@ -10,7 +10,7 @@ const {
 const { 
   StringField, 
   CreateDateField, 
-  ULIDField, 
+  UlidField, 
   RelatedField, 
   VersionField 
 } = require('../../src/fields');
@@ -19,7 +19,7 @@ class Post extends BaseModel {
   static modelPrefix = 'p';
   
   static fields = {
-    postId: ULIDField({ autoAssign: true }),
+    postId: UlidField({ autoAssign: true }),
     userId: RelatedField('User', { required: true }),
     title: StringField({ required: true }),
     content: StringField({ required: true }),

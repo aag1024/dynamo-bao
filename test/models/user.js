@@ -15,14 +15,14 @@ const {
   StringField, 
   CreateDateField, 
   ModifiedDateField, 
-  ULIDField 
+  UlidField 
 } = require('../../src/fields');
 
 class User extends BaseModel {
   static modelPrefix = 'u';
   
   static fields = {
-    userId: ULIDField({ autoAssign: true }),
+    userId: UlidField({ autoAssign: true }),
     name: StringField({ required: true }),
     email: StringField({ required: true }),
     externalId: StringField(),

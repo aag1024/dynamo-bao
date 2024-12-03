@@ -12,7 +12,7 @@ const {
   IntegerField, 
   BooleanField, 
   DateTimeField, 
-  ULIDField 
+  UlidField 
 } = require('../src/fields');
 const { cleanupTestData, verifyCleanup } = require('./utils/test-utils');
 const { ulid } = require('ulid');
@@ -24,7 +24,7 @@ class TestUser extends BaseModel {
   static modelPrefix = 'tu';
   
   static fields = {
-    userId: ULIDField({ required: true, autoAssign: true }),
+    userId: UlidField({ required: true, autoAssign: true }),
     name: StringField({ required: true }),
     age: IntegerField(),
     status: StringField(),

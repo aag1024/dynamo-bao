@@ -9,14 +9,14 @@ const {
 const { 
   StringField, 
   RelatedField, 
-  ULIDField 
+  UlidField 
 } = require('../../src/fields');
   
 class CommentLike extends BaseModel {
   static modelPrefix = 'cl';
   
   static fields = {
-    commentLikeId: ULIDField({ autoAssign: true }),
+    commentLikeId: UlidField({ autoAssign: true }),
     authorId: RelatedField('User'),
     commentId: RelatedField('Comment'),
     likeType: StringField(),

@@ -64,7 +64,7 @@ class BaseField {
       attrNameKey: attributeName,
       attrValueKey: attributeValue,
       fieldName: fieldName,
-      fieldValue: this.toDy(value)
+      fieldValue: value
     };
   }
 
@@ -366,7 +366,7 @@ class CounterField extends BaseField {
       type: 'SET',
       expression: `${attributeName} = ${attributeValue}`,
       fieldName: fieldName,
-      fieldValue: this.toDy(value)
+      fieldValue: value
     };
 
     logger.log('CounterField - getUpdateExpression', fieldName, value);
@@ -513,6 +513,34 @@ class BooleanField extends BaseField {
   }
 }
 
+class TtlField extends DateTimeField {
+  validate(value) {
+    if (value === null || value === undefined) {
+      return true;  // Allow null/undefined for field removal
+    }
+    return super.validate(value);  // Use parent validation for dates
+  }
+
+  toDy(value) {
+    logger.log('TTL toDy', value);
+    if (value === undefined) return undefined;  // Skip field
+    if (value === null) return null;           // Remove field
+    
+    // Convert any valid date input to Unix timestamp in seconds
+    const date = value instanceof Date ? value : new Date(value);
+    const timestamp = Math.floor(date.getTime() / 1000);
+    return timestamp;
+  }
+
+  fromDy(value) {
+    logger.log('TTL fromDy', value);
+    if (value === undefined || value === null) {
+      return null;  // Convert both undefined and null to null
+    }
+    return new Date(value * 1000);
+  }
+}
+
 // Factory functions for creating field instances
 const createStringField = (options) => new StringField(options);
 const createDateTimeField = (options) => new DateTimeField(options);
@@ -526,6 +554,7 @@ const createCounterField = (options) => new CounterField(options);
 const createBinaryField = (options) => new BinaryField(options);
 const createVersionField = (options) => new VersionField(options);
 const createBooleanField = (options) => new BooleanField(options);
+const createTtlField = (options) => new TtlField(options);
 
 // Export both the factory functions and the classes
 module.exports = {
@@ -542,6 +571,7 @@ module.exports = {
   BinaryField: createBinaryField,
   VersionField: createVersionField,
   BooleanField: createBooleanField,
+  TtlField: createTtlField,
   
   // Classes (for instanceof checks)
   StringFieldClass: StringField,
@@ -555,5 +585,6 @@ module.exports = {
   CounterFieldClass: CounterField,
   BinaryFieldClass: BinaryField,
   VersionFieldClass: VersionField,
-  BooleanFieldClass: BooleanField
+  BooleanFieldClass: BooleanField,
+  TtlFieldClass: TtlField
 }; 

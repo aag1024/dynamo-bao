@@ -24,24 +24,6 @@ class ModelManager {
     return ModelManager._instances.get(key);
   }
 
-  registerModel(ModelClass) {
-    logger.log('Registering model:', {
-      name: ModelClass.name,
-      testId: this._test_id
-    });
-    
-    this._models.set(ModelClass.name, ModelClass);
-    ModelClass._test_id = this._test_id;
-    
-    if (this._initialized) {
-      ModelClass.documentClient = this._docClient;
-      ModelClass.table = this._tableName;
-      ModelClass.validateConfiguration();
-      ModelClass.registerRelatedIndexes();
-    }
-    return ModelClass;
-  }
-
   init(config = {}) {
     const client = new DynamoDBClient({ 
       region: config.region || process.env.AWS_REGION 
@@ -57,6 +39,7 @@ class ModelManager {
       ModelClass.table = this._tableName;
       ModelClass.validateConfiguration();
       ModelClass.registerRelatedIndexes();
+      ModelClass.registerUniqueConstraintLookups();
     }
 
     this._initialized = true;
@@ -68,12 +51,6 @@ class ModelManager {
     if (!ModelClass) {
       throw new Error(`Model ${modelName} not found`);
     }
-    // logger.log('Getting model:', {
-    //   name: modelName,
-    //   testId: this._test_id,
-    //   modelTestId: ModelClass._test_id,
-    //   managerInstance: this === ModelManager.getInstance(this._test_id)
-    // });
     return ModelClass;
   }
 
@@ -86,6 +63,7 @@ class ModelManager {
       ModelClass.table = this._tableName;
       ModelClass.validateConfiguration();
       ModelClass.registerRelatedIndexes();
+      ModelClass.registerUniqueConstraintLookups();
     }
     return ModelClass;
   }

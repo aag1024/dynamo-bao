@@ -31,7 +31,7 @@ class User extends BaseModel {
       defaultValue: 'active'
     }),
     createdAt: CreateDateField(),
-    modifiedAt: ModifiedDateField()
+    modifiedAt: ModifiedDateField(),
   };
 
   static primaryKey = PrimaryKeyConfig('userId');

@@ -1,5 +1,5 @@
 // src/model.js
-const { RelatedFieldClass, StringField } = require('./fields');
+const { RelatedFieldClass, StringField, TtlFieldClass } = require('./fields');
 const { ModelManager } = require('./model-manager');
 const { FilterExpressionBuilder } = require('./filter-expression');
 const { defaultLogger: logger } = require('./utils/logger');
@@ -117,6 +117,13 @@ class BaseModel {
       throw new Error(`${this.name} must define a primaryKey`);
     }
 
+    // Update to use TtlFieldClass instead of TtlField
+    Object.entries(this.fields).forEach(([fieldName, field]) => {
+      if (field instanceof TtlFieldClass && fieldName !== 'ttl') {
+        throw new Error(`TtlField must be named 'ttl', found '${fieldName}' in ${this.name}`);
+      }
+    });
+
     // Ensure primary key fields are required
     const pkField = this.getField(this.primaryKey.pk);
     if (!pkField.required) {
@@ -219,6 +226,55 @@ class BaseModel {
         );
 
         return results;
+      };
+    });
+  }
+
+  static registerUniqueConstraintLookups() {
+    // Find all unique constraints
+    Object.entries(this.uniqueConstraints || {}).forEach(([name, constraint]) => {
+      // Convert uniqueXxx to findByXxx
+      const methodName = 'findBy' + name.replace(/^unique/, '');
+      
+      // Add the static lookup method
+      this[methodName] = async function(value) {
+        if (!value) {
+          throw new Error(`${constraint.field} value is required`);
+        }
+
+        // Get the unique constraint record
+        const key = this.formatUniqueConstraintKey(
+          constraint.constraintId,
+          this.modelPrefix,
+          constraint.field,
+          value
+        );
+
+        const result = await this.documentClient.get({
+          TableName: this.table,
+          Key: {
+            _pk: key,
+            _sk: UNIQUE_CONSTRAINT_KEY
+          },
+          ReturnConsumedCapacity: 'TOTAL'
+        });
+
+        if (!result.Item) {
+          return null;
+        }
+
+        // Get the actual item using the relatedId
+        const item = await this.find(result.Item.relatedId);
+        
+        // If found, add the constraint lookup capacity to the response
+        if (item) {
+          item._response.ConsumedCapacity = this.accumulateCapacity([
+            result,
+            item._response
+          ]);
+        }
+
+        return item;
       };
     });
   }
@@ -781,6 +837,8 @@ class BaseModel {
     const transactItems = [];
     const dyUpdatesToSave = {};
     let hasUniqueConstraintChanges = false;
+
+    logger.debug('jsUpdates', jsUpdates);
     
     // Generate Dynamo Updates to save
     for (const [key, field] of Object.entries(this.fields)) {
@@ -799,11 +857,13 @@ class BaseModel {
         if (typeof field.updateBeforeSave === 'function') {
           const newValue = field.updateBeforeSave(jsUpdates[key]);
           if (newValue !== jsUpdates[key]) {
-            dyUpdatesToSave[key] = newValue;
+            dyUpdatesToSave[key] = field.toDy(newValue);
           }
         }
       }
     }
+
+    logger.debug('dyUpdatesToSave', dyUpdatesToSave);
 
     if (jsUpdates.length === 0) {
       return currentItem;
@@ -916,12 +976,12 @@ class BaseModel {
         ...names,
         ...conditionNames
       },
-      ExpressionAttributeValues: {
-        ...values,
-        ...conditionValues
-      },
       ReturnValues: 'ALL_NEW'
     };
+
+    if (Object.keys(values).length > 0) {
+      updateParams.ExpressionAttributeValues = {...values, ...conditionValues};
+    }
 
     // Add condition expression if we have any conditions
     if (conditionExpressions.length > 0) {
@@ -963,6 +1023,7 @@ class BaseModel {
           ...updateParams,
           ReturnConsumedCapacity: 'TOTAL'
         });
+
         const savedItem = new this(response.Attributes);
         savedItem._response = {
           ConsumedCapacity: response.ConsumedCapacity,
@@ -1063,7 +1124,19 @@ class BaseModel {
         if (value === undefined) continue;
 
         const field = this.getField(fieldName);
-        expressions.push(field.getUpdateExpression(fieldName, value));  
+        
+        // Handle null values differently - use REMOVE instead of SET
+        if (value === null) {
+            expressions.push({
+                type: 'REMOVE',
+                expression: `#${fieldName}`,
+                attrNameKey: `#${fieldName}`,
+                fieldName: fieldName,
+                fieldValue: null
+            });
+        } else {
+            expressions.push(field.getUpdateExpression(fieldName, value));
+        }
     }
 
     const parts = [];
@@ -1072,31 +1145,34 @@ class BaseModel {
     const removeExpressions = [];
 
     expressions.forEach(expression => {
-      if (expression.type === 'SET') {
-        setExpressions.push(expression.expression);
-      } else if (expression.type === 'ADD') {
-        addExpressions.push(expression.expression);
-      } else if (expression.type === 'REMOVE') {
-        removeExpressions.push(expression.expression);
-      }
+        if (expression.type === 'SET') {
+            setExpressions.push(expression.expression);
+        } else if (expression.type === 'ADD') {
+            addExpressions.push(expression.expression);
+        } else if (expression.type === 'REMOVE') {
+            removeExpressions.push(expression.expression);
+        }
 
-      names[expression.attrNameKey] = expression.fieldName;
+        names[expression.attrNameKey] = expression.fieldName;
 
-      if (expression.fieldValue !== null) {
-        values[expression.attrValueKey] = expression.fieldValue;
-      }
-      
+        if (expression.fieldValue !== null) {
+            values[expression.attrValueKey] = expression.fieldValue;
+        }
     });
 
     if (setExpressions.length > 0) parts.push(`SET ${setExpressions.join(', ')}`);
     if (addExpressions.length > 0) parts.push(`ADD ${addExpressions.join(', ')}`);
     if (removeExpressions.length > 0) parts.push(`REMOVE ${removeExpressions.join(', ')}`);
-    
-    return {
-        updateExpression: parts.join(' '),
-        names,
-        values
+
+    const response = {
+      updateExpression: parts.join(' '),
+      names,
+      values
     };
+
+    logger.debug('response', response);
+
+    return response;
   }
 
   static async delete(primaryId) {
@@ -1160,10 +1236,12 @@ class BaseModel {
     // Initialize fields with data
     Object.entries(this.constructor.fields).forEach(([fieldName, field]) => {
       let value;
-      if (data[fieldName] !== undefined) {
-        value = field.fromDy(data[fieldName]);
-      } else {
+      if (data[fieldName] === undefined) {
         value = field.getInitialValue();
+      } 
+      
+      if (value === undefined) {
+        value = field.fromDy(data[fieldName]);
       }
 
       this._data[fieldName] = value;
@@ -1291,11 +1369,23 @@ class BaseModel {
       }
   }
 
-  // Get only changed fields
+  // Get only changed fields - convert from Dynamo to JS format
   getChanges() {
     const changes = {};
+    logger.debug('_changes Set contains:', Array.from(this._changes));
     for (const field of this._changes) {
-      changes[field] = this._data[field];
+        const fieldDef = this.constructor.getField(field);
+        logger.debug('Field definition for', field, ':', {
+            type: fieldDef.constructor.name,
+            field: fieldDef
+        });
+        const dyValue = this._data[field];
+        logger.debug('Converting value:', {
+            field,
+            dyValue,
+            fromDyExists: typeof fieldDef.fromDy === 'function'
+        });
+        changes[field] = fieldDef.fromDy(dyValue);
     }
     return changes;
   }

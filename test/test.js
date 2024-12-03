@@ -1,25 +1,21 @@
-const { initModels } = require('../src');
+const dynamoBao = require('../src');
+const testConfig = require('./config');
 const { DescribeTableCommand } = require('@aws-sdk/client-dynamodb');
 const { cleanupTestData, verifyCleanup } = require('./utils/test-utils');
 const { ulid } = require('ulid');
 const { QueryCommand } = require('@aws-sdk/lib-dynamodb');
-require('dotenv').config();
 const { defaultLogger: logger } = require('../src/utils/logger');
 
 let testId;
 
 beforeAll(async () => {
   // Initialize models
-  const manager = initModels({
-    region: process.env.AWS_REGION,
-    tableName: process.env.TABLE_NAME
-  });
-
+  const manager = dynamoBao.initModels(testConfig);
   const docClient = manager.documentClient;
   
   try {
     const tableInfo = await docClient.send(new DescribeTableCommand({
-      TableName: process.env.TABLE_NAME
+      TableName: testConfig.db.tableName
     }));
     logger.log('Table exists:', tableInfo.Table.TableName);
     logger.log('GSIs:', tableInfo.Table.GlobalSecondaryIndexes);
@@ -32,9 +28,8 @@ beforeAll(async () => {
 beforeEach(async () => {
   testId = ulid();
   
-  const manager = initModels({
-    region: process.env.AWS_REGION,
-    tableName: process.env.TABLE_NAME,
+  const manager = dynamoBao.initModels({
+    ...testConfig,
     test_id: testId
   });
 
@@ -225,9 +220,8 @@ describe('Date Range Queries', () => {
 });
 
 test('should properly set test_id on models', async () => {
-  const manager = initModels({
-    region: process.env.AWS_REGION,
-    tableName: process.env.TABLE_NAME,
+  const manager = dynamoBao.initModels({
+    ...testConfig,
     test_id: testId
   });
 
@@ -240,7 +234,7 @@ test('should properly set test_id on models', async () => {
 
   const docClient = manager.documentClient;
   const result = await docClient.send(new QueryCommand({
-    TableName: process.env.TABLE_NAME,
+    TableName: testConfig.db.tableName,
     IndexName: 'gsi_test',
     KeyConditionExpression: '#testId = :testId',
     ExpressionAttributeNames: {

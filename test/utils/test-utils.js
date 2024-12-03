@@ -1,8 +1,8 @@
-
-require('dotenv').config();
+const testConfig = require('../config');
 const { ModelManager } = require('../../src/model-manager');
 const { QueryCommand, DeleteCommand } = require('@aws-sdk/lib-dynamodb');
 const { defaultLogger: logger } = require('../../src/utils/logger');
+
 
 async function cleanupTestData(testId) {
   if (!testId) {
@@ -10,14 +10,11 @@ async function cleanupTestData(testId) {
   }
 
   try {
-    const docClient = ModelManager.getInstance(testId).init({
-      region: process.env.AWS_REGION,
-      tableName: process.env.TABLE_NAME
-    }).documentClient;
+    const docClient = ModelManager.getInstance(testId).init(testConfig).documentClient;
     
     // Query items by GSI
     const params = {
-      TableName: process.env.TABLE_NAME,
+      TableName: testConfig.db.tableName,
       IndexName: 'gsi_test',
       KeyConditionExpression: '#testId = :testId',
       ExpressionAttributeNames: {
@@ -33,7 +30,7 @@ async function cleanupTestData(testId) {
     if (result.Items && result.Items.length > 0) {
       const deletePromises = result.Items.map(item => 
         docClient.send(new DeleteCommand({
-          TableName: process.env.TABLE_NAME,
+          TableName: testConfig.db.tableName,
           Key: {
             _pk: item._pk,
             _sk: item._sk
@@ -71,7 +68,7 @@ async function verifyCleanup(testId) {
   }
 
   const params = {
-    TableName: process.env.TABLE_NAME || 'raftjs-dynamo-dev',
+    TableName: testConfig.db.tableName,
     IndexName: 'gsi_test',
     KeyConditionExpression: '#testId = :testId',
     ExpressionAttributeNames: {

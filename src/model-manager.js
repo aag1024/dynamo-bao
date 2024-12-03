@@ -1,4 +1,3 @@
-require('dotenv').config();
 const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
 const { DynamoDBDocument } = require('@aws-sdk/lib-dynamodb');
 const { defaultLogger: logger } = require('./utils/logger');
@@ -26,10 +25,10 @@ class ModelManager {
 
   init(config = {}) {
     const client = new DynamoDBClient({ 
-      region: config.region || process.env.AWS_REGION 
+      region: config.aws.region
     });
     this._docClient = DynamoDBDocument.from(client);
-    this._tableName = config.tableName || process.env.TABLE_NAME;
+    this._tableName = config.db.tableName;
     this._test_id = config.test_id || this._test_id;
 
     // Initialize all registered models

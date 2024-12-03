@@ -1,5 +1,5 @@
 // src/index.js
-require('dotenv').config();
+const config = require('./config');
 const fs = require('fs');
 const path = require('path');
 const { ModelManager } = require('./model-manager');
@@ -19,11 +19,11 @@ const {
     UNIQUE_CONSTRAINT_ID3,
     UNIQUE_CONSTRAINT_ID4,
   } = require('./model');
+
+// Replace MODELS_DIR constant with config reference
+const MODELS_DIR = config.paths.modelsDir;
   
-  // Default models directory is relative to this file
-  const MODELS_DIR = process.env.MODELS_DIR || null;
-  
-  function findModelFiles(dir) {
+function findModelFiles(dir) {
     let results = [];
     const items = fs.readdirSync(dir);
   
@@ -61,28 +61,51 @@ const {
     return models;
   }
   
-  function initModels(config) {  
+  function initModels(userConfig = {}) {  
+    // Merge user config with default config
+    const finalConfig = {
+        ...config,
+        ...userConfig,
+        // Preserve nested configs if provided
+        aws: {
+            ...config.aws,
+            ...(userConfig.aws || {})
+        },
+        db: {
+            ...config.db,
+            ...(userConfig.db || {})
+        },
+        logging: {
+            ...config.logging,
+            ...(userConfig.logging || {})
+        },
+        paths: {
+            ...config.paths,
+            ...(userConfig.paths || {})
+        }
+    };
+
     // Get/create manager instance with test_id
-    const manager = ModelManager.getInstance(config.test_id);
+    const manager = ModelManager.getInstance(finalConfig.test_id);
 
     // First pass to register models
     const registeredModels = _registerModels(manager);
   
     // Initialize the manager & 2nd model registration pass
-    manager.init(config);
+    manager.init(finalConfig);
   
     logger.log('Models initialized:', {
-      testId: config.test_id,
-      managerTestId: manager.getTestId(),
-      registeredModels: Array.from(manager._models.keys())
+        testId: finalConfig.test_id,
+        managerTestId: manager.getTestId(),
+        registeredModels: Array.from(manager._models.keys())
     });
 
     manager.models = registeredModels;
   
     return manager;
-  }
+}
   
-  const defaultModels = initModels({}).models;
+  const defaultModels = initModels(config).models;
   
   module.exports = {
     // Initialize function

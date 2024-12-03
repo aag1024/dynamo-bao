@@ -1,5 +1,5 @@
-const { initModels } = require('../src');
-const { ModelManager } = require('../src/model-manager');
+const dynamoBao = require('../src');
+const testConfig = require('./config');
 const { BaseModel, PrimaryKeyConfig, IndexConfig, GSI_INDEX_ID1 } = require('../src/model');
 const { 
   StringField, 
@@ -34,18 +34,12 @@ describe('Count Query Tests', () => {
   beforeEach(async () => {
     testId = ulid();
   
-    initModels({
-      region: process.env.AWS_REGION,
-      tableName: process.env.TABLE_NAME,
+    const manager = dynamoBao.initModels({
+      ...testConfig,
       test_id: testId
     });
 
-    const manager = ModelManager.getInstance(testId);
     manager.registerModel(TestUser);
-
-    TestUser.documentClient = manager.documentClient;
-    TestUser.table = manager.tableName;
-    TestUser.validateConfiguration();
 
     if (testId) {
       await cleanupTestData(testId);

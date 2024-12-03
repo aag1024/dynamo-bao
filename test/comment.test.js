@@ -1,29 +1,25 @@
-const { 
-    initModels, 
-    ModelManager,
-  } = require('../src');
-  const { cleanupTestData, verifyCleanup } = require('./utils/test-utils');
-  const { ulid } = require('ulid');
-  require('dotenv').config();
-  
-  let testUser, testPost, testId;
-  
+const dynamoBao = require('../src');
+const testConfig = require('./config');
+const { cleanupTestData, verifyCleanup } = require('./utils/test-utils');
+const { ulid } = require('ulid');
+
+let testUser, testPost, testId;
+
   describe('Comment Model', () => {
     beforeEach(async () => {
         testId = ulid();
 
-        initModels({
-            region: process.env.AWS_REGION,
-            tableName: process.env.TABLE_NAME,
+        const manager = dynamoBao.initModels({
+            ...testConfig,
             test_id: testId
         });
 
         await cleanupTestData(testId);
         await verifyCleanup(testId);
 
-        User = ModelManager.getInstance(testId).getModel('User');
-        Post = ModelManager.getInstance(testId).getModel('Post');
-        Comment = ModelManager.getInstance(testId).getModel('Comment');
+        User = manager.getModel('User');
+        Post = manager.getModel('Post');
+        Comment = manager.getModel('Comment');
   
         // Create a test user and post for each test
         testUser = await User.create({

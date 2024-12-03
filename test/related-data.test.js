@@ -1,25 +1,21 @@
-const { 
-    initModels, 
-    ModelManager,
-  } = require('../src');
-  const { cleanupTestData, verifyCleanup } = require('./utils/test-utils');
-  const { ulid } = require('ulid');
-  require('dotenv').config();
-  
-  describe('Related Data Loading', () => {
+const dynamoBao = require('../src');
+const testConfig = require('./config');
+const { cleanupTestData, verifyCleanup } = require('./utils/test-utils');
+const { ulid } = require('ulid');
+
+describe('Related Data Loading', () => {
     let testUser, testPosts, testId;
   
     beforeEach(async () => {
         testId = ulid();
 
-        initModels({
-            region: process.env.AWS_REGION,
-            tableName: process.env.TABLE_NAME,
+        const manager = dynamoBao.initModels({
+            ...testConfig,
             test_id: testId
         });
 
-        User = ModelManager.getInstance(testId).getModel('User');
-        Post = ModelManager.getInstance(testId).getModel('Post');
+        User = manager.getModel('User');
+        Post = manager.getModel('Post');
 
         await cleanupTestData(testId);
         await verifyCleanup(testId);

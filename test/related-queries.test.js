@@ -1,10 +1,7 @@
-const { 
-    initModels, 
-    ModelManager
-} = require('../src');
+const dynamoBao = require('../src');
+const testConfig = require('./config');
 const { cleanupTestData, verifyCleanup } = require('./utils/test-utils');
 const { ulid } = require('ulid');
-require('dotenv').config();
 
 describe('Related Field Queries', () => {
   let testUser, testPosts, testTags, testId;
@@ -12,19 +9,18 @@ describe('Related Field Queries', () => {
   beforeEach(async () => {
     testId = ulid();
   
-    initModels({
-      region: process.env.AWS_REGION,
-      tableName: process.env.TABLE_NAME,
+    const manager = dynamoBao.initModels({
+      ...testConfig,
       test_id: testId
     });
 
     await cleanupTestData(testId);
     await verifyCleanup(testId);
 
-    User = ModelManager.getInstance(testId).getModel('User');
-    Post = ModelManager.getInstance(testId).getModel('Post');
-    Tag = ModelManager.getInstance(testId).getModel('Tag');
-    TaggedPost = ModelManager.getInstance(testId).getModel('TaggedPost');
+    User = manager.getModel('User');
+    Post = manager.getModel('Post');
+    Tag = manager.getModel('Tag');
+    TaggedPost = manager.getModel('TaggedPost');
 
     // Create test user
     testUser = await User.create({

@@ -1,12 +1,8 @@
-// test/capacity.test.js
-const { 
-    initModels, 
-    ModelManager
-} = require('../src');
+const dynamoBao = require('../src');
+const testConfig = require('./config');
 const { cleanupTestData, verifyCleanup } = require('./utils/test-utils');
 const { verifyCapacityUsage } = require('./dynamoTestUtils');
 const { ulid } = require('ulid');
-require('dotenv').config();
 
 let totalConsumedCapacity = 0, testId;
 
@@ -18,9 +14,8 @@ async function sumConsumedCapacity() {
 beforeEach(async () => {
     testId = ulid();
 
-    initModels({
-        region: process.env.AWS_REGION,
-        tableName: process.env.TABLE_NAME,
+    const manager = dynamoBao.initModels({
+        ...testConfig,
         test_id: testId
     });
 
@@ -29,7 +24,7 @@ beforeEach(async () => {
         await verifyCleanup(testId);
     }
 
-    User = ModelManager.getInstance(testId).getModel('User');
+    User = manager.getModel('User');
     totalConsumedCapacity = 0;  // Reset capacity counter
 });
 

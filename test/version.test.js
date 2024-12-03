@@ -1,10 +1,10 @@
-const { initModels } = require('../src');
+const dynamoBao = require('../src');
+const testConfig = require('./config');
 const { ModelManager } = require('../src/model-manager');
 const { BaseModel, PrimaryKeyConfig } = require('../src/model');
 const { StringField, VersionField } = require('../src/fields');
 const { cleanupTestData, verifyCleanup } = require('./utils/test-utils');
 const { ulid } = require('ulid');
-require('dotenv').config();
 const { defaultLogger: logger } = require('../src/utils/logger');
 
 let testId;
@@ -26,18 +26,14 @@ describe('Version Field Tests', () => {
   let testVersion;
 
   beforeAll(async () => {
-    initModels({
-      region: process.env.AWS_REGION,
-      tableName: process.env.TABLE_NAME
-    });
+    dynamoBao.initModels(testConfig);
   });
 
   beforeEach(async () => {
     testId = ulid();
   
-    initModels({
-      region: process.env.AWS_REGION,
-      tableName: process.env.TABLE_NAME,
+    dynamoBao.initModels({
+      ...testConfig,
       test_id: testId
     });
 

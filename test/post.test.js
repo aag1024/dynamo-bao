@@ -1,10 +1,7 @@
-const { 
-  initModels, 
-  ModelManager,
-} = require('../src');
+const dynamoBao = require('../src');
+const testConfig = require('./config');
 const { cleanupTestData, verifyCleanup } = require('./utils/test-utils');
 const { ulid } = require('ulid');
-require('dotenv').config();
 const { defaultLogger: logger } = require('../src/utils/logger');
 
 let testUser, testId;
@@ -13,17 +10,16 @@ describe('Post Model', () => {
   beforeEach(async () => {
     testId = ulid();
   
-    initModels({
-      region: process.env.AWS_REGION,
-      tableName: process.env.TABLE_NAME,
+    const manager = dynamoBao.initModels({
+      ...testConfig,
       test_id: testId
     });
 
     await cleanupTestData(testId);
     await verifyCleanup(testId);
 
-    User = ModelManager.getInstance(testId).getModel('User');
-    Post = ModelManager.getInstance(testId).getModel('Post');
+    User = manager.getModel('User');
+    Post = manager.getModel('Post');
 
     // Create a test user with unique values for each test
     testUser = await User.create({

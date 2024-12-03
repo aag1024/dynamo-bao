@@ -1,26 +1,16 @@
-const { 
-  initModels, 
-  ModelManager,
-} = require('../src');
+const dynamoBao = require('../src');
+const testConfig = require('./config');
 const { cleanupTestData, verifyCleanup } = require('./utils/test-utils');
 const { ulid } = require('ulid');
-require('dotenv').config();
 
 let testUser, testPost, testComment, testId;
 
 describe('Capacity Tracking', () => {
-  beforeAll(async () => {
-    initModels({
-      region: process.env.AWS_REGION,
-      tableName: process.env.TABLE_NAME
-    });
-  });
-
   beforeEach(async () => {
     testId = ulid();
-
-    initModels({
-      region: process.env.AWS_REGION,
+  
+    const manager = dynamoBao.initModels({
+      ...testConfig,
       tableName: process.env.TABLE_NAME,
       test_id: testId
     });
@@ -28,9 +18,9 @@ describe('Capacity Tracking', () => {
     await cleanupTestData(testId);
     await verifyCleanup(testId);
 
-    User = ModelManager.getInstance(testId).getModel('User');
-    Post = ModelManager.getInstance(testId).getModel('Post');
-    Comment = ModelManager.getInstance(testId).getModel('Comment');
+    User = manager.getModel('User');
+    Post = manager.getModel('Post');
+    Comment = manager.getModel('Comment');
 
     // Create test data
     testUser = await User.create({

@@ -1,10 +1,9 @@
-const { initModels } = require('../src');
-const { ModelManager } = require('../src/model-manager');
+const dynamoBao = require('../src');
+const testConfig = require('./config');
 const { BaseModel, PrimaryKeyConfig } = require('../src/model');
 const { StringField, BinaryField } = require('../src/fields');
 const { cleanupTestData, verifyCleanup } = require('./utils/test-utils');
 const { ulid } = require('ulid');
-require('dotenv').config();
 
 let testId;
 
@@ -24,29 +23,15 @@ class TestBinary extends BaseModel {
 describe('Binary Field Tests', () => {
   let testBinary;
 
-  beforeAll(async () => {
-    initModels({
-      region: process.env.AWS_REGION,
-      tableName: process.env.TABLE_NAME
-    });
-  });
-
   beforeEach(async () => {
     testId = ulid();
   
-    initModels({
-      region: process.env.AWS_REGION,
-      tableName: process.env.TABLE_NAME,
+    const manager = dynamoBao.initModels({
+      ...testConfig,
       test_id: testId
     });
 
-    const manager = ModelManager.getInstance(testId);
     manager.registerModel(TestBinary);
-
-    TestBinary.documentClient = manager.documentClient;
-    TestBinary.table = manager.tableName;
-    TestBinary.validateConfiguration();
-    TestBinary.registerRelatedIndexes();
 
     if (testId) {
       await cleanupTestData(testId);

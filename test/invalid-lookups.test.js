@@ -1,10 +1,16 @@
-const { initModels } = require('../src');
-const { ModelManager } = require('../src/model-manager');
-const { BaseModel, PrimaryKeyConfig, IndexConfig, UniqueConstraintConfig, GSI_INDEX_ID1, UNIQUE_CONSTRAINT_ID1 } = require('../src/model');
+const dynamoBao = require('../src');
+const testConfig = require('./config');
+const { 
+  BaseModel, 
+  PrimaryKeyConfig, 
+  IndexConfig, 
+  UniqueConstraintConfig, 
+  GSI_INDEX_ID1, 
+  UNIQUE_CONSTRAINT_ID1 
+} = require('../src/model');
 const { StringField } = require('../src/fields');
 const { cleanupTestData, verifyCleanup } = require('./utils/test-utils');
 const { ulid } = require('ulid');
-require('dotenv').config();
 
 let testId;
 
@@ -29,30 +35,15 @@ class TestModel extends BaseModel {
 }
 
 describe('Invalid Lookup Tests', () => {
-  beforeAll(async () => {
-    initModels({
-      region: process.env.AWS_REGION,
-      tableName: process.env.TABLE_NAME
-    });
-  });
-
   beforeEach(async () => {
     testId = ulid();
     
-    initModels({
-      region: process.env.AWS_REGION,
-      tableName: process.env.TABLE_NAME,
+    const manager = dynamoBao.initModels({
+      ...testConfig,
       test_id: testId
     });
 
-    const manager = ModelManager.getInstance(testId);
     manager.registerModel(TestModel);
-
-    TestModel.documentClient = manager.documentClient;
-    TestModel.table = manager.tableName;
-    TestModel.validateConfiguration();
-    TestModel.registerRelatedIndexes();
-    TestModel.registerUniqueConstraintLookups();
 
     if (testId) {
       await cleanupTestData(testId);

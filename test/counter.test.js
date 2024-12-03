@@ -1,10 +1,9 @@
-const { initModels } = require('../src');
-const { ModelManager } = require('../src/model-manager');
+const dynamoBao = require('../src');
+const testConfig = require('./config');
 const { BaseModel, PrimaryKeyConfig } = require('../src/model');
 const { StringField, CounterField } = require('../src/fields');
 const { cleanupTestData, verifyCleanup } = require('./utils/test-utils');
 const { ulid } = require('ulid');
-require('dotenv').config();
 
 let testId;
 
@@ -24,32 +23,16 @@ class TestCounter extends BaseModel {
 describe('Counter Field Tests', () => {
   let testCounter;
 
-  beforeAll(async () => {
-    // Initialize models
-    initModels({
-        region: process.env.AWS_REGION,
-        tableName: process.env.TABLE_NAME
-    });
-  });
-
   beforeEach(async () => {
     testId = ulid();
   
-    initModels({
-      region: process.env.AWS_REGION,
-      tableName: process.env.TABLE_NAME,
+    const manager = dynamoBao.initModels({
+      ...testConfig,
       test_id: testId
     });
 
     // Then register the TestCounter model
-    const manager = ModelManager.getInstance(testId);
     manager.registerModel(TestCounter);
-
-    // Set up the model manually since it's not in the models directory
-    TestCounter.documentClient = manager.documentClient;
-    TestCounter.table = manager.tableName;
-    TestCounter.validateConfiguration();
-    TestCounter.registerRelatedIndexes();
 
     if (testId) {
         await cleanupTestData(testId);

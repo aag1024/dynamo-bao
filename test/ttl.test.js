@@ -1,11 +1,10 @@
-const { initModels } = require('../src');
-const { ModelManager } = require('../src/model-manager');
+const dynamoBao = require('../src');
+const testConfig = require('./config');
 const { BaseModel, PrimaryKeyConfig } = require('../src/model');
 const { StringField, TtlField } = require('../src/fields');
 const { cleanupTestData, verifyCleanup } = require('./utils/test-utils');
 const { ulid } = require('ulid');
 const { GetCommand } = require("@aws-sdk/lib-dynamodb");
-require('dotenv').config();
 
 let testId;
 
@@ -27,13 +26,11 @@ describe('TTL Field Tests', () => {
   beforeEach(async () => {
     testId = ulid();
   
-    initModels({
-      region: process.env.AWS_REGION,
-      tableName: process.env.TABLE_NAME,
+    const manager = dynamoBao.initModels({
+      ...testConfig,
       test_id: testId
     });
 
-    const manager = ModelManager.getInstance(testId);
     manager.registerModel(TestTtl);
 
     TestTtl.documentClient = manager.documentClient;

@@ -1,19 +1,17 @@
-const { initModels } = require('../src');
-const { ModelManager } = require('../src/model-manager');
+const dynamoBao = require('../src');
+const testConfig = require('./config');
 const { BaseModel, PrimaryKeyConfig, IndexConfig } = require('../src/model');
 const { StringField } = require('../src/fields');
 const { ulid } = require('ulid');
-require('dotenv').config();
 
-let testId;
+let testId, manager;
 
 describe('Model Validation Tests', () => {
   beforeEach(async () => {
     testId = ulid();
-    
-    initModels({
-      region: process.env.AWS_REGION,
-      tableName: process.env.TABLE_NAME,
+
+    manager = dynamoBao.initModels({
+      ...testConfig,
       test_id: testId
     });
   });
@@ -27,8 +25,6 @@ describe('Model Validation Tests', () => {
       };
       static primaryKey = PrimaryKeyConfig('validField');
     }
-
-    const manager = ModelManager.getInstance(testId);
 
     // We expect the error to be thrown during model registration
     expect(() => {
@@ -49,8 +45,6 @@ describe('Model Validation Tests', () => {
       };
     }
 
-    const manager = ModelManager.getInstance(testId);
-
     // We expect the error to be thrown during model registration
     expect(() => {
       manager.registerModel(InvalidIndexModel);
@@ -68,12 +62,7 @@ describe('Model Validation Tests', () => {
       static primaryKey = PrimaryKeyConfig('id');
     }
 
-    const manager = ModelManager.getInstance(testId);
     manager.registerModel(RequiredFieldModel);
-    RequiredFieldModel.documentClient = manager.documentClient;
-    RequiredFieldModel.table = manager.tableName;
-    RequiredFieldModel.validateConfiguration();
-    RequiredFieldModel.registerRelatedIndexes();
 
     // Should succeed with all required fields
     const validModel = await RequiredFieldModel.create({
@@ -118,12 +107,7 @@ describe('Model Validation Tests', () => {
       static primaryKey = PrimaryKeyConfig('id');
     }
 
-    const manager = ModelManager.getInstance(testId);
     manager.registerModel(RequiredFieldModel);
-    RequiredFieldModel.documentClient = manager.documentClient;
-    RequiredFieldModel.table = manager.tableName;
-    RequiredFieldModel.validateConfiguration();
-    RequiredFieldModel.registerRelatedIndexes();
 
     // Create initial record
     const model = await RequiredFieldModel.create({
@@ -162,10 +146,7 @@ describe('Model Validation Tests', () => {
       static primaryKey = PrimaryKeyConfig('id', 'sortKey');
     }
 
-    const manager = ModelManager.getInstance(testId);
     manager.registerModel(ImplicitRequiredModel);
-    ImplicitRequiredModel.documentClient = manager.documentClient;
-    ImplicitRequiredModel.table = manager.tableName;
     
     // Should automatically mark fields as required during validation
     ImplicitRequiredModel.validateConfiguration();
@@ -201,10 +182,7 @@ describe('Model Validation Tests', () => {
       static primaryKey = PrimaryKeyConfig('id');
     }
 
-    const manager = ModelManager.getInstance(testId);
     manager.registerModel(SingleKeyModel);
-    SingleKeyModel.documentClient = manager.documentClient;
-    SingleKeyModel.table = manager.tableName;
     
     // Should automatically mark field as required during validation
     SingleKeyModel.validateConfiguration();
@@ -234,10 +212,7 @@ describe('Model Validation Tests', () => {
       static primaryKey = PrimaryKeyConfig('id', 'sortKey');
     }
 
-    const manager = ModelManager.getInstance(testId);
     manager.registerModel(ExplicitRequiredModel);
-    ExplicitRequiredModel.documentClient = manager.documentClient;
-    ExplicitRequiredModel.table = manager.tableName;
     
     // Should validate without any warnings
     ExplicitRequiredModel.validateConfiguration();

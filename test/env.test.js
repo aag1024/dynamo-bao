@@ -1,19 +1,16 @@
-const { 
-    initModels,
-    User
-  } = require('../src');
+const dynamoBao = require('../src');
+const testConfig = require('./config');
+const User = dynamoBao.User;
 
 const { ulid } = require('ulid');
-require('dotenv').config();
 const { defaultLogger: logger } = require('../src/utils/logger');
 
 let testId;
 
 beforeAll(async () => {
   // Initialize models
-  initModels({
-    region: process.env.AWS_REGION,
-    tableName: process.env.TABLE_NAME
+  const manager = dynamoBao.initModels({
+    ...testConfig,
   });
 });
 

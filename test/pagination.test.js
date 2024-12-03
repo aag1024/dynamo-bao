@@ -1,6 +1,12 @@
-const { initModels } = require('../src');
-const { ModelManager } = require('../src/model-manager');
-const { BaseModel, PrimaryKeyConfig, IndexConfig, GSI_INDEX_ID1 } = require('../src/model');
+const dynamoBao = require('../src');
+const testConfig = require('./config');
+const { 
+  BaseModel, 
+  PrimaryKeyConfig, 
+  IndexConfig, 
+  GSI_INDEX_ID1 
+} = require('../src/model');
+
 const { 
   StringField, 
   IntegerField, 
@@ -10,7 +16,6 @@ const {
 } = require('../src/fields');
 const { cleanupTestData, verifyCleanup } = require('./utils/test-utils');
 const { ulid } = require('ulid');
-require('dotenv').config();
 
 let testId;
 
@@ -42,19 +47,12 @@ describe('Pagination Tests', () => {
   beforeEach(async () => {
     testId = ulid();
     
-    initModels({
-      region: process.env.AWS_REGION,
-      tableName: process.env.TABLE_NAME,
+    const manager = dynamoBao.initModels({
+      ...testConfig,
       test_id: testId
     });
 
-    const manager = ModelManager.getInstance(testId);
     manager.registerModel(TestUser);
-
-    TestUser.documentClient = manager.documentClient;
-    TestUser.table = manager.tableName;
-    TestUser.validateConfiguration();
-    TestUser.registerRelatedIndexes();
 
     if (testId) {
       await cleanupTestData(testId);

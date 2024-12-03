@@ -1,10 +1,7 @@
-const { 
-  initModels, 
-  ModelManager,
-} = require('../src');
+const dynamoBao = require('../src');
+const testConfig = require('./config');
 const { cleanupTestData, verifyCleanup } = require('./utils/test-utils');
 const { ulid } = require('ulid');
-require('dotenv').config();
 
 let User, testId;
 
@@ -12,16 +9,15 @@ describe('User Unique Constraint Lookups', () => {
   beforeEach(async () => {
     testId = ulid();
     
-    initModels({
-      region: process.env.AWS_REGION,
-      tableName: process.env.TABLE_NAME,
+    const manager = dynamoBao.initModels({
+      ...testConfig,
       test_id: testId
     });
 
     await cleanupTestData(testId);
     await verifyCleanup(testId);
 
-    User = ModelManager.getInstance(testId).getModel('User');
+    User = manager.getModel('User');
   });
 
   afterEach(async () => {

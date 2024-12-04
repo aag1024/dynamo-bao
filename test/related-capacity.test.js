@@ -11,7 +11,6 @@ describe('Capacity Tracking', () => {
   
     const manager = dynamoBao.initModels({
       ...testConfig,
-      tableName: process.env.TABLE_NAME,
       testId: testId
     });
 
@@ -58,7 +57,7 @@ describe('Capacity Tracking', () => {
       expect(comment._response).toBeDefined();
       expect(comment._response.ConsumedCapacity).toBeDefined();
       expect(comment._response.ConsumedCapacity).toBeInstanceOf(Object);
-      expect(comment._response.ConsumedCapacity.TableName).toBe(process.env.TABLE_NAME);
+      expect(comment._response.ConsumedCapacity.TableName).toBe(testConfig.db.tableName);
       expect(comment._response.ConsumedCapacity.CapacityUnits).toBeGreaterThan(0);
     });
 
@@ -72,7 +71,7 @@ describe('Capacity Tracking', () => {
       
       // Verify both operations consumed capacity
       comment._response.ConsumedCapacity.forEach(capacity => {
-        expect(capacity.TableName).toBe(process.env.TABLE_NAME);
+        expect(capacity.TableName).toBe(testConfig.db.tableName);
         expect(capacity.CapacityUnits).toBeGreaterThan(0);
       });
     });

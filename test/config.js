@@ -10,7 +10,7 @@ const config = {
     region: 'us-west-2',
   },
   db: {
-    tableName: 'dynamo-bao-dev',
+    tableName: 'dynamo-bao-test',
   },
   logging: {
     level: 'ERROR',

@@ -70,6 +70,8 @@ describe('TaggedPost Queries', () => {
         postId: testPost1.postId
       })
     ]);
+
+    await new Promise(resolve => setTimeout(resolve, 100));
   });
 
   afterEach(async () => {

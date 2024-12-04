@@ -25,10 +25,6 @@ class TestVersion extends BaseModel {
 describe('Version Field Tests', () => {
   let testVersion;
 
-  beforeAll(async () => {
-    dynamoBao.initModels(testConfig);
-  });
-
   beforeEach(async () => {
     testId = ulid();
   
@@ -43,12 +39,6 @@ describe('Version Field Tests', () => {
     // Register the TestVersion model
     const manager = ModelManager.getInstance(testId);
     manager.registerModel(TestVersion);
-
-    // Set up the model manually since it's not in the models directory
-    TestVersion.documentClient = manager.documentClient;
-    TestVersion.table = manager.tableName;
-    TestVersion.validateConfiguration();
-    TestVersion.registerRelatedIndexes();
 
     // Create a new version test item for each test
     testVersion = await TestVersion.create({

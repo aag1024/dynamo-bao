@@ -3,7 +3,7 @@ const testConfig = require('./config');
 const { BaseModel, PrimaryKeyConfig, IndexConfig } = require('../src/model');
 const { StringField } = require('../src/fields');
 const { ulid } = require('ulid');
-
+const { cleanupTestData, verifyCleanup } = require('./utils/test-utils');
 let testId, manager;
 
 describe('Model Validation Tests', () => {
@@ -14,6 +14,18 @@ describe('Model Validation Tests', () => {
       ...testConfig,
       testId: testId
     });
+
+    if (testId) {
+      await cleanupTestData(testId);
+      await verifyCleanup(testId);
+    }
+  });
+
+  afterEach(async () => {
+    if (testId) {
+      await cleanupTestData(testId);
+      await verifyCleanup(testId);
+    }
   });
 
   test('should reject field names starting with underscore', () => {

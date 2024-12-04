@@ -10,8 +10,8 @@ async function cleanupTestData(testId) {
   }
 
   try {
-    const docClient = ModelManager.getInstance(testId).init(testConfig).documentClient;
-    
+    const docClient = ModelManager.getInstance(testId).documentClient;
+
     // Query items by GSI
     const params = {
       TableName: testConfig.db.tableName,

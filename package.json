@@ -4,7 +4,8 @@
     "description": "Simple yet powerful Dynamo object wrapper in JavaScript",
     "main": "src/index.js",
     "scripts": {
-        "test": "jest"
+        "test": "jest",
+        "create-table": "node src/scripts/create-table.js"
     },
     "files": [
         "src/",

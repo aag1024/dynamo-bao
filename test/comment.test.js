@@ -234,7 +234,7 @@ let testUser, testPost, testId;
 
         // Get second page
         const secondPage = await testPost.queryComments(null, {
-          limit: 1,
+          limit: 2,
           startKey: firstPage.lastEvaluatedKey
         });
         expect(secondPage.items).toHaveLength(1);

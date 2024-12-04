@@ -6,8 +6,8 @@ function findConfig() {
     const possibleNames = ['config.js', 'dynamo-bao.config.js', '.dynamo-bao/config.js'];
     const searchPaths = [
         process.cwd(),                    // Project root
-        path.join(__dirname, '..'),       // Library root
-        path.join(__dirname, '../test'),  // Library test directory
+        // path.join(__dirname, '..'),       // Library root
+        // path.join(__dirname, '../test'),  // Library test directory
     ];
     
     // Search each directory for config files
@@ -15,6 +15,7 @@ function findConfig() {
         for (const name of possibleNames) {
             const configPath = path.join(searchPath, name);
             if (fs.existsSync(configPath)) {
+                console.log('DEBUG: Config file found:', configPath);
                 const rawConfig = require(configPath);
                 const configDir = path.dirname(configPath);
                 

@@ -22,90 +22,90 @@ const {
     UNIQUE_CONSTRAINT_ID3,
     UNIQUE_CONSTRAINT_ID4,
   } = require('./model');
-
-// Replace MODELS_DIR constant with config reference
-const MODELS_DIR = config.paths.modelsDir;
   
 function findModelFiles(dir) {
-    let results = [];
-    const items = fs.readdirSync(dir);
-  
-    items.forEach(item => {
-      const fullPath = path.join(dir, item);
-      const stat = fs.statSync(fullPath);
-  
-      if (stat.isDirectory()) {
-        // Recursively search subdirectories
-        results = results.concat(findModelFiles(fullPath));
-      } else if (item.endsWith('.js')) {
-        results.push(fullPath);
-      }
-    });
-  
-    return results;
-  }
-  
-  function _registerModels(manager = null) {
-    if (!MODELS_DIR) {
-      return;
+  let results = [];
+  const items = fs.readdirSync(dir);
+
+  items.forEach(item => {
+    const fullPath = path.join(dir, item);
+    const stat = fs.statSync(fullPath);
+
+    if (stat.isDirectory()) {
+      // Recursively search subdirectories
+      results = results.concat(findModelFiles(fullPath));
+    } else if (item.endsWith('.js')) {
+      results.push(fullPath);
     }
+  });
+
+  return results;
+}
   
-    const modelFiles = findModelFiles(MODELS_DIR);
-    const models = {};
-  
-    modelFiles.forEach(file => {
-      const model = require(file);
-      Object.entries(model).forEach(([name, ModelClass]) => {
-        manager.registerModel(ModelClass);
-        models[name] = ModelClass;
-      });
-    });
-  
-    return models;
+function _registerModels(manager = null, modelsDir = null) {
+  if (!modelsDir) {
+    throw new Error('modelsDir is required');
+    return;
   }
-  
-  function initModels(userConfig = {}) {  
-    // Merge user config with default config
-    const finalConfig = {
-        ...config,
-        ...userConfig,
-        // Preserve nested configs if provided
-        aws: {
-            ...config.aws,
-            ...(userConfig.aws || {})
-        },
-        db: {
-            ...config.db,
-            ...(userConfig.db || {})
-        },
-        logging: {
-            ...config.logging,
-            ...(userConfig.logging || {})
-        },
-        paths: {
-            ...config.paths,
-            ...(userConfig.paths || {})
-        }
-    };
 
-    // Get/create manager instance with testId
-    const manager = ModelManager.getInstance(finalConfig.testId);
+  const modelFiles = findModelFiles(modelsDir);
+  const models = {};
 
-    // First pass to register models
-    const registeredModels = _registerModels(manager);
-  
-    // Initialize the manager & 2nd model registration pass
-    manager.init(finalConfig);
-  
-    logger.log('Models initialized:', {
-        testId: finalConfig.testId,
-        managerTestId: manager.getTestId(),
-        registeredModels: Array.from(manager._models.keys())
+  modelFiles.forEach(file => {
+    const model = require(file);
+    Object.entries(model).forEach(([name, ModelClass]) => {
+      manager.registerModel(ModelClass);
+      models[name] = ModelClass;
     });
+  });
 
-    manager.models = registeredModels;
+  return models;
+}
   
-    return manager;
+function initModels(userConfig = {}) {  
+  // Merge user config with default config
+  const finalConfig = {
+      ...config,
+      ...userConfig,
+      // Preserve nested configs if provided
+      aws: {
+          ...config.aws,
+          ...(userConfig.aws || {})
+      },
+      db: {
+          ...config.db,
+          ...(userConfig.db || {})
+      },
+      logging: {
+          ...config.logging,
+          ...(userConfig.logging || {})
+      },
+      paths: {
+          ...config.paths,
+          ...(userConfig.paths || {})
+      }
+  };
+
+  const modelsDir = finalConfig.paths.modelsDir;
+
+  // Get/create manager instance with testId
+  const manager = ModelManager.getInstance(finalConfig.testId);
+
+  // First pass to register models
+  const registeredModels = _registerModels(manager, modelsDir);
+
+  // Initialize the manager & 2nd model registration pass
+  manager.init(finalConfig);
+
+  logger.log('Models initialized:', {
+      testId: finalConfig.testId,
+      managerTestId: manager.getTestId(),
+      registeredModels: Array.from(manager._models.keys())
+  });
+
+  manager.models = registeredModels;
+
+  return manager;
 }
   
 const firstExport = {

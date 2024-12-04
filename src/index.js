@@ -3,7 +3,10 @@ const config = require('./config');
 const fs = require('fs');
 const path = require('path');
 const { ModelManager } = require('./model-manager');
+
 const { defaultLogger: logger } = require('./utils/logger');
+
+const fields = require('./fields');
 
 const { 
     BaseModel,
@@ -105,31 +108,36 @@ function findModelFiles(dir) {
     return manager;
 }
   
-  const defaultModels = initModels(config).models;
+const firstExport = {
+  // Initialize function
+  initModels,
   
-  module.exports = {
-    // Initialize function
-    initModels,
-    
-    // Core classes
-    BaseModel,
-    ModelManager,
-    
-    // All models (automatically exported)
-    ...defaultModels,
-    
-    // Configurations
-    PrimaryKeyConfig,
-    IndexConfig,
-    UniqueConstraintConfig,
-    
-    // Constants
-    GSI_INDEX_ID1,
-    GSI_INDEX_ID2,
-    GSI_INDEX_ID3,
-    GSI_INDEX_ID4,
-    UNIQUE_CONSTRAINT_ID1,
-    UNIQUE_CONSTRAINT_ID2,
-    UNIQUE_CONSTRAINT_ID3,
-    UNIQUE_CONSTRAINT_ID4,
-  };
+  // Core classes
+  BaseModel,
+  ModelManager,
+  fields,
+  
+  // Configurations
+  PrimaryKeyConfig,
+  IndexConfig,
+  UniqueConstraintConfig,
+  
+  // Constants
+  GSI_INDEX_ID1,
+  GSI_INDEX_ID2,
+  GSI_INDEX_ID3,
+  GSI_INDEX_ID4,
+  UNIQUE_CONSTRAINT_ID1,
+  UNIQUE_CONSTRAINT_ID2,
+  UNIQUE_CONSTRAINT_ID3,
+  UNIQUE_CONSTRAINT_ID4,
+
+  models: {},
+};
+
+module.exports = firstExport;
+
+if (config.paths.modelsDir) {
+  const manager = initModels(config);
+  Object.assign(firstExport.models, manager.models);
+}

@@ -1,6 +1,6 @@
 const dynamoBao = require('../src');
 const testConfig = require('./config');
-const User = dynamoBao.User;
+const User = dynamoBao.models.User;
 
 const { ulid } = require('ulid');
 const { defaultLogger: logger } = require('../src/utils/logger');

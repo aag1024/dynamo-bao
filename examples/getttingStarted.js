@@ -1,6 +1,6 @@
 // require('dotenv').config();
 // const { initModels } = require('../src');
-const { User } = require('../src');
+const { User } = require('dynamo-bao');
 
 // // Initialize the model system with the models directory
 // const manager = initModels({

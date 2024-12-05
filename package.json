@@ -30,6 +30,7 @@
         "@aws-sdk/client-dynamodb": "^3.521.0",
         "@aws-sdk/lib-dynamodb": "^3.521.0",
         "dotenv": "^16.4.5",
+        "js-yaml": "^4.1.0",
         "ulid": "^2.3.0"
     },
     "devDependencies": {
@@ -37,6 +38,7 @@
         "serverless": "^3.38.0"
     },
     "bin": {
-        "dynamo-bao-create-table": "./bin/dynamo-bao-create-table.js"
+        "dynamo-bao-create-table": "./bin/dynamo-bao-create-table.js",
+        "model-codegen": "./bin/codegen.js"
     }
 }

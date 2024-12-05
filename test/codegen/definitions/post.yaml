@@ -1,0 +1,32 @@
+models:
+  Post:
+    modelPrefix: p
+    fields:
+      postId:
+        type: ulid
+        autoAssign: true
+      userId:
+        type: relation
+        model: User
+        required: true
+      title:
+        type: string
+        required: true
+      content:
+        type: string
+        required: true
+      createdAt:
+        type: createDate
+      version:
+        type: version
+    primaryKey:
+      field: postId
+    indexes:
+      allPosts:
+        partitionKey: modelPrefix
+        sortKey: postId
+        indexId: gsi1
+      postsForUser:
+        partitionKey: userId
+        sortKey: createdAt
+        indexId: gsi2

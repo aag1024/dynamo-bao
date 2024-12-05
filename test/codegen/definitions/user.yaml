@@ -1,0 +1,24 @@
+models:
+  User:
+    modelPrefix: u
+    fields:
+      userId:
+        type: ulid
+        autoAssign: true
+        required: true
+      name:
+        type: string
+        required: true
+      email:
+        type: string
+        required: true
+      createdAt:
+        type: createDate
+      modifiedAt:
+        type: modifiedDate
+    primaryKey:
+      field: userId
+    uniqueConstraints:
+      uniqueEmail:
+        field: email
+        uniqueConstraintId: uc1

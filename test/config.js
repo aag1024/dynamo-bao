@@ -16,7 +16,6 @@ const config = {
     level: 'ERROR',
   },
   paths: {
-    // Resolve models directory relative to CWD if provided, otherwise null
     modelsDir: path.resolve(__dirname, "./models")
   }
 };

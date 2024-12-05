@@ -1,3 +1,5 @@
+#!/usr/bin/env node
+
 const { DynamoDBClient, CreateTableCommand, ListTablesCommand } = require("@aws-sdk/client-dynamodb");
 const readline = require("readline");
 

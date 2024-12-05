@@ -1,11 +1,11 @@
 {
     "name": "dynamo-bao",
     "version": "0.1.0",
-    "description": "Simple yet powerful Dynamo object wrapper in JavaScript",
+    "description": "Simple powerful data modeleling primatives for DynamoDB in JavaScript",
     "main": "src/index.js",
     "scripts": {
         "test": "jest",
-        "create-table": "node src/scripts/create-table.js"
+        "create-table": "node bin/dynamo-bao-create-table.js"
     },
     "files": [
         "src/",
@@ -17,7 +17,8 @@
         "aws",
         "database",
         "orm",
-        "nosql"
+        "nosql",
+        "single-table-design"
     ],
     "author": "Adrian Graham",
     "license": "MIT",
@@ -34,5 +35,8 @@
     "devDependencies": {
         "jest": "^29.7.0",
         "serverless": "^3.38.0"
+    },
+    "bin": {
+        "dynamo-bao-create-table": "./bin/dynamo-bao-create-table.js"
     }
 }

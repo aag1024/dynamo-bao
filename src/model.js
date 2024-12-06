@@ -4,6 +4,7 @@ const { ModelManager } = require('./model-manager');
 const { FilterExpressionBuilder } = require('./filter-expression');
 const { defaultLogger: logger } = require('./utils/logger');
 const { KeyConditionBuilder } = require('./key-condition');
+const assert = require('assert');
 
 // Constants for GSI indexes
 const GSI_INDEX_ID1 = 'gsi1';
@@ -534,13 +535,20 @@ class BaseModel {
     }
 
     const {
-      returnModel = true,
+      returnWrapped = true,
       loadRelated = false,
-      relatedFields = null
+      relatedFields = null,
+      relatedOnly = false,
     } = options;
+
+    if (relatedOnly) {
+      console.log('relatedFields', relatedFields);
+      assert(relatedFields && relatedFields.length === 1, 'relatedOnly requires a single entry in relatedFields');
+      assert(loadRelated, 'relatedOnly requires loadRelated to be true');
+    }
   
     // Create model instances
-    let items = returnModel ? response.Items.map(item => new this(item)) : response.Items;
+    let items = returnWrapped ? response.Items.map(item => new this(item)) : response.Items;
 
     // Initialize response for each item
     items.forEach(item => {
@@ -550,7 +558,7 @@ class BaseModel {
     });
 
     // Load related data if requested
-    if (returnModel && loadRelated) {
+    if (returnWrapped && loadRelated) {
       await Promise.all(items.map(item => item.loadRelatedData(relatedFields)));
       
       // Aggregate capacity from all items including their related data
@@ -567,6 +575,10 @@ class BaseModel {
           allCapacities.push(...[].concat(item._response.ConsumedCapacity));
         }
       });
+
+      if (relatedOnly) {
+        items = items.map(item => item.getRelated(relatedFields[0]));
+      }
 
       // Update response with aggregated capacities
       response.ConsumedCapacity = allCapacities;
@@ -715,12 +727,73 @@ class BaseModel {
     return this.processQueryResponse(response, options);
   }
 
+  static async getRelatedObjectsViaMap(indexName, pkValue, targetField, mapSkCondition=null, 
+    limit=null, direction='ASC', startKey=null) {
+      return await this.queryByIndex(indexName, pkValue, mapSkCondition, {
+        loadRelated: true,
+        relatedOnly: true,
+        relatedFields: [targetField],
+        limit,
+        direction,
+        startKey
+      });
+  }
+  
+  /**
+   * Query items using a Global Secondary Index (GSI) or Primary Key Index
+   * 
+   * @param {string} indexName - Name of the index to query, must be defined in model's indexes
+   * @param {any} pkValue - Partition key value for the query. Will be converted using the field's toGsi method
+   * @param {Object|null} skCondition - Optional sort key condition in the format: { fieldName: value } or { fieldName: { $operator: value } }
+   *                                   Supported operators: $between, $beginsWith
+   *                                   Example: { status: 'active' } or { createdAt: { $between: [date1, date2] } }
+   * @param {Object} options - Additional query options
+   * @param {number} options.limit - Maximum number of items to return (default: model.defaultQueryLimit)
+   * @param {string} options.direction - Sort direction, 'ASC' or 'DESC' (default: 'ASC')
+   * @param {Object} options.startKey - Exclusive start key for pagination
+   * @param {boolean} options.countOnly - If true, returns only the count of matching items
+   * @param {Object} options.filter - Additional filter conditions for the query
+   * @param {boolean} options.returnWrapped - If false, returns raw DynamoDB items instead of model instances
+   * @param {boolean} options.loadRelated - If true, loads related models for RelatedFields
+   * @param {string[]} options.relatedFields - Array of field names to load related data for (used with loadRelated)
+   * @param {boolean} options.relatedOnly - Used by mapping tables to return only target objects; 
+   *                                        loadRelated and a single entry in relatedFields must be provided
+   * 
+   * @returns {Promise<Object>} Returns an object containing:
+   *   - items: Array of model instances or raw items
+   *   - count: Number of items returned
+   *   - lastEvaluatedKey: Key for pagination (if more items exist)
+   *   - _response: DynamoDB response metadata including ConsumedCapacity
+   * 
+   * @throws {Error} If index name is not found in model
+   * @throws {Error} If sort key condition references wrong field
+   * 
+   * @example
+   * // Basic query
+   * const results = await Model.queryByIndex('statusIndex', 'active');
+   * 
+   * // Query with sort key condition
+   * const results = await Model.queryByIndex('dateIndex', 'user123', {
+   *   createdAt: { $between: [startDate, endDate] }
+   * });
+   * 
+   * // Query with pagination
+   * const results = await Model.queryByIndex('statusIndex', 'active', null, {
+   *   limit: 10,
+   *   startKey: lastEvaluatedKey
+   * });
+   * 
+   * // Query with related data
+   * const results = await Model.queryByIndex('userIndex', userId, null, {
+   *   loadRelated: true,
+   *   relatedFields: ['organizationId']
+   * });
+   */
   static async queryByIndex(indexName, pkValue, skCondition = null, options = {}) {
     const index = this.indexes[indexName];
     if (!index) {
       throw new Error(`Index "${indexName}" not found in ${this.name} model`);
     }
-
 
     // Validate sort key field if condition is provided
     if (skCondition) {

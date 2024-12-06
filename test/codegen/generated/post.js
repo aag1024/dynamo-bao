@@ -61,15 +61,27 @@ class Post extends BaseModel {
 
     return results;
   }
-  async cgQueryTags(skCondition = null, options = {}) {
-    const results = await TaggedPost.queryByIndex(
-      'tagsForPost',
+  async cgGetComments(mapSkCondition=null, limit=null, direction='ASC', startKey=null) {
+    return await Comment.getRelatedObjectsViaMap(
+      "commentsForPost",
       this.getPkValue(),
-      skCondition,
-      options
+      "authorId",
+      mapSkCondition,
+      limit,
+      direction,
+      startKey
     );
-
-    return results;
+  }
+  async cgGetTags(mapSkCondition=null, limit=null, direction='ASC', startKey=null) {
+    return await TaggedPost.getRelatedObjectsViaMap(
+      "tagsForPost",
+      this.getPkValue(),
+      "tagId",
+      mapSkCondition,
+      limit,
+      direction,
+      startKey
+    );
   }
 
 }

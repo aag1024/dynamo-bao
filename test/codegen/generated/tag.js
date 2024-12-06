@@ -28,25 +28,27 @@ class Tag extends BaseModel {
 
 
 
-  async cgQueryPosts(skCondition = null, options = {}) {
-    const results = await TaggedPost.queryByIndex(
-      'postsForTag',
+  async cgGetPosts(mapSkCondition=null, limit=null, direction='ASC', startKey=null) {
+    return await TaggedPost.getRelatedObjectsViaMap(
+      "postsForTag",
       this.getPkValue(),
-      skCondition,
-      options
+      "postId",
+      mapSkCondition,
+      limit,
+      direction,
+      startKey
     );
-
-    return results;
   }
-  async cgQueryRecentPosts(skCondition = null, options = {}) {
-    const results = await TaggedPost.queryByIndex(
-      'recentPostsForTag',
+  async cgGetRecentPosts(mapSkCondition=null, limit=null, direction='ASC', startKey=null) {
+    return await TaggedPost.getRelatedObjectsViaMap(
+      "recentPostsForTag",
       this.getPkValue(),
-      skCondition,
-      options
+      "postId",
+      mapSkCondition,
+      limit,
+      direction,
+      startKey
     );
-
-    return results;
   }
 
 }

@@ -196,16 +196,41 @@ function generateQueryMethods(modelName, modelConfig, allModels) {
   // Then generate methods for other models that have relations to this model
   Object.entries(allModels).forEach(([otherModelName, otherModel]) => {
     if (otherModel.indexes) {
-      Object.entries(otherModel.indexes).forEach(([indexName, index]) => {
-        let pkField;
+      // First check if the primary key's partition key is a relation to our model
+      const pkPartitionField = otherModel.fields[otherModel.primaryKey.partitionKey];
+      if (pkPartitionField?.type === 'relation' && 
+          pkPartitionField.model === modelName &&
+          otherModel.tableType !== 'mapping') {  // Simple check here
         
-        if (index === 'primaryKey') {
-          pkField = otherModel.fields[otherModel.primaryKey.partitionKey];
-        } else {
-          pkField = otherModel.fields[index.partitionKey];
-        }
+        relatedModels.add(otherModelName);
+        
+        // Use the primary key index name if it exists in indexes
+        const primaryKeyIndexName = Object.entries(otherModel.indexes)
+          .find(([_, index]) => index === 'primaryKey')?.[0] || 'primaryKey';
 
-        if (pkField && pkField.type === 'relation' && pkField.model === modelName) {
+        methods += `
+  async cgQuery${otherModelName}s(skCondition = null, options = {}) {
+    const results = await ${otherModelName}.queryByIndex(
+      '${primaryKeyIndexName}',
+      this.getPkValue(),
+      skCondition,
+      options
+    );
+
+    return results;
+  }`;
+      }
+
+      // Then check other indexes
+      Object.entries(otherModel.indexes).forEach(([indexName, index]) => {
+        if (index === 'primaryKey') return;
+
+        const pkField = otherModel.fields[index.partitionKey];
+        
+        if (pkField?.type === 'relation' && 
+            pkField.model === modelName &&
+            otherModel.tableType !== 'mapping') {  // Simple check here
+          
           relatedModels.add(otherModelName);
 
           let methodName;
@@ -226,6 +251,64 @@ function generateQueryMethods(modelName, modelConfig, allModels) {
     );
 
     return results;
+  }`;
+        }
+      });
+    }
+  });
+
+  // Add mapping table helper methods
+  Object.entries(allModels).forEach(([mapModelName, mapModel]) => {
+    if (mapModel.indexes) {
+      Object.entries(mapModel.indexes).forEach(([indexName, index]) => {
+        let pkField, targetField;
+        
+        if (index === 'primaryKey') {
+          pkField = mapModel.fields[mapModel.primaryKey.partitionKey];
+          targetField = mapModel.fields[mapModel.primaryKey.sortKey];
+        } else if (index.partitionKey && index.sortKey) {
+          pkField = mapModel.fields[index.partitionKey];
+          targetField = mapModel.fields[index.sortKey];
+        }
+
+        // Check if this is a mapping table relationship - now only requires ONE relation field
+        if (pkField?.type === 'relation' && 
+            pkField.model === modelName &&
+            // Find at least one relation field that points to a different model
+            Object.values(mapModel.fields).some(f => 
+              f.type === 'relation' && 
+              f.model !== modelName
+            )) {
+          
+          relatedModels.add(mapModelName);
+
+          // Generate method name from index
+          let methodName;
+          if (indexName.includes('For')) {
+            const [prefix] = indexName.split('For');
+            methodName = `cgGet${prefix.charAt(0).toUpperCase()}${prefix.slice(1)}`;
+          } else {
+            methodName = `cgGet${indexName.charAt(0).toUpperCase()}${indexName.slice(1)}`;
+          }
+
+          // Find the "other" relation field that isn't the one we're querying with
+          const relationFields = Object.entries(mapModel.fields)
+            .filter(([_, field]) => field.type === 'relation');
+          
+          const targetFieldName = relationFields
+            .find(([_, field]) => field.model !== modelName)?.[0];
+
+          methods += `
+  async ${methodName}(mapSkCondition=null, limit=null, direction='ASC', startKey=null) {
+    return await ${mapModelName}.getRelatedObjectsViaMap(
+      "${indexName}",
+      this.getPkValue(),
+      "${targetFieldName}",
+      mapSkCondition,
+      limit,
+      direction,
+      startKey
+    );
   }`;
         }
       });

@@ -48,7 +48,7 @@ describe('Generated Tag Models', () => {
       expect(tag.createdAt).toBeTruthy();
     });
 
-    test('should query related posts', async () => {
+    test('should get related posts via cgGetPosts', async () => {
       const user = await User.create({
         name: 'Test User',
         email: 'test@example.com'
@@ -81,13 +81,13 @@ describe('Generated Tag Models', () => {
         postId: post2.postId
       });
 
-      const taggedPosts = await tag.cgQueryPosts();
-      expect(taggedPosts.items.length).toBe(2);
-      expect(taggedPosts.items[0].postId).toBe(post1.postId);
-      expect(taggedPosts.items[1].postId).toBe(post2.postId);
+      const posts = await tag.cgGetPosts();
+      expect(posts.items.length).toBe(2);
+      expect(posts.items[0].postId).toBe(post1.postId);
+      expect(posts.items[1].postId).toBe(post2.postId);
     });
 
-    test('should query recent posts', async () => {
+    test('should get recent posts via cgGetRecentPosts', async () => {
       const user = await User.create({
         name: 'Test User',
         email: 'test@example.com'
@@ -120,11 +120,11 @@ describe('Generated Tag Models', () => {
         postId: post2.postId
       });
 
-      const recentPosts = await tag.cgQueryRecentPosts();
-      expect(recentPosts.items.length).toBe(2);
-      // Posts should be ordered by createdAt
-      expect(recentPosts.items[0].postId).toBe(post1.postId);
-      expect(recentPosts.items[1].postId).toBe(post2.postId);
+      const posts = await tag.cgGetRecentPosts(null, 10, 'DESC');
+      expect(posts.items.length).toBe(2);
+      // Should be in reverse chronological order due to DESC
+      expect(posts.items[0].postId).toBe(post2.postId);
+      expect(posts.items[1].postId).toBe(post1.postId);
     });
   });
 

@@ -85,8 +85,26 @@ describe('TaggedPost Queries', () => {
     const tag = await Tag.find(testTag1.tagId);
     expect(tag.tagId).toBe(testTag1.tagId);
 
-    const posts = await tag.queryPosts();
-    logger.log("Query posts:", posts);
+    const posts = await TaggedPost.queryByIndex(
+      "postsForTag", 
+      testTag1.tagId,
+      null,
+      {
+        loadRelated: true,
+        relatedFields: ['postId'],
+        relatedOnly: true
+      }
+    );
+
+    const posts2 = await TaggedPost.getRelatedObjectsViaMap(
+      "postsForTag",
+      testTag1.tagId,
+      "postId"
+    );
+    // const posts = await tag.queryPosts(null, {
+    //   loadRelated: true,
+    //   relatedFields: ['postId']
+    // });
     
     expect(posts.items).toHaveLength(2);
     expect(posts.items.map(p => p.postId).sort()).toEqual(
@@ -96,7 +114,15 @@ describe('TaggedPost Queries', () => {
 
   test('should query tags for a post using GSI', async () => {
     const post = await Post.find(testPost1.postId);
-    const tags = await post.queryTags();
+    // const tags = await post.queryTags();
+    const tags = await post.queryTags(null, {
+      loadRelated: true,
+      relatedFields: ['tagId']
+    });
+    console.log("Post tags:", tags);
+
+    // console.log("Tag", await tags.items[0].getTag())
+    console.log("Post", await tags.items[0].getRelated('tagId'))
     
     expect(tags.items).toHaveLength(2);
     expect(tags.items.map(t => t.tagId).sort()).toEqual(

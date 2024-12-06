@@ -12,6 +12,8 @@ models:
       email:
         type: string
         required: true
+      profilePictureUrl:
+        type: string
       createdAt:
         type: createDate
       modifiedAt:

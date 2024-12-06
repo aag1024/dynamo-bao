@@ -1,0 +1,15 @@
+models:
+  UserProfile:
+    modelPrefix: up
+    fields:
+      userId:
+        type: relation
+        model: User
+        required: true
+      name:
+        type: string
+        required: true
+      profilePictureUrl:
+        type: string
+    primaryKey:
+      partitionKey: userId

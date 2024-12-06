@@ -13,6 +13,8 @@ const {
     ModifiedDateField
 } = require('dynamo-bao').fields;
 
+const { Post } = require('./post');
+
 class User extends BaseModel {
   static modelPrefix = 'u';
   
@@ -24,12 +26,27 @@ class User extends BaseModel {
     modifiedAt: ModifiedDateField(),
   };
 
-  static primaryKey = PrimaryKeyConfig('userId');
+  static primaryKey = PrimaryKeyConfig('userId', 'modelPrefix');
 
 
   static uniqueConstraints = {
     uniqueEmail: UniqueConstraintConfig('email', UNIQUE_CONSTRAINT_ID1),
   };
+
+  async cgQueryPosts(skCondition = null, options = {}) {
+    const results = await Post.queryByIndex(
+      'postsForUser',
+      this.getPkValue(),
+      skCondition,
+      options
+    );
+
+    return results;
+  }
+
+  static async cgFindByEmail(value) {
+    return await this.findByUniqueConstraint('_uc1', 'email', value);
+  }
 }
 
 module.exports = { User };

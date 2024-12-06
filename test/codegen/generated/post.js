@@ -15,6 +15,9 @@ const {
     VersionField
 } = require('dynamo-bao').fields;
 
+const { Comment } = require('./comment');
+const { TaggedPost } = require('./tagged-post');
+
 class Post extends BaseModel {
   static modelPrefix = 'p';
   
@@ -27,12 +30,44 @@ class Post extends BaseModel {
     version: VersionField(),
   };
 
-  static primaryKey = PrimaryKeyConfig('postId');
+  static primaryKey = PrimaryKeyConfig('postId', 'modelPrefix');
 
   static indexes = {
     allPosts: IndexConfig('modelPrefix', 'postId', GSI_INDEX_ID1),
     postsForUser: IndexConfig('userId', 'createdAt', GSI_INDEX_ID2),
   };
+
+
+  static async cgQueryAllPosts(skCondition = null, options = {}) {
+    const results = await this.queryByIndex(
+      'allPosts',
+      this.modelPrefix,
+      skCondition,
+      options
+    );
+
+    return results;
+  }
+  async cgQueryComments(skCondition = null, options = {}) {
+    const results = await Comment.queryByIndex(
+      'commentsForPost',
+      this.getPkValue(),
+      skCondition,
+      options
+    );
+
+    return results;
+  }
+  async cgQueryTags(skCondition = null, options = {}) {
+    const results = await TaggedPost.queryByIndex(
+      'tagsForPost',
+      this.getPkValue(),
+      skCondition,
+      options
+    );
+
+    return results;
+  }
 
 }
 

@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const yaml = require('js-yaml');
-const { generateModels } = require('./generators/model');
+const { generateModelFiles } = require('./generators/model');
 
 function loadModelDefinitions(definitionsPath) {
   const models = {};
@@ -58,7 +58,7 @@ function main() {
   
   try {
     const definitions = loadModelDefinitions(definitionsPath);
-    generateModels(definitions, outputDir);
+    generateModelFiles(definitions.models, outputDir);
   } catch (error) {
     console.error('Error generating models:', error);
     console.error('Stack trace:', error.stack);

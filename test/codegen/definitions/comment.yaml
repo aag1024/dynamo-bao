@@ -1,0 +1,26 @@
+models:
+  Comment:
+    modelPrefix: c
+    fields:
+      commentId:
+        type: ulid
+        autoAssign: true
+        required: true
+      authorId:
+        type: relation
+        model: User
+      postId:
+        type: relation
+        model: Post
+      text:
+        type: string
+      createdAt:
+        type: createDate
+      numLikes:
+        type: integer
+        defaultValue: 0
+    primaryKey:
+      partitionKey: postId
+      sortKey: commentId
+    indexes:
+      commentsForPost: primaryKey

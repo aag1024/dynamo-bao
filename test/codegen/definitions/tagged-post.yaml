@@ -1,0 +1,27 @@
+models:
+  TaggedPost:
+    modelPrefix: tp
+    fields:
+      tagId:
+        type: relation
+        model: Tag
+        required: true
+      postId:
+        type: relation
+        model: Post
+        required: true
+      createdAt:
+        type: createDate
+    primaryKey:
+      partitionKey: tagId
+      sortKey: postId
+    indexes:
+      postsForTag: primaryKey
+      tagsForPost:
+        partitionKey: postId
+        sortKey: tagId
+        indexId: gsi1
+      recentPostsForTag:
+        partitionKey: tagId
+        sortKey: createdAt
+        indexId: gsi2

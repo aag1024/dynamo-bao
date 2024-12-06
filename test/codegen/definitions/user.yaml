@@ -17,7 +17,7 @@ models:
       modifiedAt:
         type: modifiedDate
     primaryKey:
-      field: userId
+      partitionKey: userId
     uniqueConstraints:
       uniqueEmail:
         field: email

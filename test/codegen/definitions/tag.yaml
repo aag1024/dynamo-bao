@@ -1,0 +1,15 @@
+models:
+  Tag:
+    modelPrefix: t
+    fields:
+      tagId:
+        type: ulid
+        autoAssign: true
+        required: true
+      name:
+        type: string
+        required: true
+      createdAt:
+        type: createDate
+    primaryKey:
+      partitionKey: tagId

@@ -20,7 +20,7 @@ models:
       version:
         type: version
     primaryKey:
-      field: postId
+      partitionKey: postId
     indexes:
       allPosts:
         partitionKey: modelPrefix

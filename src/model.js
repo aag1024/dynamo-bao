@@ -1534,7 +1534,45 @@ class BaseModel {
     }
     return new this(data);
   }
+
+  static async findByUniqueConstraint(constraintId, field, value) {
+    if (!value) {
+      throw new Error(`${field} value is required`);
+    }
+  
+    const key = this.formatUniqueConstraintKey(
+      constraintId,
+      this.modelPrefix,
+      field,
+      value
+    );
+  
+    const result = await this.documentClient.get({
+      TableName: this.table,
+      Key: {
+        _pk: key,
+        _sk: UNIQUE_CONSTRAINT_KEY
+      },
+      ReturnConsumedCapacity: 'TOTAL'
+    });
+  
+    if (!result.Item) {
+      return null;
+    }
+  
+    const item = await this.find(result.Item.relatedId);
+  
+    if (item) {
+      item._response.ConsumedCapacity = this.accumulateCapacity([
+        result,
+        item._response
+      ]);
+    }
+  
+    return item;
+  }
 }
+
 module.exports = {
   BaseModel,
   PrimaryKeyConfig: (pk, sk) => new PrimaryKeyConfig(pk, sk),

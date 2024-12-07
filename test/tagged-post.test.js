@@ -85,26 +85,11 @@ describe('TaggedPost Queries', () => {
     const tag = await Tag.find(testTag1.tagId);
     expect(tag.tagId).toBe(testTag1.tagId);
 
-    const posts = await TaggedPost.queryByIndex(
-      "postsForTag", 
-      testTag1.tagId,
-      null,
-      {
-        loadRelated: true,
-        relatedFields: ['postId'],
-        relatedOnly: true
-      }
-    );
-
-    const posts2 = await TaggedPost.getRelatedObjectsViaMap(
+    const posts = await TaggedPost.getRelatedObjectsViaMap(
       "postsForTag",
       testTag1.tagId,
       "postId"
     );
-    // const posts = await tag.queryPosts(null, {
-    //   loadRelated: true,
-    //   relatedFields: ['postId']
-    // });
     
     expect(posts.items).toHaveLength(2);
     expect(posts.items.map(p => p.postId).sort()).toEqual(
@@ -114,15 +99,12 @@ describe('TaggedPost Queries', () => {
 
   test('should query tags for a post using GSI', async () => {
     const post = await Post.find(testPost1.postId);
-    // const tags = await post.queryTags();
-    const tags = await post.queryTags(null, {
-      loadRelated: true,
-      relatedFields: ['tagId']
-    });
-    console.log("Post tags:", tags);
 
-    // console.log("Tag", await tags.items[0].getTag())
-    console.log("Post", await tags.items[0].getRelated('tagId'))
+    const tags = await TaggedPost.getRelatedObjectsViaMap(
+      "tagsForPost", 
+      post.postId,
+      "tagId"
+    );
     
     expect(tags.items).toHaveLength(2);
     expect(tags.items.map(t => t.tagId).sort()).toEqual(
@@ -132,7 +114,11 @@ describe('TaggedPost Queries', () => {
 
   test('should query recent posts for a tag', async () => {
     const tag = await Tag.find(testTag1.tagId);
-    const recentPosts = await tag.queryRecentPosts();
+    const recentPosts = await await TaggedPost.getRelatedObjectsViaMap(
+      "recentPostsForTag", 
+      tag.tagId,
+      "postId"
+    );
     
     expect(recentPosts.items).toHaveLength(2);
     expect(recentPosts.items[0].createdAt.getTime())
@@ -141,19 +127,27 @@ describe('TaggedPost Queries', () => {
 
   test('should handle pagination for posts by tag', async () => {
     const tag = await Tag.find(testTag1.tagId);
-    const firstPage = await tag.queryPosts(null, {
-      limit: 1,
-      direction: 'DESC'
-    });
+    const firstPage = await TaggedPost.getRelatedObjectsViaMap(
+      "postsForTag", 
+      tag.tagId,
+      "postId",
+      null,
+      1,
+      'DESC'
+    );
     
     expect(firstPage.items).toHaveLength(1);
     expect(firstPage.lastEvaluatedKey).toBeDefined();
 
-    const secondPage = await tag.queryPosts(null, {
-      limit: 2,
-      startKey: firstPage.lastEvaluatedKey,
-      direction: 'DESC'
-    });
+    const secondPage = await TaggedPost.getRelatedObjectsViaMap(
+      "postsForTag", 
+      tag.tagId,
+      "postId",
+      null,
+      2,
+      'DESC',
+      firstPage.lastEvaluatedKey
+    );
     
     expect(secondPage.items).toHaveLength(1);
     expect(secondPage.lastEvaluatedKey).toBeUndefined();
@@ -162,7 +156,12 @@ describe('TaggedPost Queries', () => {
 
   test('should return empty results for tag with no posts', async () => {
     const emptyTag = await Tag.create({ name: 'Empty Tag' });
-    const posts = await emptyTag.queryPosts();
+
+    const posts = await TaggedPost.getRelatedObjectsViaMap(
+      "postsForTag", 
+      emptyTag.tagId,
+      "postId"
+    );
     
     expect(posts.items).toHaveLength(0);
     expect(posts.lastEvaluatedKey).toBeUndefined();
@@ -174,8 +173,12 @@ describe('TaggedPost Queries', () => {
       title: 'Untagged Post',
       content: 'No Tags'
     });
-    
-    const tags = await untaggedPost.queryTags();
+
+    const tags = await TaggedPost.getRelatedObjectsViaMap(
+      "tagsForPost", 
+      untaggedPost.postId,
+      "tagId"
+    );
     
     expect(tags.items).toHaveLength(0);
     expect(tags.lastEvaluatedKey).toBeUndefined();

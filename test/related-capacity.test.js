@@ -94,7 +94,10 @@ describe('Capacity Tracking', () => {
 
   describe('Query Operations', () => {
     test('should track capacity for query operations', async () => {
-      const result = await testPost.queryComments();
+      const result = await Comment.queryByIndex(
+        'commentsForPost',
+        testPost.getPkValue()
+      );
       
       expect(result._response).toBeDefined();
       expect(result._response.ConsumedCapacity).toBeDefined();
@@ -103,11 +106,15 @@ describe('Capacity Tracking', () => {
     });
 
     test('should track capacity when loading related data for query results', async () => {
-      // ... test setup ...
-      const result = await testPost.queryComments(null, {
-        loadRelated: true,
-        relatedFields: ['authorId']
-      });
+      const result = await Comment.queryByIndex(
+        'commentsForPost',
+        testPost.getPkValue(),
+        null,
+        {
+          loadRelated: true,
+          relatedFields: ['authorId']
+        }
+      );
       
       expect(result._response.ConsumedCapacity).toBeDefined();
       expect(Array.isArray(result._response.ConsumedCapacity)).toBeTruthy();

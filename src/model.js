@@ -194,90 +194,90 @@ class BaseModel {
   }
 
   static registerRelatedIndexes() {
-    // Find all indexes where the partition key is a RelatedField
-    const relatedIndexes = Object.entries(this.indexes).filter(([_, index]) => {
-      const pkField = this.getField(index.pk);
-      return pkField instanceof RelatedFieldClass;
-    });
+    // // Find all indexes where the partition key is a RelatedField
+    // const relatedIndexes = Object.entries(this.indexes).filter(([_, index]) => {
+    //   const pkField = this.getField(index.pk);
+    //   return pkField instanceof RelatedFieldClass;
+    // });
 
-    relatedIndexes.forEach(([indexName, index]) => {
-      const sourceField = this.getField(index.pk);
-      const SourceModel = this.manager.getModel(sourceField.modelName);
-      const CurrentModel = this;
+    // relatedIndexes.forEach(([indexName, index]) => {
+    //   const sourceField = this.getField(index.pk);
+    //   const SourceModel = this.manager.getModel(sourceField.modelName);
+    //   const CurrentModel = this;
 
-      // Generate method name from index name
-      let methodName;
-      if (indexName.includes('For')) {
-        const [prefix] = indexName.split('For');
-        methodName = `query${prefix.charAt(0).toUpperCase()}${prefix.slice(1)}`;
-      } else {
-        methodName = `query${indexName.charAt(0).toUpperCase()}${indexName.slice(1)}`;
-      }
+    //   // Generate method name from index name
+    //   let methodName;
+    //   if (indexName.includes('For')) {
+    //     const [prefix] = indexName.split('For');
+    //     methodName = `query${prefix.charAt(0).toUpperCase()}${prefix.slice(1)}`;
+    //   } else {
+    //     methodName = `query${indexName.charAt(0).toUpperCase()}${indexName.slice(1)}`;
+    //   }
 
-      // Add the query method to the source model with separate pagination params
-      SourceModel.prototype[methodName] = async function(
-        skCondition = null,
-        options = {}
-      ) {
-        const results = await CurrentModel.queryByIndex(
-          indexName,
-          this.getPkValue(),
-          skCondition,
-          options
-        );
+    //   // Add the query method to the source model with separate pagination params
+    //   SourceModel.prototype[methodName] = async function(
+    //     skCondition = null,
+    //     options = {}
+    //   ) {
+    //     const results = await CurrentModel.queryByIndex(
+    //       indexName,
+    //       this.getPkValue(),
+    //       skCondition,
+    //       options
+    //     );
 
-        return results;
-      };
-    });
+    //     return results;
+    //   };
+    // });
   }
 
   static registerUniqueConstraintLookups() {
-    // Find all unique constraints
-    Object.entries(this.uniqueConstraints || {}).forEach(([name, constraint]) => {
-      // Convert uniqueXxx to findByXxx
-      const methodName = 'findBy' + name.replace(/^unique/, '');
+    // // Find all unique constraints
+    // Object.entries(this.uniqueConstraints || {}).forEach(([name, constraint]) => {
+    //   // Convert uniqueXxx to findByXxx
+    //   const methodName = 'findBy' + name.replace(/^unique/, '');
       
-      // Add the static lookup method
-      this[methodName] = async function(value) {
-        if (!value) {
-          throw new Error(`${constraint.field} value is required`);
-        }
+    //   // Add the static lookup method
+    //   this[methodName] = async function(value) {
+    //     if (!value) {
+    //       throw new Error(`${constraint.field} value is required`);
+    //     }
 
-        // Get the unique constraint record
-        const key = this.formatUniqueConstraintKey(
-          constraint.constraintId,
-          this.modelPrefix,
-          constraint.field,
-          value
-        );
+    //     // Get the unique constraint record
+    //     const key = this.formatUniqueConstraintKey(
+    //       constraint.constraintId,
+    //       this.modelPrefix,
+    //       constraint.field,
+    //       value
+    //     );
 
-        const result = await this.documentClient.get({
-          TableName: this.table,
-          Key: {
-            _pk: key,
-            _sk: UNIQUE_CONSTRAINT_KEY
-          },
-          ReturnConsumedCapacity: 'TOTAL'
-        });
+    //     const result = await this.documentClient.get({
+    //       TableName: this.table,
+    //       Key: {
+    //         _pk: key,
+    //         _sk: UNIQUE_CONSTRAINT_KEY
+    //       },
+    //       ReturnConsumedCapacity: 'TOTAL'
+    //     });
 
-        if (!result.Item) {
-          return null;
-        }
+    //     if (!result.Item) {
+    //       return null;
+    //     }
 
-        // Get the actual item using the relatedId
-        const item = await this.find(result.Item.relatedId);
+    //     // Get the actual item using the relatedId
+    //     const item = await this.find(result.Item.relatedId);
         
-        // If found, add the constraint lookup capacity to the response
-        if (item) {
-          item._response.ConsumedCapacity = this.accumulateCapacity([
-            result,
-            item._response
-          ]);
-        }
+    //     // If found, add the constraint lookup capacity to the response
+    //     if (item) {
+    //       item._response.ConsumedCapacity = this.accumulateCapacity([
+    //         result,
+    //         item._response
+    //       ]);
+    //     }
 
-        return item;
-      };
-    });
+    //     return item;
+    //   };
+    // });
   }
 
   static getPkValue(data) {
@@ -542,7 +542,6 @@ class BaseModel {
     } = options;
 
     if (relatedOnly) {
-      console.log('relatedFields', relatedFields);
       assert(relatedFields && relatedFields.length === 1, 'relatedOnly requires a single entry in relatedFields');
       assert(loadRelated, 'relatedOnly requires loadRelated to be true');
     }
@@ -1514,6 +1513,24 @@ class BaseModel {
       obj[fieldName] = this[fieldName];
     }
     return obj;
+  }
+
+  async getOrLoadRelatedField(fieldName) {
+    if (this._relatedObjects[fieldName]) {
+      return this._relatedObjects[fieldName];
+    }
+    
+    const field = this.constructor.fields[fieldName];
+    if (!field || !field.modelName) {
+      throw new Error(`Field ${fieldName} is not a valid relation field`);
+    }
+    
+    const value = this[fieldName];
+    if (!value) return null;
+    
+    const ModelClass = this.constructor.manager.getModel(field.modelName);
+    this._relatedObjects[fieldName] = await ModelClass.find(value);
+    return this._relatedObjects[fieldName];
   }
 
   async loadRelatedData(fieldNames = null) {

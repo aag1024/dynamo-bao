@@ -202,7 +202,10 @@ let testUser, testPost, testId;
         ]);
 
         // Query comments using the post instance
-        const result = await testPost.queryComments();
+        const result = await Comment.queryByIndex(
+          'commentsForPost',
+          testPost.getPkValue()
+        );
         
         expect(result.items).toHaveLength(2);
         expect(result.items.map(c => c.text).sort()).toEqual(
@@ -226,16 +229,25 @@ let testUser, testPost, testId;
         ]);
 
         // Get first page
-        const firstPage = await testPost.queryComments(null, {
-          limit: 1
-        });
+        const firstPage = await Comment.queryByIndex(
+          'commentsForPost',
+          testPost.getPkValue(),
+          null,
+          {
+            limit: 1
+          }
+        );
         expect(firstPage.items).toHaveLength(1);
         expect(firstPage.lastEvaluatedKey).toBeDefined();
 
         // Get second page
-        const secondPage = await testPost.queryComments(null, {
-          limit: 2,
-          startKey: firstPage.lastEvaluatedKey
+        const secondPage = await Comment.queryByIndex(
+          'commentsForPost',
+          testPost.getPkValue(),
+          null,
+          {
+            limit: 2,
+            startKey: firstPage.lastEvaluatedKey
         });
         expect(secondPage.items).toHaveLength(1);
         expect(secondPage.lastEvaluatedKey).toBeUndefined();
@@ -252,7 +264,10 @@ let testUser, testPost, testId;
           content: 'No Comments'
         });
 
-        const result = await emptyPost.queryComments();
+        const result = await Comment.queryByIndex(
+          'commentsForPost',
+          emptyPost.getPkValue()
+        );
         
         expect(result.items).toHaveLength(0);
         expect(result.lastEvaluatedKey).toBeUndefined();

@@ -37,13 +37,13 @@ describe('User Unique Constraint Lookups', () => {
         status: 'active'
       });
 
-      const foundUser = await User.findByEmail(email);
+      const foundUser = await User.findByUniqueConstraint('_uc1', 'email', email);
       expect(foundUser.userId).toBe(user.userId);
       expect(foundUser.email).toBe(email);
     });
 
     test('should return null for non-existent email', async () => {
-      const foundUser = await User.findByEmail('nonexistent@example.com');
+      const foundUser = await User.findByUniqueConstraint('_uc1', 'email', 'nonexistent@example.com');
       expect(foundUser).toBeNull();
     });
   });
@@ -60,24 +60,24 @@ describe('User Unique Constraint Lookups', () => {
         status: 'active'
       });
 
-      const foundUser = await User.findByExternalId(externalId);
+      const foundUser = await User.findByUniqueConstraint('_uc2', 'externalId', externalId);
       expect(foundUser.userId).toBe(user.userId);
       expect(foundUser.externalId).toBe(externalId);
     });
 
     test('should return null for non-existent external ID', async () => {
-      const foundUser = await User.findByExternalId('nonexistent-ext-id');
+      const foundUser = await User.findByUniqueConstraint('_uc2', 'externalId', 'nonexistent-ext-id');
       expect(foundUser).toBeNull();
     });
   });
 
   describe('Error Handling', () => {
     test('should throw error for invalid email format', async () => {
-      await expect(User.findByEmail('')).rejects.toThrow();
+      await expect(User.findByUniqueConstraint('_uc1', 'email', '')).rejects.toThrow();
     });
 
     test('should throw error for null external ID', async () => {
-      await expect(User.findByExternalId(null)).rejects.toThrow();
+      await expect(User.findByUniqueConstraint('_uc2', 'externalId', null)).rejects.toThrow();
     });
   });
 }); 

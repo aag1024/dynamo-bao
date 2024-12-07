@@ -1334,26 +1334,26 @@ class BaseModel {
       });
 
       // Add getter method for RelatedFields
-      if (field instanceof RelatedFieldClass) {
-        const baseName = fieldName.endsWith('Id') 
-          ? fieldName.slice(0, -2) 
-          : fieldName;
+      // if (field instanceof RelatedFieldClass) {
+      //   const baseName = fieldName.endsWith('Id') 
+      //     ? fieldName.slice(0, -2) 
+      //     : fieldName;
         
-        const capitalizedName = baseName.charAt(0).toUpperCase() + baseName.slice(1);
-        const getterName = `get${capitalizedName}`;
+      //   const capitalizedName = baseName.charAt(0).toUpperCase() + baseName.slice(1);
+      //   const getterName = `get${capitalizedName}`;
         
-        if (!this[getterName]) {
-          this[getterName] = async function() {
-            if (this._relatedObjects[fieldName]) {
-              return this._relatedObjects[fieldName];
-            }
+      //   if (!this[getterName]) {
+      //     this[getterName] = async function() {
+      //       if (this._relatedObjects[fieldName]) {
+      //         return this._relatedObjects[fieldName];
+      //       }
             
-            const Model = this.constructor.manager.getModel(field.modelName);
-            this._relatedObjects[fieldName] = await Model.find(this[fieldName]);
-            return this._relatedObjects[fieldName];
-          };
-        }
-      }
+      //       const Model = this.constructor.manager.getModel(field.modelName);
+      //       this._relatedObjects[fieldName] = await Model.find(this[fieldName]);
+      //       return this._relatedObjects[fieldName];
+      //     };
+      //   }
+      // }
     });
 
     // Store original data for change tracking

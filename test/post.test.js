@@ -60,11 +60,8 @@ describe('Post Model', () => {
         userId: testUser.userId
       });
 
-      // Verify the method exists
-      expect(typeof post.getUser).toBe('function');
-
       // Test the getter
-      const user = await post.getUser();
+      const user = await post.getOrLoadRelatedField("userId");
       expect(user).toBeTruthy();
       expect(user.userId).toBe(testUser.userId);
       expect(user.name).toBe('Test User');
@@ -80,14 +77,14 @@ describe('Post Model', () => {
       });
 
       // First call should load from DB
-      const user1 = await post.getUser();
+      const user1 = await post.getOrLoadRelatedField("userId");
       expect(user1.userId).toBe(testUser.userId);
 
       // Mock the find method to verify it's not called again
       const findSpy = jest.spyOn(User, 'find');
       
       // Second call should use cached value
-      const user2 = await post.getUser();
+      const user2 = await post.getOrLoadRelatedField("userId");
       expect(user2.userId).toBe(testUser.userId);
       expect(findSpy).not.toHaveBeenCalled();
 
@@ -105,7 +102,7 @@ describe('Post Model', () => {
       await User.delete(testUser.userId);
       post.clearRelatedCache('userId');
 
-      const user = await post.getUser();
+      const user = await post.getOrLoadRelatedField("userId");
       expect(user).toBeNull();
     });
 
@@ -122,7 +119,7 @@ describe('Post Model', () => {
       post.clearRelatedCache('userId');
 
       // Verify we can still use the getter
-      const user = await post.getUser();
+      const user = await post.getOrLoadRelatedField("userId");
       expect(user.userId).toBe(testUser.userId);
     });
   });

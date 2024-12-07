@@ -1538,15 +1538,20 @@ class BaseModel {
     return new this(data);
   }
 
-  static async findByUniqueConstraint(constraintId, field, value) {
+  static async findByUniqueConstraint(constraintName, value) {
+    const constraint = this.uniqueConstraints[constraintName];
+    if (!constraint) {
+      throw new Error(`Unknown unique constraint '${constraintName}' in ${this.name}`);
+    }
+
     if (!value) {
-      throw new Error(`${field} value is required`);
+      throw new Error(`${constraint.field} value is required`);
     }
   
     const key = this.formatUniqueConstraintKey(
-      constraintId,
+      constraint.constraintId,
       this.modelPrefix,
-      field,
+      constraint.field,
       value
     );
   

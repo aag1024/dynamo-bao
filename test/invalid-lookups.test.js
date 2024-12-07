@@ -70,7 +70,7 @@ describe('Invalid Lookup Tests', () => {
   });
 
   test('should return null when unique constraint lookup fails', async () => {
-    const result = await TestModel.findByUniqueConstraint(UNIQUE_CONSTRAINT_ID1, 'name', 'non-existent-name');
+    const result = await TestModel.findByUniqueConstraint("uniqueName", 'non-existent-name');
     expect(result).toBeNull();
   });
 

@@ -137,10 +137,9 @@ function generateUniqueConstraintMethods(modelConfig) {
   return Object.entries(modelConfig.uniqueConstraints)
     .map(([name, constraint]) => {
       const methodName = `cgFindBy${name.replace(/^unique/, '')}`;
-      const constraintId = `_${constraint.uniqueConstraintId}`;
       return `
   static async ${methodName}(value) {
-    return await this.findByUniqueConstraint('${constraintId}', '${constraint.field}', value);
+    return await this.findByUniqueConstraint('${name}', value);
   }`;
     })
     .join('\n');

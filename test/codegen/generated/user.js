@@ -48,7 +48,7 @@ class User extends BaseModel {
   }
 
   static async cgFindByEmail(value) {
-    return await this.findByUniqueConstraint('_uc1', 'email', value);
+    return await this.findByUniqueConstraint('uniqueEmail', value);
   }
 
 }

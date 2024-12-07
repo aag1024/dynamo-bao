@@ -33,12 +33,6 @@ describe('TTL Field Tests', () => {
 
     manager.registerModel(TestTtl);
 
-    TestTtl.documentClient = manager.documentClient;
-    TestTtl.table = manager.tableName;
-    
-    TestTtl.validateConfiguration();
-    TestTtl.registerRelatedIndexes();
-
     if (testId) {
       await cleanupTestData(testId);
       await verifyCleanup(testId);

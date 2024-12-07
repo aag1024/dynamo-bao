@@ -37,8 +37,6 @@ class ModelManager {
       ModelClass.documentClient = this._docClient;
       ModelClass.table = this._tableName;
       ModelClass.validateConfiguration();
-      ModelClass.registerRelatedIndexes();
-      ModelClass.registerUniqueConstraintLookups();
     }
 
     this._initialized = true;
@@ -61,8 +59,6 @@ class ModelManager {
       ModelClass.documentClient = this._docClient;
       ModelClass.table = this._tableName;
       ModelClass.validateConfiguration();
-      ModelClass.registerRelatedIndexes();
-      ModelClass.registerUniqueConstraintLookups();
     }
     return ModelClass;
   }

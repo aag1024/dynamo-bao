@@ -3,13 +3,13 @@ models:
     modelPrefix: t
     fields:
       tagId:
-        type: ulid
+        type: UlidField
         autoAssign: true
         required: true
       name:
-        type: string
+        type: StringField
         required: true
       createdAt:
-        type: createDate
+        type: CreateDateField
     primaryKey:
       partitionKey: tagId

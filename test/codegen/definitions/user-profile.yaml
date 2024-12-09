@@ -3,13 +3,13 @@ models:
     modelPrefix: up
     fields:
       userId:
-        type: relation
+        type: RelatedField
         model: User
         required: true
       name:
-        type: string
+        type: StringField
         required: true
       profilePictureUrl:
-        type: string
+        type: StringField
     primaryKey:
       partitionKey: userId

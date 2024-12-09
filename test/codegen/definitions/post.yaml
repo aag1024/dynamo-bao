@@ -3,22 +3,22 @@ models:
     modelPrefix: p
     fields:
       postId:
-        type: ulid
+        type: UlidField
         autoAssign: true
       userId:
-        type: relation
+        type: RelatedField
         model: User
         required: true
       title:
-        type: string
+        type: StringField
         required: true
       content:
-        type: string
+        type: StringField
         required: true
       createdAt:
-        type: createDate
-      version:
-        type: version
+        type: CreateDateField
+      VersionField:
+        type: VersionField
     primaryKey:
       partitionKey: postId
     indexes:

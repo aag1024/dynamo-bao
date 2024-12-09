@@ -3,21 +3,21 @@ models:
     modelPrefix: u
     fields:
       userId:
-        type: ulid
+        type: UlidField
         autoAssign: true
         required: true
       name:
-        type: string
+        type: StringField
         required: true
       email:
-        type: string
+        type: StringField
         required: true
       profilePictureUrl:
-        type: string
+        type: StringField
       createdAt:
-        type: createDate
+        type: CreateDateField
       modifiedAt:
-        type: modifiedDate
+        type: ModifiedDateField
     primaryKey:
       partitionKey: userId
     uniqueConstraints:

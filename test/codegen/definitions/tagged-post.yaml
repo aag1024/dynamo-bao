@@ -4,15 +4,15 @@ models:
     modelPrefix: tp
     fields:
       tagId:
-        type: relation
+        type: RelatedField
         model: Tag
         required: true
       postId:
-        type: relation
+        type: RelatedField
         model: Post
         required: true
       createdAt:
-        type: createDate
+        type: CreateDateField
     primaryKey:
       partitionKey: tagId
       sortKey: postId

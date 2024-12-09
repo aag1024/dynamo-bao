@@ -3,21 +3,21 @@ models:
     modelPrefix: c
     fields:
       commentId:
-        type: ulid
+        type: UlidField
         autoAssign: true
         required: true
       authorId:
-        type: relation
+        type: RelatedField
         model: User
       postId:
-        type: relation
+        type: RelatedField
         model: Post
       text:
-        type: string
+        type: StringField
       createdAt:
-        type: createDate
+        type: CreateDateField
       numLikes:
-        type: integer
+        type: IntegerField
         defaultValue: 0
     primaryKey:
       partitionKey: postId

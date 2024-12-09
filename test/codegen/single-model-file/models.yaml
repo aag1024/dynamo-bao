@@ -1,0 +1,123 @@
+models:
+  Comment:
+    modelPrefix: c
+    fields:
+      commentId:
+        type: UlidField
+        autoAssign: true
+        required: true
+      authorId:
+        type: RelatedField
+        model: User
+      postId:
+        type: RelatedField
+        model: Post
+      text:
+        type: StringField
+      createdAt:
+        type: CreateDateField
+      numLikes:
+        type: IntegerField
+        defaultValue: 0
+    primaryKey:
+      partitionKey: postId
+      sortKey: commentId
+    indexes:
+      commentsForPost: primaryKey
+  Post:
+    modelPrefix: p
+    fields:
+      postId:
+        type: UlidField
+        autoAssign: true
+      userId:
+        type: RelatedField
+        model: User
+        required: true
+      title:
+        type: StringField
+        required: true
+      content:
+        type: StringField
+        required: true
+      createdAt:
+        type: CreateDateField
+      VersionField:
+        type: VersionField
+    primaryKey:
+      partitionKey: postId
+    indexes:
+      allPosts:
+        partitionKey: modelPrefix
+        sortKey: postId
+        indexId: gsi1
+      postsForUser:
+        partitionKey: userId
+        sortKey: createdAt
+        indexId: gsi2
+  Tag:
+    modelPrefix: t
+    fields:
+      tagId:
+        type: UlidField
+        autoAssign: true
+        required: true
+      name:
+        type: StringField
+        required: true
+      createdAt:
+        type: CreateDateField
+    primaryKey:
+      partitionKey: tagId
+  TaggedPost:
+    tableType: mapping
+    modelPrefix: tp
+    fields:
+      tagId:
+        type: RelatedField
+        model: Tag
+        required: true
+      postId:
+        type: RelatedField
+        model: Post
+        required: true
+      createdAt:
+        type: CreateDateField
+    primaryKey:
+      partitionKey: tagId
+      sortKey: postId
+    indexes:
+      postsForTag: primaryKey
+      tagsForPost:
+        partitionKey: postId
+        sortKey: tagId
+        indexId: gsi1
+      recentPostsForTag:
+        partitionKey: tagId
+        sortKey: createdAt
+        indexId: gsi2
+  User:
+    modelPrefix: u
+    fields:
+      userId:
+        type: UlidField
+        autoAssign: true
+        required: true
+      name:
+        type: StringField
+        required: true
+      email:
+        type: StringField
+        required: true
+      profilePictureUrl:
+        type: StringField
+      createdAt:
+        type: CreateDateField
+      modifiedAt:
+        type: ModifiedDateField
+    primaryKey:
+      partitionKey: userId
+    uniqueConstraints:
+      uniqueEmail:
+        field: email
+        uniqueConstraintId: uc1

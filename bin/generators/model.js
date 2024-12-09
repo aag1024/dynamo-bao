@@ -12,25 +12,15 @@ function generateModelClass(modelName, modelConfig, allModels) {
   const usedFields = new Set();
   const usedConstants = new Set();
 
-  // Field type mapping
-  const fieldTypeMap = {
-    'ulid': 'UlidField',
-    'string': 'StringField',
-    'relation': 'RelatedField',
-    'createDate': 'CreateDateField',
-    'version': 'VersionField',
-    'modifiedDate': 'ModifiedDateField'
-  };
-
   // Generate fields and track used field types
   const fields = Object.entries(modelConfig.fields)
     .map(([fieldName, fieldConfig]) => {
-      const fieldClass = fieldTypeMap[fieldConfig.type] || 
-        `${fieldConfig.type.charAt(0).toUpperCase()}${fieldConfig.type.slice(1)}Field`;
+      // Use the field type directly, assuming it ends in 'Field'
+      const fieldClass = fieldConfig.type.endsWith('Field') ? fieldConfig.type : `${fieldConfig.type}Field`;
       
       usedFields.add(fieldClass);
       
-      if (fieldConfig.type === 'relation') {
+      if (fieldConfig.type === 'RelatedField') {
         return `    ${fieldName}: ${fieldClass}('${fieldConfig.model}', { required: ${!!fieldConfig.required} }),`;
       }
 

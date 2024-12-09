@@ -27,6 +27,10 @@ const SYSTEM_FIELDS = [
   '_gsi_test_id'
 ];
 
+const BATCH_REQUESTS = new Map(); // testId -> { modelName-delay -> batch }
+const DEFAULT_BATCH_DELAY = 5;    // Default to immediate requests
+const BATCH_REQUEST_TIMEOUT = 30000; // 30 seconds max lifetime for a batch
+
 class PrimaryKeyConfig {
   constructor(pk, sk = 'modelPrefix') {
     this.pk = pk;
@@ -296,25 +300,228 @@ class BaseModel {
     };
   }
 
-  static async find(primaryId) {
-    logger.debug('find primaryId', {primaryId});
-    const pkSk = this.parsePrimaryId(primaryId);
-    const dyKey = this.getDyKeyForPkSk(pkSk);
-    logger.debug('find key', {primaryId, dyKey});
-    const result = await this.documentClient.get({
-      TableName: this.table,
-      Key: dyKey,
-      ReturnConsumedCapacity: 'TOTAL'
-    });
+  static async bulkFind(primaryIds, loaderContext = null) {
+    if (!primaryIds?.length) return { items: {}, ConsumedCapacity: [] };
 
-    if (!result.Item) return null;
+    // Initialize results object
+    const results = {};
+    const idsToLoad = [];
+    
+    // First check loaderContext for existing items
+    if (loaderContext) {
+        primaryIds.forEach(id => {
+            if (loaderContext[id]) {
+                const instance = loaderContext[id];
+                // Don't set _response when returning from cache
+                delete instance._response;
+                results[id] = instance;
+            } else {
+                idsToLoad.push(id);
+            }
+        });
+    } else {
+        idsToLoad.push(...primaryIds);
+    }
 
-    // Create instance with the raw data and add response data
-    const instance = new this(result.Item);
-    instance._response = {
-      ConsumedCapacity: result.ConsumedCapacity
+    // If all items were in context, return early
+    if (!idsToLoad.length) {
+        return { items: results, ConsumedCapacity: [] };
+    }
+
+    const consumedCapacity = [];
+
+    // Process items in batches of 100
+    for (let i = 0; i < idsToLoad.length; i += 100) {
+        const batchIds = idsToLoad.slice(i, i + 100);
+        const Keys = batchIds.map(id => {
+            const pkSk = this.parsePrimaryId(id);
+            return this.getDyKeyForPkSk(pkSk);
+        });
+
+        let unprocessedKeys = Keys;
+        const maxRetries = 3;
+        let retryCount = 0;
+
+        while (unprocessedKeys.length > 0 && retryCount < maxRetries) {
+            const batchResult = await this.documentClient.batchGet({
+                RequestItems: {
+                    [this.table]: {
+                        Keys: unprocessedKeys
+                    }
+                },
+                ReturnConsumedCapacity: 'TOTAL'
+            });
+
+            // Process successful items
+            if (batchResult.Responses?.[this.table]) {
+                batchResult.Responses[this.table].forEach(item => {
+                    const instance = new this(item);
+                    const primaryId = instance.getPrimaryId();
+                    results[primaryId] = instance;
+                    
+                    // Add to loader context if provided
+                    if (loaderContext) {
+                        loaderContext[primaryId] = instance;
+                    }
+                });
+            }
+
+            // Track consumed capacity
+            if (batchResult.ConsumedCapacity) {
+                consumedCapacity.push(...[].concat(batchResult.ConsumedCapacity));
+            }
+
+            // Handle unprocessed keys
+            unprocessedKeys = batchResult.UnprocessedKeys?.[this.table]?.Keys || [];
+            
+            if (unprocessedKeys.length > 0) {
+                retryCount++;
+                // Add exponential backoff if needed
+                await new Promise(resolve => setTimeout(resolve, Math.pow(2, retryCount) * 100));
+            }
+        }
+
+        // If we still have unprocessed keys after retries, log a warning
+        if (unprocessedKeys.length > 0) {
+            console.warn(`Failed to process ${unprocessedKeys.length} items after ${maxRetries} retries`);
+        }
+    }
+
+    return {
+        items: results,
+        ConsumedCapacity: consumedCapacity
     };
-    return instance;
+  }
+
+  static getBatchRequests() {
+    const testId = this._testId || 'default';
+    if (!BATCH_REQUESTS.has(testId)) {
+      BATCH_REQUESTS.set(testId, new Map());
+    }
+    return BATCH_REQUESTS.get(testId);
+  }
+
+  static async find(primaryId, options = {}) {
+    const batchDelay = options.batchDelay ?? DEFAULT_BATCH_DELAY;
+    const loaderContext = options.loaderContext;
+    
+    // Check loader context first
+    if (loaderContext && loaderContext[primaryId]) {
+      const cachedItem = loaderContext[primaryId];
+      const instance = new this(cachedItem._data);
+      // Mark response as coming from cache instead of deleting
+      instance._response = { fromCache: true };
+      return instance;
+    }
+
+    if (batchDelay === 0) {
+      // Existing direct DynamoDB request logic
+      const pkSk = this.parsePrimaryId(primaryId);
+      const dyKey = this.getDyKeyForPkSk(pkSk);
+      const result = await this.documentClient.get({
+        TableName: this.table,
+        Key: dyKey,
+        ReturnConsumedCapacity: 'TOTAL'
+      });
+
+      if (!result.Item) return null;
+
+      const instance = new this(result.Item);
+      instance._response = {
+        ConsumedCapacity: result.ConsumedCapacity
+      };
+      
+      // Add to loader context if provided
+      if (loaderContext) {
+        loaderContext[primaryId] = instance;
+      }
+      
+      return instance;
+    }
+
+    // Batch request logic
+    return new Promise((resolve, reject) => {
+        const batchKey = `${this.name}-${batchDelay}`;
+        const batchRequests = this.getBatchRequests();
+        let batchRequest = batchRequests.get(batchKey);
+
+        if (!batchRequest) {
+            batchRequest = {
+                model: this,
+                items: new Map(),
+                timer: null,
+                timeoutTimer: null,
+                delay: batchDelay,
+                createdAt: Date.now(),
+                loaderContext
+            };
+            batchRequests.set(batchKey, batchRequest);
+
+            // Set batch execution timer
+            batchRequest.timer = setTimeout(async () => {
+                try {
+                    const currentBatch = batchRequests.get(batchKey);
+                    if (!currentBatch) return;
+
+                    const batchIds = Array.from(currentBatch.items.keys());
+                    
+                    // Execute bulk find
+                    const { items, ConsumedCapacity } = await this.bulkFind(batchIds, currentBatch.loaderContext);
+                    
+                    // Resolve all promises
+                    currentBatch.items.forEach((callbacks, id) => {
+                        const item = items[id];
+                        if (item) {
+                            // Ensure each item gets proper capacity information
+                            item._response = { 
+                                ConsumedCapacity: {
+                                    TableName: this.table,
+                                    CapacityUnits: ConsumedCapacity[0]?.CapacityUnits / Object.keys(items).length
+                                }
+                            };
+                            callbacks.resolve(item);
+                        } else {
+                            callbacks.resolve(null);
+                        }
+                    });
+
+                    // Clean up the batch
+                    if (currentBatch.timeoutTimer) {
+                        clearTimeout(currentBatch.timeoutTimer);
+                    }
+                    batchRequests.delete(batchKey);
+                } catch (error) {
+                    const currentBatch = batchRequests.get(batchKey);
+                    if (currentBatch) {
+                        currentBatch.items.forEach(callbacks => {
+                            callbacks.reject(error);
+                        });
+                        if (currentBatch.timeoutTimer) {
+                            clearTimeout(currentBatch.timeoutTimer);
+                        }
+                        batchRequests.delete(batchKey);
+                    }
+                }
+            }, batchDelay);
+
+            // Set timeout timer
+            batchRequest.timeoutTimer = setTimeout(() => {
+                const currentBatch = batchRequests.get(batchKey);
+                if (currentBatch === batchRequest) {
+                    if (currentBatch.timer) {
+                        clearTimeout(currentBatch.timer);
+                    }
+                    batchRequests.delete(batchKey);
+                    currentBatch.items.forEach(callbacks => {
+                        callbacks.reject(new Error('Batch request timed out'));
+                    });
+                }
+            }, BATCH_REQUEST_TIMEOUT);
+        }
+
+        // Add this request to the batch
+        batchRequest.items.set(primaryId, { resolve, reject });
+    });
   }
 
   static async findAll() {
@@ -993,13 +1200,10 @@ class BaseModel {
           ReturnConsumedCapacity: 'TOTAL'
         });
         
-        // Fetch the item since transactWrite doesn't return values
-        const savedItem = await this.find(primaryId);
-        savedItem._response = {
-          ConsumedCapacity: response.ConsumedCapacity,
-        };
-
-        return savedItem;
+        // Pass the response to find so it can be set after the item is loaded
+        return this.find(primaryId, { 
+            transactionResponse: response 
+        });
       } else {
         // Use simple update if no unique constraints are changing
         logger.debug('updateParams', JSON.stringify(updateParams, null, 2));
@@ -1070,15 +1274,15 @@ class BaseModel {
       _sk: skValue
     });
 
-    const result = await this._saveItem(primaryId, processedData, { isNew: true });
+    const result = await this._saveItem(primaryId, data, { isNew: true });
     
     // Ensure response is initialized
     if (!result._response) {
-      result._response = { ConsumedCapacity: [] };
+        result._response = { ConsumedCapacity: [] };
     } else if (!Array.isArray(result._response.ConsumedCapacity)) {
-      result._response.ConsumedCapacity = [result._response.ConsumedCapacity];
+        result._response.ConsumedCapacity = [result._response.ConsumedCapacity];
     }
-    
+
     return result;
   }
 
@@ -1586,6 +1790,8 @@ module.exports = {
   PrimaryKeyConfig: (pk, sk) => new PrimaryKeyConfig(pk, sk),
   IndexConfig: (pk, sk, indexId) => new IndexConfig(pk, sk, indexId),
   UniqueConstraintConfig: (field, constraintId) => new UniqueConstraintConfig(field, constraintId),
+  BATCH_REQUEST_TIMEOUT,
+  BATCH_REQUESTS,
   // Constants
   GSI_INDEX_ID1,
   GSI_INDEX_ID2,

@@ -36,6 +36,13 @@ class TaggedPost extends BaseModel {
 
 
 
+  async cgGetTag() {
+    return await this.getOrLoadRelatedField('tagId');
+  }
+
+  async cgGetPost() {
+    return await this.getOrLoadRelatedField('postId');
+  }
 }
 
 module.exports = { TaggedPost };

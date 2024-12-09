@@ -17,7 +17,8 @@ const {
     VersionField
 } = require('dynamo-bao').fields;
 
-
+const { Comment } = require('./comment');
+const { TaggedPost } = require('./tagged-post');
 
 class Post extends BaseModel {
   static modelPrefix = 'p';
@@ -49,8 +50,32 @@ class Post extends BaseModel {
 
     return results;
   }
+  async cgQueryComments(skCondition = null, options = {}) {
+    const results = await Comment.queryByIndex(
+      'commentsForPost',
+      this.getPkValue(),
+      skCondition,
+      options
+    );
+
+    return results;
+  }
+  async cgGetTags(mapSkCondition=null, limit=null, direction='ASC', startKey=null) {
+    return await TaggedPost.getRelatedObjectsViaMap(
+      "tagsForPost",
+      this.getPkValue(),
+      "tagId",
+      mapSkCondition,
+      limit,
+      direction,
+      startKey
+    );
+  }
 
 
+  async cgGetUser() {
+    return await this.getOrLoadRelatedField('userId');
+  }
 }
 
 module.exports = { Post };

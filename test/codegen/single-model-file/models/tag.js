@@ -12,7 +12,7 @@ const {
     CreateDateField
 } = require('dynamo-bao').fields;
 
-
+const { TaggedPost } = require('./tagged-post');
 
 class Tag extends BaseModel {
   static modelPrefix = 't';
@@ -27,6 +27,28 @@ class Tag extends BaseModel {
 
 
 
+  async cgGetPosts(mapSkCondition=null, limit=null, direction='ASC', startKey=null) {
+    return await TaggedPost.getRelatedObjectsViaMap(
+      "postsForTag",
+      this.getPkValue(),
+      "postId",
+      mapSkCondition,
+      limit,
+      direction,
+      startKey
+    );
+  }
+  async cgGetRecentPosts(mapSkCondition=null, limit=null, direction='ASC', startKey=null) {
+    return await TaggedPost.getRelatedObjectsViaMap(
+      "recentPostsForTag",
+      this.getPkValue(),
+      "postId",
+      mapSkCondition,
+      limit,
+      direction,
+      startKey
+    );
+  }
 
 
 }

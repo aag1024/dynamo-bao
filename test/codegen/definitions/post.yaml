@@ -17,7 +17,7 @@ models:
         required: true
       createdAt:
         type: CreateDateField
-      VersionField:
+      version:
         type: VersionField
     primaryKey:
       partitionKey: postId

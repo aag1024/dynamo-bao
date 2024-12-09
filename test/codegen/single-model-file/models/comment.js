@@ -38,6 +38,13 @@ class Comment extends BaseModel {
 
 
 
+  async cgGetAuthor() {
+    return await this.getOrLoadRelatedField('authorId');
+  }
+
+  async cgGetPost() {
+    return await this.getOrLoadRelatedField('postId');
+  }
 }
 
 module.exports = { Comment };

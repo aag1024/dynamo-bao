@@ -192,7 +192,7 @@ function generateQueryMethods(modelName, modelConfig, allModels) {
     if (otherModel.indexes) {
       // First check if the primary key's partition key is a relation to our model
       const pkPartitionField = otherModel.fields[otherModel.primaryKey.partitionKey];
-      if (pkPartitionField?.type === 'relation' && 
+      if (pkPartitionField?.type === 'RelatedField' && 
           pkPartitionField.model === modelName &&
           otherModel.tableType !== 'mapping') {  // Simple check here
         
@@ -221,7 +221,7 @@ function generateQueryMethods(modelName, modelConfig, allModels) {
 
         const pkField = otherModel.fields[index.partitionKey];
         
-        if (pkField?.type === 'relation' && 
+        if (pkField?.type === 'RelatedField' && 
             pkField.model === modelName &&
             otherModel.tableType !== 'mapping') {  // Simple check here
           
@@ -266,7 +266,7 @@ function generateQueryMethods(modelName, modelConfig, allModels) {
         }
 
         // Check if this is a mapping table relationship
-        if (pkField?.type === 'relation' && pkField.model === modelName) {
+        if (pkField?.type === 'RelatedField' && pkField.model === modelName) {
           relatedModels.add(mapModelName);
 
           // Generate method name from index
@@ -280,7 +280,7 @@ function generateQueryMethods(modelName, modelConfig, allModels) {
 
           // Find the "other" relation field that isn't the one we're querying with
           const relationFields = Object.entries(mapModel.fields)
-            .filter(([_, field]) => field.type === 'relation');
+            .filter(([_, field]) => field.type === 'RelatedField');
           
           const targetFieldName = relationFields
             .find(([_, field]) => field.model !== modelName)?.[0];
@@ -312,7 +312,7 @@ function generateRelatedFieldMethods(fields) {
   const methods = [];
 
   Object.entries(fields).forEach(([fieldName, fieldConfig]) => {
-    if (fieldConfig.type === 'relation') {
+    if (fieldConfig.type === 'RelatedField') {
       const baseName = fieldName.endsWith('Id') 
         ? fieldName.slice(0, -2) 
         : fieldName;

@@ -5,7 +5,8 @@
     "main": "src/index.js",
     "scripts": {
         "test": "jest",
-        "create-table": "node bin/dynamo-bao-create-table.js"
+        "create-table": "node bin/dynamo-bao-create-table.js",
+        "watch": "node bin/watch.js"
     },
     "files": [
         "src/",
@@ -29,7 +30,7 @@
     "dependencies": {
         "@aws-sdk/client-dynamodb": "^3.521.0",
         "@aws-sdk/lib-dynamodb": "^3.521.0",
-        "dotenv": "^16.4.5",
+        "dotenv": "^16.4.7",
         "js-yaml": "^4.1.0",
         "ulid": "^2.3.0"
     },
@@ -39,6 +40,7 @@
     },
     "bin": {
         "dynamo-bao-create-table": "./bin/dynamo-bao-create-table.js",
-        "model-codegen": "./bin/codegen.js"
+        "model-codegen": "./bin/codegen.js",
+        "dynamo-bao-watch": "./bin/watch.js"
     }
 }

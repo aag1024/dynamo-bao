@@ -1,5 +1,7 @@
 const path = require('path');
 const fs = require('fs');
+const { createLogger } = require('../utils/scriptLogger');
+const logger = createLogger('ModelGen');
 
 function generateModelClass(modelName, modelConfig, allModels) {
   if (!modelConfig || !modelConfig.fields) {
@@ -44,7 +46,7 @@ function generateModelClass(modelName, modelConfig, allModels) {
   // Handle primary key configuration
   const partitionKey = modelConfig.primaryKey.partitionKey;
   const sortKey = modelConfig.primaryKey.sortKey || 'modelPrefix';
-  console.log(`Generating primary key for ${modelName}:`, { partitionKey, sortKey });
+  logger.debug(`Generating primary key for ${modelName}:`, { partitionKey, sortKey });
   const primaryKeyConfig = `PrimaryKeyConfig('${partitionKey}', '${sortKey}')`;
 
   // Generate indexes and track used constants
@@ -54,8 +56,8 @@ function generateModelClass(modelName, modelConfig, allModels) {
         return `    ${indexName}: this.primaryKey,`;
       }
 
-      // Log the index configuration for debugging
-      console.log(`Generating index ${indexName}:`, indexConfig);
+      // Update logging
+      logger.debug(`Generating index ${indexName}:`, indexConfig);
       
       const indexId = `GSI_INDEX_ID${indexConfig.indexId.slice(-1)}`;
       usedConstants.add(indexId);
@@ -160,7 +162,7 @@ function generateModelFiles(models, outputDir) {
     
     const filePath = path.join(outputDir, `${fileName}.js`);
     fs.writeFileSync(filePath, code);
-    console.log(`Generated ${filePath}`);
+    logger.debug(`Generated ${filePath}`);
   });
 }
 

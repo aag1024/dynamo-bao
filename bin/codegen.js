@@ -4,6 +4,8 @@ const fs = require('fs');
 const path = require('path');
 const yaml = require('js-yaml');
 const { generateModelFiles } = require('./generators/model');
+const { createLogger } = require('./utils/scriptLogger');
+const logger = createLogger('CodeGen');
 
 function loadModelDefinitions(definitionsPath) {
   const models = {};
@@ -13,16 +15,16 @@ function loadModelDefinitions(definitionsPath) {
     const files = fs.readdirSync(definitionsPath)
       .filter(file => file.endsWith('.yaml') || file.endsWith('.yml'));
 
-    console.log('Found YAML files:', files);
+    logger.debug('Found YAML files:', files);
 
     files.forEach(file => {
       const filePath = path.join(definitionsPath, file);
-      console.log(`Loading file: ${filePath}`);
+      logger.debug(`Loading file: ${filePath}`);
       
       const fileContents = fs.readFileSync(filePath, 'utf8');
       const definition = yaml.load(fileContents);
       
-      console.log(`Loaded definition from ${file}:`, definition);
+      logger.debug(`Loaded definition from ${file}:`, definition);
       
       // Merge models from this file
       if (definition && definition.models) {
@@ -40,21 +42,24 @@ function loadModelDefinitions(definitionsPath) {
     }
   }
 
-  console.log('Final merged models:', models);
+  logger.debug('Final merged models:', models);
   return { models };
 }
 
 function main() {
   const args = process.argv.slice(2);
   
-  if (args.length !== 2) {
-    console.error('Usage: model-codegen <path-to-models> <output-directory>');
-    console.error('  path-to-models can be a single .yaml file or a directory containing .yaml files');
-    process.exit(1);
+  // Set default paths
+  let definitionsPath = path.resolve(process.cwd(), './models.yaml');
+  let outputDir = path.resolve(process.cwd(), './models');
+  
+  // Override with command line arguments if provided
+  if (args.length >= 1) {
+    definitionsPath = path.resolve(process.cwd(), args[0]);
   }
-
-  const definitionsPath = path.resolve(process.cwd(), args[0]);
-  const outputDir = path.resolve(process.cwd(), args[1]);
+  if (args.length >= 2) {
+    outputDir = path.resolve(process.cwd(), args[1]);
+  }
   
   try {
     const definitions = loadModelDefinitions(definitionsPath);

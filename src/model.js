@@ -28,7 +28,7 @@ const SYSTEM_FIELDS = [
 ];
 
 const BATCH_REQUESTS = new Map(); // testId -> { modelName-delay -> batch }
-const DEFAULT_BATCH_DELAY = 0;    // Default to immediate requests
+const DEFAULT_BATCH_DELAY = 5;
 const BATCH_REQUEST_TIMEOUT = 30000; // 30 seconds max lifetime for a batch
 
 class PrimaryKeyConfig {
@@ -448,7 +448,7 @@ class BaseModel {
         if (!batchRequest) {
             batchRequest = {
                 model: this,
-                items: new Map(),
+                items: [],
                 timer: null,
                 timeoutTimer: null,
                 delay: batchDelay,
@@ -463,41 +463,46 @@ class BaseModel {
                     const currentBatch = batchRequests.get(batchKey);
                     if (!currentBatch) return;
 
-                    const batchIds = Array.from(currentBatch.items.keys());
+                    const batchIds = currentBatch.items.map(item => item.id);
                     
                     // Execute bulk find
                     const { items, ConsumedCapacity } = await this.bulkFind(batchIds, currentBatch.loaderContext);
                     
-                    // Resolve all promises
-                    currentBatch.items.forEach((callbacks, id) => {
-                        const item = items[id];
+                    // Resolve all promises, including multiple callbacks for the same ID
+                    currentBatch.items.forEach(batchItem => {
+                        const item = items[batchItem.id];
                         if (item) {
-                            // Ensure each item gets proper capacity information
                             item._response = { 
                                 ConsumedCapacity: {
                                     TableName: this.table,
                                     CapacityUnits: ConsumedCapacity[0]?.CapacityUnits / Object.keys(items).length
                                 }
                             };
-                            callbacks.resolve(item);
+                            batchItem.callbacks.forEach(cb => cb.resolve(item));
                         } else {
-                            callbacks.resolve(null);
+                            batchItem.callbacks.forEach(cb => cb.resolve(null));
                         }
                     });
 
-                    // Clean up the batch
+                    // Clean up the batch and BOTH timers
                     if (currentBatch.timeoutTimer) {
                         clearTimeout(currentBatch.timeoutTimer);
+                    }
+                    if (currentBatch.timer) {
+                        clearTimeout(currentBatch.timer);
                     }
                     batchRequests.delete(batchKey);
                 } catch (error) {
                     const currentBatch = batchRequests.get(batchKey);
                     if (currentBatch) {
-                        currentBatch.items.forEach(callbacks => {
-                            callbacks.reject(error);
+                        currentBatch.items.forEach(batchItem => {
+                            batchItem.callbacks.forEach(cb => cb.reject(error));
                         });
                         if (currentBatch.timeoutTimer) {
                             clearTimeout(currentBatch.timeoutTimer);
+                        }
+                        if (currentBatch.timer) {
+                            clearTimeout(currentBatch.timer);
                         }
                         batchRequests.delete(batchKey);
                     }
@@ -512,15 +517,23 @@ class BaseModel {
                         clearTimeout(currentBatch.timer);
                     }
                     batchRequests.delete(batchKey);
-                    currentBatch.items.forEach(callbacks => {
-                        callbacks.reject(new Error('Batch request timed out'));
+                    currentBatch.items.forEach(batchItem => {
+                        batchItem.callbacks.forEach(cb => cb.reject(new Error('Batch request timed out')));
                     });
                 }
             }, BATCH_REQUEST_TIMEOUT);
         }
 
         // Add this request to the batch
-        batchRequest.items.set(primaryId, { resolve, reject });
+        const existingItem = batchRequest.items.find(item => item.id === primaryId);
+        if (existingItem) {
+            existingItem.callbacks.push({ resolve, reject });
+        } else {
+            batchRequest.items.push({
+                id: primaryId,
+                callbacks: [{ resolve, reject }]
+            });
+        }
     });
   }
 
@@ -1009,244 +1022,262 @@ class BaseModel {
   }
 
   static async _saveItem(primaryId, jsUpdates, options = {}) {
-    const { 
-      isNew = false,
-      instanceObj = null,
-      constraints = {} 
-    } = options;
+    try {
+      const { 
+        isNew = false,
+        instanceObj = null,
+        constraints = {} 
+      } = options;
 
-    logger.debug('saveItem', primaryId);
-    
-    const currentItem = isNew ? null : instanceObj || await this.find(primaryId);
-    
-    if (!isNew && !currentItem) {
-      throw new Error('Item not found');
-    }
-
-    // Validate unique constraints before attempting save
-    await this.validateUniqueConstraints(jsUpdates, isNew ? null : primaryId);
-
-    const transactItems = [];
-    const dyUpdatesToSave = {};
-    let hasUniqueConstraintChanges = false;
-
-    logger.debug('jsUpdates', jsUpdates);
-    
-    // Generate Dynamo Updates to save
-    for (const [key, field] of Object.entries(this.fields)) {
-      if (jsUpdates[key] === undefined && isNew) {
-        // Only set initial values during creation
-        const initialValue = field.getInitialValue();
-        if (initialValue !== undefined) {
-          jsUpdates[key] = initialValue;
-        }
+      logger.debug('saveItem', primaryId);
+      
+      const currentItem = isNew ? null : instanceObj || await this.find(primaryId, { batchDelay: 0 });
+      
+      if (!isNew && !currentItem) {
+        throw new Error('Item not found');
       }
 
-      if (jsUpdates[key] !== undefined) {
-        field.validate(jsUpdates[key]);
-        dyUpdatesToSave[key] = field.toDy(jsUpdates[key]);
-      } else {
-        if (typeof field.updateBeforeSave === 'function') {
-          const newValue = field.updateBeforeSave(jsUpdates[key]);
-          if (newValue !== jsUpdates[key]) {
-            dyUpdatesToSave[key] = field.toDy(newValue);
+      // Validate unique constraints before attempting save
+      await this.validateUniqueConstraints(jsUpdates, isNew ? null : primaryId);
+
+      const transactItems = [];
+      const dyUpdatesToSave = {};
+      let hasUniqueConstraintChanges = false;
+
+      logger.debug('jsUpdates', jsUpdates);
+      
+      // Generate Dynamo Updates to save
+      for (const [key, field] of Object.entries(this.fields)) {
+        if (jsUpdates[key] === undefined && isNew) {
+          // Only set initial values during creation
+          const initialValue = field.getInitialValue();
+          if (initialValue !== undefined) {
+            jsUpdates[key] = initialValue;
+          }
+        }
+
+        if (jsUpdates[key] !== undefined) {
+          field.validate(jsUpdates[key]);
+          dyUpdatesToSave[key] = field.toDy(jsUpdates[key]);
+        } else {
+          if (typeof field.updateBeforeSave === 'function') {
+            const newValue = field.updateBeforeSave(jsUpdates[key]);
+            if (newValue !== jsUpdates[key]) {
+              dyUpdatesToSave[key] = field.toDy(newValue);
+            }
           }
         }
       }
-    }
 
-    logger.debug('dyUpdatesToSave', dyUpdatesToSave);
+      logger.debug('dyUpdatesToSave', dyUpdatesToSave);
 
-    if (jsUpdates.length === 0) {
-      return currentItem;
-    }
+      if (jsUpdates.length === 0) {
+        return currentItem;
+      }
 
-    // Handle unique constraints
-    for (const constraint of Object.values(this.uniqueConstraints || {})) {
-      const fieldName = constraint.field;
-      const field = this.getField(fieldName);
-      const dyNewValue = dyUpdatesToSave[fieldName];
-      const dyCurrentValue = currentItem?._originalData[fieldName];
+      // Handle unique constraints
+      for (const constraint of Object.values(this.uniqueConstraints || {})) {
+        const fieldName = constraint.field;
+        const field = this.getField(fieldName);
+        const dyNewValue = dyUpdatesToSave[fieldName];
+        const dyCurrentValue = currentItem?._originalData[fieldName];
 
-      logger.debug('uniqueConstraint', field, dyCurrentValue, dyNewValue);
+        logger.debug('uniqueConstraint', field, dyCurrentValue, dyNewValue);
 
-      if (dyNewValue !== undefined && dyNewValue !== dyCurrentValue) {
-        hasUniqueConstraintChanges = true;
-        
-        // Remove old constraint if updating
-        if (currentItem && dyCurrentValue) {
+        if (dyNewValue !== undefined && dyNewValue !== dyCurrentValue) {
+          hasUniqueConstraintChanges = true;
+          
+          // Remove old constraint if updating
+          if (currentItem && dyCurrentValue) {
+            transactItems.push(
+              await this._removeUniqueConstraint(
+                fieldName,
+                dyCurrentValue,
+                primaryId,
+                constraint.constraintId
+              )
+            );
+          }
+          
+          // Add new constraint
           transactItems.push(
-            await this._removeUniqueConstraint(
+            await this._createUniqueConstraint(
               fieldName,
-              dyCurrentValue,
+              dyNewValue,
               primaryId,
               constraint.constraintId
             )
           );
         }
-        
-        // Add new constraint
-        transactItems.push(
-          await this._createUniqueConstraint(
-            fieldName,
-            dyNewValue,
-            primaryId,
-            constraint.constraintId
-          )
-        );
-      }
-    }
-
-    // Add testId if we're in test mode
-    const testId = this.manager.getTestId();
-    if (testId) {
-      logger.debug("savedTestId", testId, currentItem);
-      if (testId !== currentItem?._originalData._gsi_test_id) {
-        dyUpdatesToSave._gsi_test_id = testId;
-      }
-    }
-
-    // Add GSI keys
-    const indexKeys = this.getIndexKeys(dyUpdatesToSave);
-    logger.debug('indexKeys', indexKeys);
-    Object.assign(dyUpdatesToSave, indexKeys);
-
-    // Build the condition expression for the update/put
-    const conditionExpressions = [];
-    const conditionNames = {};
-    const conditionValues = {};
-
-    // Handle existence constraints
-    if (constraints.mustExist) {
-      conditionExpressions.push('attribute_exists(#pk)');
-      conditionNames['#pk'] = '_pk';
-    }
-    if (constraints.mustNotExist) {
-      conditionExpressions.push('attribute_not_exists(#pk)');
-      conditionNames['#pk'] = '_pk';
-    }
-
-    logger.debug('field matchconstraints', constraints);
-
-    // Handle field match constraints
-    if (constraints.fieldMatches) {
-      if (instanceObj === null) {
-        throw new Error('Instance object is required to check field matches');
       }
 
-      const matchFields = Array.isArray(constraints.fieldMatches) 
-        ? constraints.fieldMatches 
-        : [constraints.fieldMatches];
+      // Add testId if we're in test mode
+      const testId = this.manager.getTestId();
+      if (testId) {
+        logger.debug("savedTestId", testId, currentItem);
+        if (testId !== currentItem?._originalData._gsi_test_id) {
+          dyUpdatesToSave._gsi_test_id = testId;
+        }
+      }
 
-      matchFields.forEach((fieldName, index) => {
-        if (!this.getField(fieldName)) {
-          throw new Error(`Unknown field in fieldMatches constraint: ${fieldName}`);
+      // Add GSI keys
+      const indexKeys = this.getIndexKeys(dyUpdatesToSave);
+      logger.debug('indexKeys', indexKeys);
+      Object.assign(dyUpdatesToSave, indexKeys);
+
+      // Build the condition expression for the update/put
+      const conditionExpressions = [];
+      const conditionNames = {};
+      const conditionValues = {};
+
+      // Handle existence constraints
+      if (constraints.mustExist) {
+        conditionExpressions.push('attribute_exists(#pk)');
+        conditionNames['#pk'] = '_pk';
+      }
+      if (constraints.mustNotExist) {
+        conditionExpressions.push('attribute_not_exists(#pk)');
+        conditionNames['#pk'] = '_pk';
+      }
+
+      logger.debug('field matchconstraints', constraints);
+
+      // Handle field match constraints
+      if (constraints.fieldMatches) {
+        if (instanceObj === null) {
+          throw new Error('Instance object is required to check field matches');
         }
 
-        const nameKey = `#match${index}`;
-        const valueKey = `:match${index}`;
-        
-        conditionExpressions.push(`${nameKey} = ${valueKey}`);
-        conditionNames[nameKey] = fieldName;
-        conditionValues[valueKey] = currentItem ? 
-          currentItem._originalData[fieldName] : 
-          undefined;
-      });
-    }
+        const matchFields = Array.isArray(constraints.fieldMatches) 
+          ? constraints.fieldMatches 
+          : [constraints.fieldMatches];
 
-    // When building update expression, pass both old and new data
-    const { updateExpression, names, values } = this._buildUpdateExpression(dyUpdatesToSave);
+        matchFields.forEach((fieldName, index) => {
+          if (!this.getField(fieldName)) {
+            throw new Error(`Unknown field in fieldMatches constraint: ${fieldName}`);
+          }
 
-    const dyKey = this.getDyKeyForPkSk(this.parsePrimaryId(primaryId));
-    logger.debug('dyKey', dyKey);
-    // Create the update params
-    const updateParams = {
-      TableName: this.table,
-      Key: dyKey,
-      UpdateExpression: updateExpression,
-      ExpressionAttributeNames: {
-        ...names,
-        ...conditionNames
-      },
-      ReturnValues: 'ALL_NEW'
-    };
-
-    if (Object.keys(values).length > 0) {
-      updateParams.ExpressionAttributeValues = {...values, ...conditionValues};
-    }
-
-    // Add condition expression if we have any conditions
-    if (conditionExpressions.length > 0) {
-      updateParams.ConditionExpression = conditionExpressions.join(' AND ');
-    } else if (isNew) {
-      // Default condition for new items if no other conditions specified
-      updateParams.ConditionExpression = 'attribute_not_exists(#pk)';
-      updateParams.ExpressionAttributeNames['#pk'] = '_pk';
-    }
-
-    try {
-      let response;
-      
-      if (hasUniqueConstraintChanges) {
-        // Use transaction if we have unique constraint changes
-        transactItems.push({
-          Update: updateParams
+          const nameKey = `#match${index}`;
+          const valueKey = `:match${index}`;
+          
+          conditionExpressions.push(`${nameKey} = ${valueKey}`);
+          conditionNames[nameKey] = fieldName;
+          conditionValues[valueKey] = currentItem ? 
+            currentItem._originalData[fieldName] : 
+            undefined;
         });
+      }
 
-        logger.debug('transactItems', JSON.stringify(transactItems, null, 2));
+      // When building update expression, pass both old and new data
+      const { updateExpression, names, values } = this._buildUpdateExpression(dyUpdatesToSave);
 
-        response = await this.documentClient.transactWrite({
-          TransactItems: transactItems,
-          ReturnConsumedCapacity: 'TOTAL'
-        });
+      const dyKey = this.getDyKeyForPkSk(this.parsePrimaryId(primaryId));
+      logger.debug('dyKey', dyKey);
+      // Create the update params
+      const updateParams = {
+        TableName: this.table,
+        Key: dyKey,
+        UpdateExpression: updateExpression,
+        ExpressionAttributeNames: {
+          ...names,
+          ...conditionNames
+        },
+        ReturnValues: 'ALL_NEW'
+      };
+
+      if (Object.keys(values).length > 0) {
+        updateParams.ExpressionAttributeValues = {...values, ...conditionValues};
+      }
+
+      // Add condition expression if we have any conditions
+      if (conditionExpressions.length > 0) {
+        updateParams.ConditionExpression = conditionExpressions.join(' AND ');
+      } else if (isNew) {
+        // Default condition for new items if no other conditions specified
+        updateParams.ConditionExpression = 'attribute_not_exists(#pk)';
+        updateParams.ExpressionAttributeNames['#pk'] = '_pk';
+      }
+
+      try {
+        let response;
         
-        // Fetch the item since transactWrite doesn't return values
-        const savedItem = await this.find(primaryId);
-        
-        if (!savedItem) {
-          throw new Error('Failed to fetch saved item');
+        if (hasUniqueConstraintChanges) {
+          // Use transaction if we have unique constraint changes
+          transactItems.push({
+            Update: updateParams
+          });
+
+          logger.debug('transactItems', JSON.stringify(transactItems, null, 2));
+
+          response = await this.documentClient.transactWrite({
+            TransactItems: transactItems,
+            ReturnConsumedCapacity: 'TOTAL'
+          });
+          
+          // Fetch the item since transactWrite doesn't return values
+          const savedItem = await this.find(primaryId, { batchDelay: 0 });
+          
+          if (!savedItem) {
+            throw new Error('Failed to fetch saved item');
+          }
+          
+          // Set the consumed capacity from the transaction
+          savedItem._response = {
+            ConsumedCapacity: response.ConsumedCapacity
+          };
+
+          return savedItem;
+        } else {
+          // Use simple update if no unique constraints are changing
+          logger.debug('updateParams', JSON.stringify(updateParams, null, 2));
+          
+          try {
+            // Convert the update operation to a promise
+            const updatePromise = new Promise((resolve, reject) => {
+              this.documentClient.update({
+                ...updateParams,
+                ReturnConsumedCapacity: 'TOTAL'
+              }, (err, data) => {
+                if (err) reject(err);
+                else resolve(data);
+              });
+            });
+
+            response = await updatePromise;
+          } catch (error) {
+            console.error(`DynamoDB update failed for ${primaryId}:`, error);
+            throw error;
+          }
+
+          const savedItem = new this(response.Attributes);
+          savedItem._response = {
+            ConsumedCapacity: response.ConsumedCapacity,
+          };
+
+          return savedItem;
         }
-        
-        // Set the consumed capacity from the transaction
-        savedItem._response = {
-          ConsumedCapacity: response.ConsumedCapacity
-        };
+      } catch (error) {
+        // console.error('Save error:', error);
+        if (error.name === 'ConditionalCheckFailedException') {
+          if (constraints.mustExist) {
+            throw new Error('Item must exist');
+          }
+          if (constraints.mustNotExist) {
+            throw new Error('Item must not exist');
+          }
+          if (constraints.fieldMatches) {
+            throw new Error('Field values have been modified');
+          }
+          throw new Error('Condition check failed', error);
+        }
 
-        return savedItem;
-      } else {
-        // Use simple update if no unique constraints are changing
-        logger.debug('updateParams', JSON.stringify(updateParams, null, 2));
-
-        response = await this.documentClient.update({
-          ...updateParams,
-          ReturnConsumedCapacity: 'TOTAL'
-        });
-
-        const savedItem = new this(response.Attributes);
-        savedItem._response = {
-          ConsumedCapacity: response.ConsumedCapacity,
-        };
-
-        return savedItem;
+        if (error.name === 'TransactionCanceledException') {
+          await this.validateUniqueConstraints(jsUpdates, isNew ? null : primaryId);
+        }
+        throw error;
       }
     } catch (error) {
-      // console.error('Save error:', error);
-      if (error.name === 'ConditionalCheckFailedException') {
-        if (constraints.mustExist) {
-          throw new Error('Item must exist');
-        }
-        if (constraints.mustNotExist) {
-          throw new Error('Item must not exist');
-        }
-        if (constraints.fieldMatches) {
-          throw new Error('Field values have been modified');
-        }
-        throw new Error('Condition check failed', error);
-      }
-
-      if (error.name === 'TransactionCanceledException') {
-        await this.validateUniqueConstraints(jsUpdates, isNew ? null : primaryId);
-      }
+      console.error(`Error in _saveItem for ${primaryId}:`, error);
       throw error;
     }
   }
@@ -1303,10 +1334,12 @@ class BaseModel {
       }
     });
     
-    return this._saveItem(primaryId, data, { 
+    const result = await this._saveItem(primaryId, data, { 
       ...options,
       isNew: false
-     });
+    });
+    
+    return result;
   }
 
   static _buildUpdateExpression(dyUpdatesToSave) {

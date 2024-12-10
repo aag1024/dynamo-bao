@@ -134,7 +134,7 @@ describe('Batch Delay Tests', () => {
     // When loaded from context, no _response should be set
     expect(item2).toBeDefined();
     expect(item2.name).toBe('Test Item 1');
-    expect(item2._response).toBeDefined();
+    expect(item2._response.fromCache).toBe(true);
   });
 
   test('should handle mixed batch delays correctly', async () => {
@@ -191,8 +191,8 @@ describe('Batch Delay Tests', () => {
       if (batch.timeoutTimer) clearTimeout(batch.timeoutTimer);
       
       batchRequests.delete(batchKey);
-      batch.items.forEach(callbacks => {
-        callbacks.reject(new Error('Batch request timed out'));
+      batch.items.forEach(batchItem => {
+        batchItem.callbacks.forEach(cb => cb.reject(new Error('Batch request timed out')));
       });
     }
 

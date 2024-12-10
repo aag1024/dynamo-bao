@@ -28,7 +28,7 @@ const SYSTEM_FIELDS = [
 ];
 
 const BATCH_REQUESTS = new Map(); // testId -> { modelName-delay -> batch }
-const DEFAULT_BATCH_DELAY = 5;    // Default to immediate requests
+const DEFAULT_BATCH_DELAY = 0;    // Default to immediate requests
 const BATCH_REQUEST_TIMEOUT = 30000; // 30 seconds max lifetime for a batch
 
 class PrimaryKeyConfig {
@@ -1200,10 +1200,19 @@ class BaseModel {
           ReturnConsumedCapacity: 'TOTAL'
         });
         
-        // Pass the response to find so it can be set after the item is loaded
-        return this.find(primaryId, { 
-            transactionResponse: response 
-        });
+        // Fetch the item since transactWrite doesn't return values
+        const savedItem = await this.find(primaryId);
+        
+        if (!savedItem) {
+          throw new Error('Failed to fetch saved item');
+        }
+        
+        // Set the consumed capacity from the transaction
+        savedItem._response = {
+          ConsumedCapacity: response.ConsumedCapacity
+        };
+
+        return savedItem;
       } else {
         // Use simple update if no unique constraints are changing
         logger.debug('updateParams', JSON.stringify(updateParams, null, 2));
@@ -1273,16 +1282,16 @@ class BaseModel {
       _pk: pk,
       _sk: skValue
     });
-
-    const result = await this._saveItem(primaryId, data, { isNew: true });
+    
+    const result = await this._saveItem(primaryId, processedData, { isNew: true });
     
     // Ensure response is initialized
     if (!result._response) {
-        result._response = { ConsumedCapacity: [] };
+      result._response = { ConsumedCapacity: [] };
     } else if (!Array.isArray(result._response.ConsumedCapacity)) {
-        result._response.ConsumedCapacity = [result._response.ConsumedCapacity];
+      result._response.ConsumedCapacity = [result._response.ConsumedCapacity];
     }
-
+    
     return result;
   }
 

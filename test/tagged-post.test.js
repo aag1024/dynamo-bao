@@ -114,15 +114,14 @@ describe('TaggedPost Queries', () => {
 
   test('should query recent posts for a tag', async () => {
     const tag = await Tag.find(testTag1.tagId);
-    const recentPosts = await await TaggedPost.getRelatedObjectsViaMap(
+    const recentTaggedPosts = await await TaggedPost.queryByIndex(
       "recentPostsForTag", 
-      tag.tagId,
-      "postId"
+      tag.tagId
     );
     
-    expect(recentPosts.items).toHaveLength(2);
-    expect(recentPosts.items[0].createdAt.getTime())
-      .toBeLessThanOrEqual(recentPosts.items[1].createdAt.getTime());
+    expect(recentTaggedPosts.items).toHaveLength(2);
+    expect(recentTaggedPosts.items[0].createdAt.getTime())
+      .toBeLessThanOrEqual(recentTaggedPosts.items[1].createdAt.getTime());
   });
 
   test('should handle pagination for posts by tag', async () => {

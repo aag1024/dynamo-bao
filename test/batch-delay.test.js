@@ -134,7 +134,7 @@ describe('Batch Delay Tests', () => {
     // When loaded from context, no _response should be set
     expect(item2).toBeDefined();
     expect(item2.name).toBe('Test Item 1');
-    expect(item2._response.fromCache).toBe(true);
+    expect(item2._response.fromContext).toBe(true);
   });
 
   test('should handle mixed batch delays correctly', async () => {

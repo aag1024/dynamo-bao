@@ -2,6 +2,7 @@ const dynamoBao = require('../src');
 const testConfig = require('./config');
 const { cleanupTestData, verifyCleanup } = require('./utils/test-utils');
 const { ulid } = require('ulid');
+const { verifyCapacityUsage } = require('./dynamoTestUtils');
 
 let testUser, testPost, testComment, testId;
 
@@ -42,6 +43,10 @@ describe('Capacity Tracking', () => {
       authorId: testUser.userId,
       text: 'Test Comment'
     });
+
+    testUser.clearConsumedCapacity();
+    testPost.clearConsumedCapacity();
+    testComment.clearConsumedCapacity();
   });
 
   afterEach(async () => {
@@ -53,86 +58,74 @@ describe('Capacity Tracking', () => {
 
   describe('Single Item Operations', () => {
     test('should track capacity for finding single item', async () => {
-      const comment = await Comment.find(testComment.getPrimaryId());
-      expect(comment._response).toBeDefined();
-      expect(comment._response.ConsumedCapacity).toBeDefined();
-      expect(comment._response.ConsumedCapacity).toBeInstanceOf(Object);
-      expect(comment._response.ConsumedCapacity.TableName).toBe(testConfig.db.tableName);
-      expect(comment._response.ConsumedCapacity.CapacityUnits).toBeGreaterThan(0);
+      const result = await verifyCapacityUsage(
+        async () => await Comment.find(testComment.getPrimaryId()),
+        0.5,  // Expected RCU
+        0     // Expected WCU
+      );
+      expect(result).toBeDefined();
+      expect(result.text).toBe('Test Comment');
     });
 
     test('should track capacity when loading single related item', async () => {
       const comment = await Comment.find(testComment.getPrimaryId());
-      await comment.loadRelatedData(['authorId']);
-      
-      expect(comment._response.ConsumedCapacity).toBeDefined();
-      expect(Array.isArray(comment._response.ConsumedCapacity)).toBeTruthy();
-      expect(comment._response.ConsumedCapacity.length).toBe(2); // Original get + related load
-      
-      // Verify both operations consumed capacity
-      comment._response.ConsumedCapacity.forEach(capacity => {
-        expect(capacity.TableName).toBe(testConfig.db.tableName);
-        expect(capacity.CapacityUnits).toBeGreaterThan(0);
-      });
+      const result = await verifyCapacityUsage(
+        async () => await comment.loadRelatedData(['authorId']),
+        1.0,  // Expected RCU (1 for original + 1 for related)
+        0     // Expected WCU
+      );
+      expect(result).toBeDefined();
     });
 
     test('should track capacity when loading multiple related items', async () => {
       const comment = await Comment.find(testComment.getPrimaryId());
-      await comment.loadRelatedData(['authorId', 'postId']);
-      
-      expect(comment._response.ConsumedCapacity).toBeDefined();
-      expect(Array.isArray(comment._response.ConsumedCapacity)).toBeTruthy();
-      expect(comment._response.ConsumedCapacity.length).toBe(3); // Original get + 2 related loads
-      
-      const totalCapacity = comment._response.ConsumedCapacity.reduce(
-        (sum, capacity) => sum + capacity.CapacityUnits, 
-        0
+      const result = await verifyCapacityUsage(
+        async () => await comment.loadRelatedData(['authorId', 'postId']),
+        1.5,  // Expected RCU (1 original + 2 related)
+        0     // Expected WCU
       );
-      expect(totalCapacity).toBeGreaterThan(1);
+      expect(result).toBeDefined();
     });
   });
 
   describe('Query Operations', () => {
     test('should track capacity for query operations', async () => {
-      const result = await Comment.queryByIndex(
-        'commentsForPost',
-        testPost.getPkValue()
+      const result = await verifyCapacityUsage(
+        async () => await Comment.queryByIndex('commentsForPost', testPost.getPkValue()),
+        1.0,  // Expected RCU
+        0     // Expected WCU
       );
-      
-      expect(result._response).toBeDefined();
-      expect(result._response.ConsumedCapacity).toBeDefined();
-      expect(result._response.ConsumedCapacity).toBeInstanceOf(Object);
-      expect(result._response.ConsumedCapacity.CapacityUnits).toBeGreaterThan(0);
+      expect(result.items.length).toBeGreaterThan(0);
     });
 
     test('should track capacity when loading related data for query results', async () => {
-      const result = await Comment.queryByIndex(
-        'commentsForPost',
-        testPost.getPkValue(),
-        null,
-        {
-          loadRelated: true,
-          relatedFields: ['authorId']
-        }
+      const result = await verifyCapacityUsage(
+        async () => await Comment.queryByIndex(
+          'commentsForPost',
+          testPost.getPkValue(),
+          null,
+          {
+            loadRelated: true,
+            relatedFields: ['authorId']
+          }
+        ),
+        2.0,  // Expected RCU (1 for query + 1 for related)
+        0     // Expected WCU
       );
-      
-      expect(result._response.ConsumedCapacity).toBeDefined();
-      expect(Array.isArray(result._response.ConsumedCapacity)).toBeTruthy();
-      // Initial query capacity + related loads
-      expect(result._response.ConsumedCapacity.length).toBeGreaterThan(1);
+      expect(result.items.length).toBeGreaterThan(0);
     });
   });
 
   describe('Update Operations', () => {
     test('should track capacity for update operations', async () => {
-      const result = await Comment.update(testComment.getPrimaryId(), {
-        text: 'Updated Comment'
-      });
-
-      expect(result._response).toBeDefined();
-      expect(result._response.ConsumedCapacity).toBeDefined();
-      expect(result._response.ConsumedCapacity).toBeInstanceOf(Object);
-      expect(result._response.ConsumedCapacity.CapacityUnits).toBeGreaterThan(0);
+      const result = await verifyCapacityUsage(
+        async () => await Comment.update(testComment.getPrimaryId(), {
+          text: 'Updated Comment'
+        }),
+        0.5,  // Expected RCU
+        1.0   // Expected WCU
+      );
+      expect(result.text).toBe('Updated Comment');
     });
   });
 
@@ -141,11 +134,7 @@ describe('Capacity Tracking', () => {
       const comment = await Comment.find(testComment.getPrimaryId());
       // Try to load a non-existent related field
       await comment.loadRelatedData(['nonexistentField']);
-      
-      expect(comment._response).toBeDefined();
-      expect(comment._response.ConsumedCapacity).toBeDefined();
-      // Should only have capacity from the initial find operation
-      expect(comment._response.ConsumedCapacity.length).toBe(1);
+      expect(comment.getNumericConsumedCapacity('read')).toBe(0.5);
     });
 
     test('should track capacity when loading related data returns null', async () => {
@@ -158,11 +147,8 @@ describe('Capacity Tracking', () => {
 
       await orphanComment.loadRelatedData(['authorId']);
       
-      expect(orphanComment._response.ConsumedCapacity).toBeDefined();
-      expect(orphanComment._response.ConsumedCapacity.length).toBe(2); // Initial create + failed load
-      orphanComment._response.ConsumedCapacity.forEach(capacity => {
-        expect(capacity.CapacityUnits).toBeGreaterThan(0);
-      });
+      expect(orphanComment.getNumericConsumedCapacity('write', true)).toBe(2.0);
+      expect(orphanComment.getNumericConsumedCapacity('read', true)).toBe(0.5);
     });
 
     test('should accumulate capacity for repeated related data loads', async () => {
@@ -170,13 +156,14 @@ describe('Capacity Tracking', () => {
       
       // Load related data multiple times
       await comment.loadRelatedData(['authorId']);
-      const firstLoadCapacity = comment._response.ConsumedCapacity.length;
-      
+      const firstLoadCapacity = comment.getNumericConsumedCapacity('read', true);
+
       await comment.loadRelatedData(['postId']);
-      const secondLoadCapacity = comment._response.ConsumedCapacity.length;
+      const secondLoadCapacity = comment.getNumericConsumedCapacity('read', true);
       
       expect(secondLoadCapacity).toBeGreaterThan(firstLoadCapacity);
-      expect(comment._response.ConsumedCapacity.length).toBe(3); // Initial + authorId + postId
+
+      expect(comment.getNumericConsumedCapacity("read", true)).toBe(1.5); // Initial + authorId + postId
     });
   });
 }); 

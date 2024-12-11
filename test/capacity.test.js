@@ -56,6 +56,7 @@ describe('Capacity Usage Tests', () => {
       status: 'active'
     });
 
+    user.clearConsumedCapacity();
     await new Promise(resolve => setTimeout(resolve, 100));
 
     const result = await verifyCapacityUsage(
@@ -63,8 +64,8 @@ describe('Capacity Usage Tests', () => {
         name: 'Updated Name',
         status: user.status
       }),
-      0,    // Expected RCU
-      1.0   // Expected WCU - adjusted for single update
+      0.5,    // Expected RCU
+      4.0   // Expected WCU - adjusted for single update with index
     );
     expect(result.name).toBe('Updated Name');
   });

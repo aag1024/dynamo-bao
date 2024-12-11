@@ -4,6 +4,7 @@ const { ModelManager } = require('./model-manager');
 const { FilterExpressionBuilder } = require('./filter-expression');
 const { defaultLogger: logger } = require('./utils/logger');
 const { KeyConditionBuilder } = require('./key-condition');
+const { ObjectNotFound } = require('./object-not-found');
 const assert = require('assert');
 
 // Constants for GSI indexes
@@ -28,7 +29,7 @@ const SYSTEM_FIELDS = [
 ];
 
 const BATCH_REQUESTS = new Map(); // testId -> { modelName-delay -> batch }
-const DEFAULT_BATCH_DELAY = 5;
+const DEFAULT_BATCH_DELAY_MS = 5;
 const BATCH_REQUEST_TIMEOUT = 30000; // 30 seconds max lifetime for a batch
 
 class PrimaryKeyConfig {
@@ -300,20 +301,18 @@ class BaseModel {
     };
   }
 
-  static async bulkFind(primaryIds, loaderContext = null) {
+  static async batchFind(primaryIds, loaderContext = null) {
     if (!primaryIds?.length) return { items: {}, ConsumedCapacity: [] };
 
     // Initialize results object
     const results = {};
-    const idsToLoad = [];
+    let idsToLoad = [];
     
     // First check loaderContext for existing items
     if (loaderContext) {
         primaryIds.forEach(id => {
             if (loaderContext[id]) {
-                const instance = loaderContext[id];
-                // Don't set _response when returning from cache
-                delete instance._response;
+                const instance = new this(loaderContext[id]._data);
                 results[id] = instance;
             } else {
                 idsToLoad.push(id);
@@ -329,6 +328,9 @@ class BaseModel {
     }
 
     const consumedCapacity = [];
+
+    // remove duplicates from idsToLoad
+    idsToLoad = [...new Set(idsToLoad)];
 
     // Process items in batches of 100
     for (let i = 0; i < idsToLoad.length; i += 100) {
@@ -402,15 +404,15 @@ class BaseModel {
   }
 
   static async find(primaryId, options = {}) {
-    const batchDelay = options.batchDelay ?? DEFAULT_BATCH_DELAY;
+    const batchDelay = options.batchDelay ?? DEFAULT_BATCH_DELAY_MS;
     const loaderContext = options.loaderContext;
     
     // Check loader context first
     if (loaderContext && loaderContext[primaryId]) {
       const cachedItem = loaderContext[primaryId];
       const instance = new this(cachedItem._data);
-      // Mark response as coming from cache instead of deleting
-      instance._response = { fromCache: true };
+      const consumedCapacity = cachedItem.getConsumedCapacity().consumedCapacity;
+      instance.addConsumedCapacity(consumedCapacity, 'read', true);
       return instance;
     }
 
@@ -424,12 +426,13 @@ class BaseModel {
         ReturnConsumedCapacity: 'TOTAL'
       });
 
-      if (!result.Item) return null;
-
-      const instance = new this(result.Item);
-      instance._response = {
-        ConsumedCapacity: result.ConsumedCapacity
-      };
+      let instance;
+      if (!result.Item) {
+        instance = new ObjectNotFound(result.ConsumedCapacity);
+      } else {
+        instance = new this(result.Item);
+        instance.addConsumedCapacity(result.ConsumedCapacity, 'read', false);
+      }
       
       // Add to loader context if provided
       if (loaderContext) {
@@ -466,22 +469,25 @@ class BaseModel {
                     const batchIds = currentBatch.items.map(item => item.id);
                     
                     // Execute bulk find
-                    const { items, ConsumedCapacity } = await this.bulkFind(batchIds, currentBatch.loaderContext);
+                    const { items, ConsumedCapacity } = await this.batchFind(batchIds, loaderContext);
+
+                    // total callbacks
+                    const totalCallbacks = currentBatch.items.reduce((sum, item) => sum + item.callbacks.length, 0);
                     
                     // Resolve all promises, including multiple callbacks for the same ID
+                    const consumedCapacity = {
+                      TableName: this.table,
+                      CapacityUnits: ConsumedCapacity[0]?.CapacityUnits / totalCallbacks
+                    }
+                    
                     currentBatch.items.forEach(batchItem => {
-                        const item = items[batchItem.id];
+                        let item = items[batchItem.id];
                         if (item) {
-                            item._response = { 
-                                ConsumedCapacity: {
-                                    TableName: this.table,
-                                    CapacityUnits: ConsumedCapacity[0]?.CapacityUnits / Object.keys(items).length
-                                }
-                            };
-                            batchItem.callbacks.forEach(cb => cb.resolve(item));
+                            item.addConsumedCapacity(consumedCapacity, 'read', false);
                         } else {
-                            batchItem.callbacks.forEach(cb => cb.resolve(null));
+                            item = new ObjectNotFound(consumedCapacity);
                         }
+                        batchItem.callbacks.forEach(cb => cb.resolve(item));
                     });
 
                     // Clean up the batch and BOTH timers
@@ -535,38 +541,6 @@ class BaseModel {
             });
         }
     });
-  }
-
-  static async findAll() {
-    const startTime = Date.now();
-    // Find the first global secondary index that uses prefix as PK
-    const globalIndex = this.indexes.find(index => index.pk === 'prefix');
-    
-    if (!globalIndex) {
-      throw new Error(`${this.name} must define a global secondary index with prefix as PK to use findAll`);
-    }
-
-    const result = await this.documentClient.query({
-      TableName: this.table,
-      IndexName: globalIndex.getIndexName(),
-      KeyConditionExpression: '#pk = :prefix',
-      ExpressionAttributeNames: {
-        '#pk': globalIndex.getPkFieldName()
-      },
-      ExpressionAttributeValues: {
-        ':prefix': this.createPrefixedKey(this.modelPrefix, this.modelPrefix)
-      },
-      ReturnConsumedCapacity: 'TOTAL'
-    });
-    const endTime = Date.now();
-
-    return {
-      Items: result.Items,
-      _response: {
-        ConsumedCapacity: result.ConsumedCapacity,
-        duration: endTime - startTime
-      }
-    };
   }
 
   static formatGsiKey(modelPrefix, indexId, value) {
@@ -661,9 +635,7 @@ class BaseModel {
     if (options.countOnly) {
       return {
         count: response.Count,
-        _response: {
-          ConsumedCapacity: response.ConsumedCapacity
-        }
+        consumedCapacity: response.ConsumedCapacity
       };
     }
 
@@ -681,48 +653,22 @@ class BaseModel {
   
     // Create model instances
     let items = returnWrapped ? response.Items.map(item => new this(item)) : response.Items;
-
-    // Initialize response for each item
-    items.forEach(item => {
-      if (!item._response) {
-        item._response = { ConsumedCapacity: [] };
-      }
-    });
+    const loaderContext = options.loaderContext || {};
 
     // Load related data if requested
     if (returnWrapped && loadRelated) {
-      await Promise.all(items.map(item => item.loadRelatedData(relatedFields)));
+      await Promise.all(items.map(item => item.loadRelatedData(relatedFields, loaderContext)));
       
-      // Aggregate capacity from all items including their related data
-      let allCapacities = [];
-      
-      // Add the original query capacity
-      if (response.ConsumedCapacity) {
-        allCapacities.push(response.ConsumedCapacity);
-      }
-      
-      // Add capacity from each item's related data loads
-      items.forEach(item => {
-        if (item._response?.ConsumedCapacity) {
-          allCapacities.push(...[].concat(item._response.ConsumedCapacity));
-        }
-      });
-
       if (relatedOnly) {
         items = items.map(item => item.getRelated(relatedFields[0]));
       }
-
-      // Update response with aggregated capacities
-      response.ConsumedCapacity = allCapacities;
     }
 
     return {
       items,
       count: items.length,
       lastEvaluatedKey: response.LastEvaluatedKey,
-      _response: {
-        ConsumedCapacity: response.ConsumedCapacity || []
-      }
+      consumedCapacity: response.ConsumedCapacity,
     };
   }
 
@@ -895,7 +841,7 @@ class BaseModel {
    *   - items: Array of model instances or raw items
    *   - count: Number of items returned
    *   - lastEvaluatedKey: Key for pagination (if more items exist)
-   *   - _response: DynamoDB response metadata including ConsumedCapacity
+   *   - consumedCapacity: DynamoDB response metadata including ConsumedCapacity
    * 
    * @throws {Error} If index name is not found in model
    * @throws {Error} If sort key condition references wrong field
@@ -1030,8 +976,15 @@ class BaseModel {
       } = options;
 
       logger.debug('saveItem', primaryId);
+      let consumedCapacity = [];
       
-      const currentItem = isNew ? null : instanceObj || await this.find(primaryId, { batchDelay: 0 });
+      let currentItem = instanceObj;
+      if (isNew) {
+        currentItem = null;
+      } else if (!currentItem) {
+        currentItem = await this.find(primaryId, { batchDelay: 0 });
+        consumedCapacity = [...consumedCapacity, ...currentItem.getConsumedCapacity()];
+      }
       
       if (!isNew && !currentItem) {
         throw new Error('Item not found');
@@ -1222,9 +1175,8 @@ class BaseModel {
           }
           
           // Set the consumed capacity from the transaction
-          savedItem._response = {
-            ConsumedCapacity: response.ConsumedCapacity
-          };
+          savedItem.addConsumedCapacity(response.ConsumedCapacity, "write",false);
+          savedItem.addConsumedCapacity(consumedCapacity, "read", false);
 
           return savedItem;
         } else {
@@ -1250,10 +1202,8 @@ class BaseModel {
           }
 
           const savedItem = new this(response.Attributes);
-          savedItem._response = {
-            ConsumedCapacity: response.ConsumedCapacity,
-          };
-
+          savedItem.setConsumedCapacity(response.ConsumedCapacity, 'write', false);
+          savedItem.addConsumedCapacity(consumedCapacity, 'read', false);
           return savedItem;
         }
       } catch (error) {
@@ -1315,13 +1265,6 @@ class BaseModel {
     });
     
     const result = await this._saveItem(primaryId, processedData, { isNew: true });
-    
-    // Ensure response is initialized
-    if (!result._response) {
-      result._response = { ConsumedCapacity: [] };
-    } else if (!Array.isArray(result._response.ConsumedCapacity)) {
-      result._response.ConsumedCapacity = [result._response.ConsumedCapacity];
-    }
     
     return result;
   }
@@ -1407,7 +1350,7 @@ class BaseModel {
   }
 
   static async delete(primaryId) {
-    const item = await this.find(primaryId);
+    const item = await this.find(primaryId, { batchDelay: 0 });
     if (!item) {
       throw new Error('Item not found');
     }
@@ -1447,7 +1390,7 @@ class BaseModel {
     });
 
     // Return deleted item info with capacity information
-    item._response = response;
+    item.setConsumedCapacity(response.ConsumedCapacity, 'write', false);
     return item;
   }
 
@@ -1463,6 +1406,7 @@ class BaseModel {
     this._originalData = {};
     this._changes = new Set();
     this._relatedObjects = {};
+    this._consumedCapacity = [];
 
     // Initialize fields with data
     Object.entries(this.constructor.fields).forEach(([fieldName, field]) => {
@@ -1491,28 +1435,6 @@ class BaseModel {
           }
         }
       });
-
-      // Add getter method for RelatedFields
-      // if (field instanceof RelatedFieldClass) {
-      //   const baseName = fieldName.endsWith('Id') 
-      //     ? fieldName.slice(0, -2) 
-      //     : fieldName;
-        
-      //   const capitalizedName = baseName.charAt(0).toUpperCase() + baseName.slice(1);
-      //   const getterName = `get${capitalizedName}`;
-        
-      //   if (!this[getterName]) {
-      //     this[getterName] = async function() {
-      //       if (this._relatedObjects[fieldName]) {
-      //         return this._relatedObjects[fieldName];
-      //       }
-            
-      //       const Model = this.constructor.manager.getModel(field.modelName);
-      //       this._relatedObjects[fieldName] = await Model.find(this[fieldName]);
-      //       return this._relatedObjects[fieldName];
-      //     };
-      //   }
-      // }
     });
 
     // Store original data for change tracking
@@ -1674,7 +1596,7 @@ class BaseModel {
     return obj;
   }
 
-  async getOrLoadRelatedField(fieldName) {
+  async getOrLoadRelatedField(fieldName, loaderContext = null) {
     if (this._relatedObjects[fieldName]) {
       return this._relatedObjects[fieldName];
     }
@@ -1688,18 +1610,11 @@ class BaseModel {
     if (!value) return null;
     
     const ModelClass = this.constructor.manager.getModel(field.modelName);
-    this._relatedObjects[fieldName] = await ModelClass.find(value);
+    this._relatedObjects[fieldName] = await ModelClass.find(value, { loaderContext });
     return this._relatedObjects[fieldName];
   }
 
-  async loadRelatedData(fieldNames = null) {
-    // Initialize response if not exists
-    if (!this._response) {
-      this._response = { ConsumedCapacity: [] };
-    } else if (!Array.isArray(this._response.ConsumedCapacity)) {
-      this._response.ConsumedCapacity = [this._response.ConsumedCapacity];
-    }
-
+  async loadRelatedData(fieldNames = null, loaderContext = null) {
     const promises = [];
     
     for (const [fieldName, field] of Object.entries(this.constructor.fields)) {
@@ -1709,7 +1624,7 @@ class BaseModel {
       
       if (field instanceof RelatedFieldClass && this[fieldName]) {
         promises.push(
-          this._loadRelatedField(fieldName, field)
+          this._loadRelatedField(fieldName, field, loaderContext)
             .then(instance => {
               this._relatedObjects[fieldName] = instance;
             })
@@ -1721,7 +1636,7 @@ class BaseModel {
     return this;
   }
 
-  async _loadRelatedField(fieldName, field) {
+  async _loadRelatedField(fieldName, field, loaderContext = null) {
     const value = this[fieldName];
     if (!value) return null;
     
@@ -1730,36 +1645,9 @@ class BaseModel {
     if (value instanceof ModelClass) {
       return value;
     }
-    
+
     // Load the instance and track its capacity
-    const relatedInstance = await ModelClass.find(value);
-    
-    // Initialize response tracking if needed
-    if (!this._response) {
-      this._response = { ConsumedCapacity: [] };
-    }
-    
-    // Convert existing capacity to array if it's a single object
-    if (this._response.ConsumedCapacity && !Array.isArray(this._response.ConsumedCapacity)) {
-      this._response.ConsumedCapacity = [this._response.ConsumedCapacity];
-    }
-
-    // Add capacity for this operation, whether it succeeded or failed
-    const capacityEntry = {
-      TableName: this.constructor.table,
-      CapacityUnits: 1.0  // Standard read capacity for a get operation
-    };
-
-    // If we have a successful related instance lookup, use its capacity instead
-    if (relatedInstance?._response?.ConsumedCapacity) {
-      if (Array.isArray(relatedInstance._response.ConsumedCapacity)) {
-        this._response.ConsumedCapacity.push(...relatedInstance._response.ConsumedCapacity);
-      } else {
-        this._response.ConsumedCapacity.push(relatedInstance._response.ConsumedCapacity);
-      }
-    } else {
-      this._response.ConsumedCapacity.push(capacityEntry);
-    }
+    const relatedInstance = await ModelClass.find(value, { loaderContext });
     
     return relatedInstance;
   }
@@ -1784,7 +1672,7 @@ class BaseModel {
     return new this(data);
   }
 
-  static async findByUniqueConstraint(constraintName, value) {
+  static async findByUniqueConstraint(constraintName, value, loaderContext = null) {
     const constraint = this.uniqueConstraints[constraintName];
     if (!constraint) {
       throw new Error(`Unknown unique constraint '${constraintName}' in ${this.name}`);
@@ -1814,16 +1702,84 @@ class BaseModel {
       return null;
     }
   
-    const item = await this.find(result.Item.relatedId);
+    const item = await this.find(result.Item.relatedId, { loaderContext });
   
     if (item) {
-      item._response.ConsumedCapacity = this.accumulateCapacity([
-        result,
-        item._response
-      ]);
+      item.addConsumedCapacity(result.ConsumedCapacity);
     }
   
     return item;
+  }
+
+  setConsumedCapacity(capacity, type = 'read', fromContext = false) {
+    this.clearConsumedCapacity();
+    this.addConsumedCapacity(capacity, type, fromContext);
+  }
+  
+  addConsumedCapacity(capacity, type = 'read', fromContext = false) {
+    if (type !== 'read' && type !== 'write' && type !== 'total') {
+      throw new Error(`Invalid consumed capacity type: ${type}`);
+    }
+
+    if (!capacity) {
+      return;
+    }
+
+    if (Array.isArray(capacity)) {
+      capacity.forEach(item => this.addConsumedCapacity(item, type, fromContext));
+    } else {
+      if (capacity.consumedCapacity) {
+        this._consumedCapacity.push({
+          consumedCapacity: capacity.consumedCapacity,
+          fromContext: capacity.fromContext || fromContext,
+          type: capacity.type || type
+        });
+      } else {
+        this._consumedCapacity.push({
+          consumedCapacity: capacity,
+          fromContext: fromContext,
+          type: type
+        });
+      }
+    }
+  }
+  
+  getNumericConsumedCapacity(type, includeRelated = false) {
+    if (type !== 'read' && type !== 'write' && type !== 'total') {
+      throw new Error(`Invalid consumed capacitytype: ${type}`);
+    }
+
+    let consumedCapacity = this._consumedCapacity;
+    if (!consumedCapacity) {
+      consumedCapacity = [];
+    }
+
+    let total = consumedCapacity.reduce((sum, capacity) => {
+      if (!capacity.fromContext && (capacity.type === type || type === 'total')) {
+        return sum + (capacity.consumedCapacity?.CapacityUnits || 0);
+      }
+      return sum;
+    }, 0);
+
+    if (includeRelated) {
+      // Sum up capacity from any loaded related objects
+      for (const relatedObj of Object.values(this._relatedObjects)) {
+        if (relatedObj) {
+          const relatedCapacity = relatedObj.getNumericConsumedCapacity(type, true);
+          total += relatedCapacity;
+        }
+      }
+    }
+
+    return total;
+  }
+  
+  getConsumedCapacity() {
+    return this._consumedCapacity;
+  }
+
+  clearConsumedCapacity() {
+    this._consumedCapacity = [];
   }
 }
 

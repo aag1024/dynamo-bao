@@ -19,10 +19,10 @@ function sumConsumedCapacity(capacityArray) {
   }), { ReadCapacityUnits: 0, WriteCapacityUnits: 0 });
 }
 
-function printCapacityUsage(operation, capacity, duration) {
+function printCapacityUsage(operation, rcu, wcu, duration) {
   logger.log(`\nOperation Capacity Usage:`);
-  logger.log(`- Read Capacity Units (RCU): ${capacity.ReadCapacityUnits || 0}`);
-  logger.log(`- Write Capacity Units (WCU): ${capacity.WriteCapacityUnits || 0}`);
+  logger.log(`- Read Capacity Units (RCU): ${rcu || 0}`);
+  logger.log(`- Write Capacity Units (WCU): ${wcu || 0}`);
   logger.log(`- Duration: ${duration}ms`);
 }
 
@@ -30,25 +30,32 @@ async function verifyCapacityUsage(operation, expectedRCU, expectedWCU, allowanc
   const startTime = Date.now();
   const result = await operation();
   const duration = Date.now() - startTime;
-
-  // Get raw DynamoDB response from _response
-  const dbResponse = result._response || {};
   
   // Calculate total capacity from raw DynamoDB response
-  const totalCapacity = sumConsumedCapacity(dbResponse.ConsumedCapacity);
+  // This is an item model
+  let writeCapacity, readCapacity;
+  if (result.getNumericConsumedCapacity) {
+    // const totalCapacity = result.getNumericConsumedCapacity('total', true);
+    writeCapacity = result.getNumericConsumedCapacity('write', true);
+    readCapacity = result.getNumericConsumedCapacity('read', true);
+  } else {
+    // This is a query model
+    readCapacity = result.consumedCapacity.CapacityUnits;
+    readCapacity += result.items.reduce((sum, item) => sum + (item.getNumericConsumedCapacity('read', true) || 0), 0);
+  }
   
-  printCapacityUsage(operation.name || 'Operation', totalCapacity, duration);
+  printCapacityUsage(operation.name || 'Operation', readCapacity, writeCapacity, duration);
 
-  const rcuWithinRange = Math.abs((totalCapacity.ReadCapacityUnits || 0) - expectedRCU) <= allowance;
-  const wcuWithinRange = Math.abs((totalCapacity.WriteCapacityUnits || 0) - expectedWCU) <= allowance;
+  const rcuWithinRange = Math.abs((readCapacity || 0) - expectedRCU) <= allowance;
+  const wcuWithinRange = Math.abs((writeCapacity || 0) - expectedWCU) <= allowance;
 
   if (!rcuWithinRange || !wcuWithinRange) {
     logger.log('Actual capacity:', totalCapacity);
     logger.log('Expected RCU:', expectedRCU, 'WCU:', expectedWCU);
     throw new Error(
       `Unexpected capacity usage!\n` +
-      `RCU: Expected ~${expectedRCU}, got ${totalCapacity.ReadCapacityUnits || 0}\n` +
-      `WCU: Expected ~${expectedWCU}, got ${totalCapacity.WriteCapacityUnits || 0}`
+      `RCU: Expected ~${expectedRCU}, got ${readCapacity}\n` +
+      `WCU: Expected ~${expectedWCU}, got ${writeCapacity}`
     );
   }
 

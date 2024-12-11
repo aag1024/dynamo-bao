@@ -44,7 +44,7 @@ describe('User Unique Constraint Lookups', () => {
 
     test('should return null for non-existent email', async () => {
       const foundUser = await User.findByUniqueConstraint('uniqueEmail', 'nonexistent@example.com');
-      expect(foundUser).toBeNull();
+      expect(foundUser.exists()).toBe(false);
     });
   });
 
@@ -67,7 +67,7 @@ describe('User Unique Constraint Lookups', () => {
 
     test('should return null for non-existent external ID', async () => {
       const foundUser = await User.findByUniqueConstraint('uniqueExternalId', 'nonexistent-ext-id');
-      expect(foundUser).toBeNull();
+      expect(foundUser.exists()).toBe(false);
     });
   });
 

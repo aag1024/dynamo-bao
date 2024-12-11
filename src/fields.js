@@ -527,7 +527,16 @@ class TtlField extends DateTimeField {
     if (value === null) return null;           // Remove field
     
     // Convert any valid date input to Unix timestamp in seconds
-    const date = value instanceof Date ? value : new Date(value);
+    let date;
+    if (value instanceof Date) {
+      date = value;
+    } else {
+      date = new Date(value);
+      if (isNaN(date.getTime())) {
+        throw new Error('Invalid date value provided for TTL field');
+      }
+    }
+    
     const timestamp = Math.floor(date.getTime() / 1000);
     return timestamp;
   }

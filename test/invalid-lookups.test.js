@@ -60,18 +60,18 @@ describe('Invalid Lookup Tests', () => {
 
   test('should return null when primary key does not exist', async () => {
     const result = await TestModel.find('non-existent-id');
-    expect(result).toBeNull();
+    expect(result.exists()).toBe(false);
   });
 
   test('should return null when sort key does not exist', async () => {
     const nonExistentId = `test-item-${Date.now()}##__SK__##wrong-sk`;
     const result = await TestModel.find(nonExistentId);
-    expect(result).toBeNull();
+    expect(result.exists()).toBe(false);
   });
 
   test('should return null when unique constraint lookup fails', async () => {
     const result = await TestModel.findByUniqueConstraint("uniqueName", 'non-existent-name');
-    expect(result).toBeNull();
+    expect(result.exists()).toBe(false);
   });
 
   test('should return empty array when querying non-existent index value', async () => {

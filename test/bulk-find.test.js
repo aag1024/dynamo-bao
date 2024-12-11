@@ -18,7 +18,7 @@ class TestBulkModel extends BaseModel {
   static primaryKey = PrimaryKeyConfig('itemId');
 }
 
-describe('BulkFind Tests', () => {
+describe('batchFind Tests', () => {
   let items = [];
   let loaderContext = {};
 
@@ -66,7 +66,7 @@ describe('BulkFind Tests', () => {
     const itemIds = items.map(item => item.getPrimaryId());
     
     // First bulk load - should hit DynamoDB
-    const result1 = await TestBulkModel.bulkFind(itemIds, loaderContext);
+    const result1 = await TestBulkModel.batchFind(itemIds, loaderContext);
     
     // Verify all items were loaded
     expect(Object.keys(result1.items).length).toBe(3);
@@ -83,11 +83,11 @@ describe('BulkFind Tests', () => {
     const itemIds = items.map(item => item.getPrimaryId());
     
     // First bulk load - should hit DynamoDB
-    const result1 = await TestBulkModel.bulkFind(itemIds, loaderContext);
+    const result1 = await TestBulkModel.batchFind(itemIds, loaderContext);
     expect(result1.ConsumedCapacity.length).toBeGreaterThan(0);
     
     // Second bulk load - should use cache
-    const result2 = await TestBulkModel.bulkFind(itemIds, loaderContext);
+    const result2 = await TestBulkModel.batchFind(itemIds, loaderContext);
     expect(result2.ConsumedCapacity.length).toBe(0);
     
     // Verify same items returned (sort keys for stable comparison)
@@ -105,24 +105,24 @@ describe('BulkFind Tests', () => {
     const allIds = items.map(item => item.getPrimaryId());
     
     // Load first two items
-    const result1 = await TestBulkModel.bulkFind(firstTwoIds, loaderContext);
+    const result1 = await TestBulkModel.batchFind(firstTwoIds, loaderContext);
     expect(result1.ConsumedCapacity.length).toBeGreaterThan(0);
     expect(Object.keys(result1.items).length).toBe(2);
     
     // Load all items - should only hit DynamoDB for the third item
-    const result2 = await TestBulkModel.bulkFind(allIds, loaderContext);
+    const result2 = await TestBulkModel.batchFind(allIds, loaderContext);
     expect(result2.ConsumedCapacity.length).toBeGreaterThan(0);
     expect(Object.keys(result2.items).length).toBe(3);
   });
 
   test('should handle empty input gracefully', async () => {
-    const result = await TestBulkModel.bulkFind([], loaderContext);
+    const result = await TestBulkModel.batchFind([], loaderContext);
     expect(result.items).toEqual({});
     expect(result.ConsumedCapacity).toEqual([]);
   });
 
   test('should handle null input gracefully', async () => {
-    const result = await TestBulkModel.bulkFind(null, loaderContext);
+    const result = await TestBulkModel.batchFind(null, loaderContext);
     expect(result.items).toEqual({});
     expect(result.ConsumedCapacity).toEqual([]);
   });
@@ -130,7 +130,7 @@ describe('BulkFind Tests', () => {
   test('should work without loader context', async () => {
     const itemIds = items.map(item => item.getPrimaryId());
     
-    const result = await TestBulkModel.bulkFind(itemIds);
+    const result = await TestBulkModel.batchFind(itemIds);
     expect(Object.keys(result.items).length).toBe(3);
     expect(result.ConsumedCapacity.length).toBeGreaterThan(0);
   });
@@ -149,7 +149,7 @@ describe('BulkFind Tests', () => {
     const manyIds = manyItems.map(item => item.getPrimaryId());
     
     // Load all items
-    const result = await TestBulkModel.bulkFind(manyIds, loaderContext);
+    const result = await TestBulkModel.batchFind(manyIds, loaderContext);
     
     // Verify all items were loaded
     expect(Object.keys(result.items).length).toBe(120);
@@ -158,7 +158,7 @@ describe('BulkFind Tests', () => {
     expect(result.ConsumedCapacity.length).toBeGreaterThan(1);
     
     // Load again from cache
-    const cachedResult = await TestBulkModel.bulkFind(manyIds, loaderContext);
+    const cachedResult = await TestBulkModel.batchFind(manyIds, loaderContext);
     expect(Object.keys(cachedResult.items).length).toBe(120);
     expect(cachedResult.ConsumedCapacity.length).toBe(0);
   }, 10000); // Still keep a higher timeout just in case

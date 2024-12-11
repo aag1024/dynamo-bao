@@ -84,10 +84,7 @@ describe('Count Query Tests', () => {
       countOnly: true
     });
 
-    expect(result).toEqual({
-      count: 2,
-      _response: expect.any(Object)
-    });
+    expect(result.count).toEqual(2);
     // Ensure no items were returned
     expect(result.items).toBeUndefined();
   });
@@ -138,7 +135,7 @@ describe('Count Query Tests', () => {
       countOnly: true
     });
 
-    expect(result._response.ConsumedCapacity).toBeDefined();
+    expect(result.consumedCapacity).toBeDefined();
   });
 
   test('should respect limit for both regular and count queries', async () => {

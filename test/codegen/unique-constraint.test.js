@@ -46,7 +46,7 @@ describe('Unique Constraint Lookups', () => {
 
       // Test non-existent email
       const notFound = await User.cgFindByEmail('doesnotexist@example.com');
-      expect(notFound).toBeNull();
+      expect(notFound.exists()).toBe(false);
     });
 
     test('should handle null/undefined email lookup', async () => {

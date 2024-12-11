@@ -103,7 +103,7 @@ describe('Post Model', () => {
       post.clearRelatedCache('userId');
 
       const user = await post.getOrLoadRelatedField("userId");
-      expect(user).toBeNull();
+      expect(user.exists()).toBe(false);
     });
 
     test('should accept user instance for userId with getter', async () => {

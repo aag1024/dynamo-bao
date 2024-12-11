@@ -1170,7 +1170,7 @@ class BaseModel {
           // Fetch the item since transactWrite doesn't return values
           const savedItem = await this.find(primaryId, { batchDelay: 0 });
           
-          if (!savedItem) {
+          if (!savedItem.exists()) {
             throw new Error('Failed to fetch saved item');
           }
           
@@ -1699,7 +1699,7 @@ class BaseModel {
     });
   
     if (!result.Item) {
-      return null;
+      return new ObjectNotFound(result.ConsumedCapacity);
     }
   
     const item = await this.find(result.Item.relatedId, { loaderContext });
@@ -1709,6 +1709,10 @@ class BaseModel {
     }
   
     return item;
+  }
+
+  exists() {
+    return true;
   }
 
   setConsumedCapacity(capacity, type = 'read', fromContext = false) {

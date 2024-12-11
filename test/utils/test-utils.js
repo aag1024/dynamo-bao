@@ -79,15 +79,27 @@ async function verifyCleanup(testId) {
     }
   };
 
-  const result = await docClient.send(new QueryCommand(params));
+  let result = await docClient.send(new QueryCommand(params));
 
   if (result.Items && result.Items.length > 0) {
-    console.warn('Warning: Found items after cleanup:', {
+    console.warn('Warning: Found items after cleanup, retrying cleanup:', {
       testId,
       itemCount: result.Items.length,
       items: result.Items
     });
-    return false;
+
+    // Wait for 100ms
+    await new Promise(resolve => setTimeout(resolve, 100));
+
+    // Attempt cleanup again
+    await cleanupTestData(testId);
+
+    // Re-check for items
+    result = await docClient.send(new QueryCommand(params));
+
+    if (result.Items && result.Items.length > 0) {
+      throw new Error(`Error: Items still found after second cleanup attempt for testId: ${testId}`);
+    }
   }
 
   return true;

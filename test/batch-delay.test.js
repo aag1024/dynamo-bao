@@ -87,8 +87,8 @@ describe('Batch Delay Tests', () => {
       loaderContext 
     });
 
-    expect(item1._response.ConsumedCapacity).toBeDefined();
-    expect(item2._response.ConsumedCapacity).toBeDefined();
+    expect(item1.getNumericConsumedCapacity("total")).toBeGreaterThan(0);
+    expect(item2.getNumericConsumedCapacity("total")).toBeGreaterThan(0);
     expect(item1.name).toBe('Test Item 1');
     expect(item2.name).toBe('Test Item 2');
   });
@@ -120,7 +120,7 @@ describe('Batch Delay Tests', () => {
       batchDelay: 0,
       loaderContext 
     });
-    expect(item1._response.ConsumedCapacity).toBeDefined();
+    expect(item1.getNumericConsumedCapacity("total")).toBeGreaterThan(0);
 
     // Verify item is in loader context
     expect(loaderContext[testItems[0].getPrimaryId()]).toBeDefined();
@@ -131,10 +131,10 @@ describe('Batch Delay Tests', () => {
       loaderContext 
     });
     
-    // When loaded from context, no _response should be set
+    // When loaded from context
     expect(item2).toBeDefined();
     expect(item2.name).toBe('Test Item 1');
-    expect(item2._response.fromContext).toBe(true);
+    expect(item2.getNumericConsumedCapacity("total")).toBe(0);
   });
 
   test('should handle mixed batch delays correctly', async () => {
@@ -165,7 +165,7 @@ describe('Batch Delay Tests', () => {
     );
 
     expect(results[0].name).toBe('Test Item 1');
-    expect(results[1]).toBeNull(); // Non-existent items return null
+    expect(results[1].exists()).toBe(false); // Non-existent items return null
     expect(results[2].name).toBe('Test Item 3');
   });
 

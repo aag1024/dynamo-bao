@@ -82,7 +82,7 @@ describe('Related Field Getters', () => {
       });
 
       const relatedUser = await postWithInvalidUser.cgGetUser();
-      expect(relatedUser).toBeNull();
+      expect(relatedUser.exists()).toBe(false);
     });
   });
 

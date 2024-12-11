@@ -8,6 +8,7 @@ const { ObjectNotFound } = require('./object-not-found');
 const assert = require('assert');
 const ValidationMethods = require('./validation-mixin');
 const UniqueConstraintMethods = require('./unique-constraint-mixin');
+const QueryMethods = require('./query-mixin');
 
 
 const {
@@ -59,6 +60,7 @@ class BaseModel {
     // Initialize validation methods
     Object.assign(BaseModel, ValidationMethods);
     Object.assign(BaseModel, UniqueConstraintMethods);
+    Object.assign(BaseModel, QueryMethods);
   }
 
   static setTestId(testId) {
@@ -401,116 +403,116 @@ class BaseModel {
     return testId ? `[${testId}]#${baseKey}` : baseKey;
   }
 
-  static getBaseQueryParams(pkFieldName, pkValue, skCondition, options = {}) {
-    const keyBuilder = new KeyConditionBuilder();
-    let keyConditionExpression = `#pk = :pk`;
-    const expressionNames = { '#pk': pkFieldName };
-    const expressionValues = { ':pk': pkValue };
+  // static getBaseQueryParams(pkFieldName, pkValue, skCondition, options = {}) {
+  //   const keyBuilder = new KeyConditionBuilder();
+  //   let keyConditionExpression = `#pk = :pk`;
+  //   const expressionNames = { '#pk': pkFieldName };
+  //   const expressionValues = { ':pk': pkValue };
   
-    if (skCondition) {
-      logger.log('Building key condition for:', {
-        condition: skCondition,
-        gsiSortKeyName: options.gsiIndexId ? `_${options.gsiIndexId}_sk` : '_sk'
-      });
+  //   if (skCondition) {
+  //     logger.log('Building key condition for:', {
+  //       condition: skCondition,
+  //       gsiSortKeyName: options.gsiIndexId ? `_${options.gsiIndexId}_sk` : '_sk'
+  //     });
       
-      const skExpr = keyBuilder.buildKeyCondition(
-        this, 
-        options.indexName || 'primary', 
-        skCondition,
-        options.gsiIndexId ? `_${options.gsiIndexId}_sk` : '_sk'
-      );
-      if (skExpr) {
-        keyConditionExpression += ` AND ${skExpr.condition}`;
-        Object.assign(expressionNames, skExpr.names);
-        Object.assign(expressionValues, skExpr.values);
-      }
-    }
+  //     const skExpr = keyBuilder.buildKeyCondition(
+  //       this, 
+  //       options.indexName || 'primary', 
+  //       skCondition,
+  //       options.gsiIndexId ? `_${options.gsiIndexId}_sk` : '_sk'
+  //     );
+  //     if (skExpr) {
+  //       keyConditionExpression += ` AND ${skExpr.condition}`;
+  //       Object.assign(expressionNames, skExpr.names);
+  //       Object.assign(expressionValues, skExpr.values);
+  //     }
+  //   }
   
-    const params = {
-      TableName: this.table,
-      KeyConditionExpression: keyConditionExpression,
-      ExpressionAttributeNames: expressionNames,
-      ExpressionAttributeValues: expressionValues,
-      ScanIndexForward: options.direction !== 'DESC',
-      ReturnConsumedCapacity: 'TOTAL',
-      Limit: options.limit || this.defaultQueryLimit
-    };
+  //   const params = {
+  //     TableName: this.table,
+  //     KeyConditionExpression: keyConditionExpression,
+  //     ExpressionAttributeNames: expressionNames,
+  //     ExpressionAttributeValues: expressionValues,
+  //     ScanIndexForward: options.direction !== 'DESC',
+  //     ReturnConsumedCapacity: 'TOTAL',
+  //     Limit: options.limit || this.defaultQueryLimit
+  //   };
   
-    // Add Select:COUNT for countOnly queries
-    if (options.countOnly) {
-      params.Select = 'COUNT';
-    }
+  //   // Add Select:COUNT for countOnly queries
+  //   if (options.countOnly) {
+  //     params.Select = 'COUNT';
+  //   }
 
-    // Add the IndexName if gsiIndexId is provided
-    if (options.gsiIndexId) {
-      params.IndexName = options.gsiIndexId;
-    }
+  //   // Add the IndexName if gsiIndexId is provided
+  //   if (options.gsiIndexId) {
+  //     params.IndexName = options.gsiIndexId;
+  //   }
   
-    if (options.startKey) {
-      params.ExclusiveStartKey = options.startKey;
-    }
+  //   if (options.startKey) {
+  //     params.ExclusiveStartKey = options.startKey;
+  //   }
   
-    // Add filter expression if provided
-    if (options.filter) {
-      const filterBuilder = new FilterExpressionBuilder();
-      const filterExpression = filterBuilder.build(options.filter, this);
+  //   // Add filter expression if provided
+  //   if (options.filter) {
+  //     const filterBuilder = new FilterExpressionBuilder();
+  //     const filterExpression = filterBuilder.build(options.filter, this);
   
-      if (filterExpression) {
-        params.FilterExpression = filterExpression.FilterExpression;
-        Object.assign(
-          params.ExpressionAttributeNames,
-          filterExpression.ExpressionAttributeNames
-        );
-        Object.assign(
-          params.ExpressionAttributeValues,
-          filterExpression.ExpressionAttributeValues
-        );
-      }
-    }
+  //     if (filterExpression) {
+  //       params.FilterExpression = filterExpression.FilterExpression;
+  //       Object.assign(
+  //         params.ExpressionAttributeNames,
+  //         filterExpression.ExpressionAttributeNames
+  //       );
+  //       Object.assign(
+  //         params.ExpressionAttributeValues,
+  //         filterExpression.ExpressionAttributeValues
+  //       );
+  //     }
+  //   }
   
-    return params;
-  }
+  //   return params;
+  // }
 
-  static async processQueryResponse(response, options = {}) {
-    if (options.countOnly) {
-      return {
-        count: response.Count,
-        consumedCapacity: response.ConsumedCapacity
-      };
-    }
+  // static async processQueryResponse(response, options = {}) {
+  //   if (options.countOnly) {
+  //     return {
+  //       count: response.Count,
+  //       consumedCapacity: response.ConsumedCapacity
+  //     };
+  //   }
 
-    const {
-      returnWrapped = true,
-      loadRelated = false,
-      relatedFields = null,
-      relatedOnly = false,
-    } = options;
+  //   const {
+  //     returnWrapped = true,
+  //     loadRelated = false,
+  //     relatedFields = null,
+  //     relatedOnly = false,
+  //   } = options;
 
-    if (relatedOnly) {
-      assert(relatedFields && relatedFields.length === 1, 'relatedOnly requires a single entry in relatedFields');
-      assert(loadRelated, 'relatedOnly requires loadRelated to be true');
-    }
+  //   if (relatedOnly) {
+  //     assert(relatedFields && relatedFields.length === 1, 'relatedOnly requires a single entry in relatedFields');
+  //     assert(loadRelated, 'relatedOnly requires loadRelated to be true');
+  //   }
   
-    // Create model instances
-    let items = returnWrapped ? response.Items.map(item => new this(item)) : response.Items;
-    const loaderContext = options.loaderContext || {};
+  //   // Create model instances
+  //   let items = returnWrapped ? response.Items.map(item => new this(item)) : response.Items;
+  //   const loaderContext = options.loaderContext || {};
 
-    // Load related data if requested
-    if (returnWrapped && loadRelated) {
-      await Promise.all(items.map(item => item.loadRelatedData(relatedFields, loaderContext)));
+  //   // Load related data if requested
+  //   if (returnWrapped && loadRelated) {
+  //     await Promise.all(items.map(item => item.loadRelatedData(relatedFields, loaderContext)));
       
-      if (relatedOnly) {
-        items = items.map(item => item.getRelated(relatedFields[0]));
-      }
-    }
+  //     if (relatedOnly) {
+  //       items = items.map(item => item.getRelated(relatedFields[0]));
+  //     }
+  //   }
 
-    return {
-      items,
-      count: items.length,
-      lastEvaluatedKey: response.LastEvaluatedKey,
-      consumedCapacity: response.ConsumedCapacity,
-    };
-  }
+  //   return {
+  //     items,
+  //     count: items.length,
+  //     lastEvaluatedKey: response.LastEvaluatedKey,
+  //     consumedCapacity: response.ConsumedCapacity,
+  //   };
+  // }
 
   static getDyKeyForPkSk(pkSk) {
     if (this.primaryKey.sk === 'modelPrefix') {
@@ -532,72 +534,72 @@ class BaseModel {
     }
   }
 
-  static getIndexKeys(data) {
-    const indexKeys = {};
+  // static getIndexKeys(data) {
+  //   const indexKeys = {};
     
-    Object.entries(this.indexes).forEach(([indexName, index]) => {
-      let pkValue, skValue;
+  //   Object.entries(this.indexes).forEach(([indexName, index]) => {
+  //     let pkValue, skValue;
       
-      // Handle partition key
-      if (index.pk === 'modelPrefix') {
-        pkValue = this.modelPrefix;
-      } else {
-        const pkField = this.getField(index.pk);
-        pkValue = data[index.pk];
-        if (pkValue !== undefined) {
-          pkValue = pkField.toGsi(pkValue);
-        }
-      }
+  //     // Handle partition key
+  //     if (index.pk === 'modelPrefix') {
+  //       pkValue = this.modelPrefix;
+  //     } else {
+  //       const pkField = this.getField(index.pk);
+  //       pkValue = data[index.pk];
+  //       if (pkValue !== undefined) {
+  //         pkValue = pkField.toGsi(pkValue);
+  //       }
+  //     }
       
-      // Handle sort key
-      if (index.sk === 'modelPrefix') {
-        skValue = this.modelPrefix;
-      } else {
-        const skField = this.getField(index.sk);
-        skValue = data[index.sk];
-        if (skValue !== undefined) {
-          skValue = skField.toGsi(skValue);
-        }
-      }
+  //     // Handle sort key
+  //     if (index.sk === 'modelPrefix') {
+  //       skValue = this.modelPrefix;
+  //     } else {
+  //       const skField = this.getField(index.sk);
+  //       skValue = data[index.sk];
+  //       if (skValue !== undefined) {
+  //         skValue = skField.toGsi(skValue);
+  //       }
+  //     }
       
-      if (pkValue !== undefined && skValue !== undefined && index.indexId !== undefined) {
-        logger.debug('indexKeys', {
-          pkValue,
-          skValue,
-          indexId: index.indexId
-        });
-        const gsiPk = this.formatGsiKey(this.modelPrefix, index.indexId, pkValue);
-        indexKeys[`_${index.indexId}_pk`] = gsiPk;
-        indexKeys[`_${index.indexId}_sk`] = skValue;
-      }
-    });
+  //     if (pkValue !== undefined && skValue !== undefined && index.indexId !== undefined) {
+  //       logger.debug('indexKeys', {
+  //         pkValue,
+  //         skValue,
+  //         indexId: index.indexId
+  //       });
+  //       const gsiPk = this.formatGsiKey(this.modelPrefix, index.indexId, pkValue);
+  //       indexKeys[`_${index.indexId}_pk`] = gsiPk;
+  //       indexKeys[`_${index.indexId}_sk`] = skValue;
+  //     }
+  //   });
     
-    return indexKeys;
-  }
+  //   return indexKeys;
+  // }
 
-  static async queryByPrimaryKey(pkValue, skCondition = null, options = {}) {
-    const params = this.getBaseQueryParams(
-      '_pk',
-      this.formatPrimaryKey(this.modelPrefix, pkValue),
-      skCondition,
-      options
-    );
+  // static async queryByPrimaryKey(pkValue, skCondition = null, options = {}) {
+  //   const params = this.getBaseQueryParams(
+  //     '_pk',
+  //     this.formatPrimaryKey(this.modelPrefix, pkValue),
+  //     skCondition,
+  //     options
+  //   );
 
-    const response = await this.documentClient.query(params);
-    return this.processQueryResponse(response, options);
-  }
+  //   const response = await this.documentClient.query(params);
+  //   return this.processQueryResponse(response, options);
+  // }
 
-  static async getRelatedObjectsViaMap(indexName, pkValue, targetField, mapSkCondition=null, 
-    limit=null, direction='ASC', startKey=null) {
-      return await this.queryByIndex(indexName, pkValue, mapSkCondition, {
-        loadRelated: true,
-        relatedOnly: true,
-        relatedFields: [targetField],
-        limit,
-        direction,
-        startKey
-      });
-  }
+  // static async getRelatedObjectsViaMap(indexName, pkValue, targetField, mapSkCondition=null, 
+  //   limit=null, direction='ASC', startKey=null) {
+  //     return await this.queryByIndex(indexName, pkValue, mapSkCondition, {
+  //       loadRelated: true,
+  //       relatedOnly: true,
+  //       relatedFields: [targetField],
+  //       limit,
+  //       direction,
+  //       startKey
+  //     });
+  // }
   
   /**
    * Query items using a Global Secondary Index (GSI) or Primary Key Index
@@ -649,105 +651,105 @@ class BaseModel {
    *   relatedFields: ['organizationId']
    * });
    */
-  static async queryByIndex(indexName, pkValue, skCondition = null, options = {}) {
-    const index = this.indexes[indexName];
-    if (!index) {
-      throw new Error(`Index "${indexName}" not found in ${this.name} model`);
-    }
+  // static async queryByIndex(indexName, pkValue, skCondition = null, options = {}) {
+  //   const index = this.indexes[indexName];
+  //   if (!index) {
+  //     throw new Error(`Index "${indexName}" not found in ${this.name} model`);
+  //   }
 
-    // Validate sort key field if condition is provided
-    if (skCondition) {
-      const [[fieldName]] = Object.entries(skCondition);
-      if (fieldName !== index.sk) {
-        throw new Error(`Field "${fieldName}" is not the sort key for index "${indexName}"`);
-      }
-    }
+  //   // Validate sort key field if condition is provided
+  //   if (skCondition) {
+  //     const [[fieldName]] = Object.entries(skCondition);
+  //     if (fieldName !== index.sk) {
+  //       throw new Error(`Field "${fieldName}" is not the sort key for index "${indexName}"`);
+  //     }
+  //   }
   
-    // Format the partition key using the field's toGsi method
-    let formattedPk;
-    if (index instanceof PrimaryKeyConfig) {
-      formattedPk = this.formatPrimaryKey(this.modelPrefix, pkValue);
-    } else {
-      const pkField = this.getField(index.pk);
-      const gsiValue = pkField.toGsi(pkValue);
-      formattedPk = this.formatGsiKey(this.modelPrefix, index.indexId, gsiValue);
-    }
+  //   // Format the partition key using the field's toGsi method
+  //   let formattedPk;
+  //   if (index instanceof PrimaryKeyConfig) {
+  //     formattedPk = this.formatPrimaryKey(this.modelPrefix, pkValue);
+  //   } else {
+  //     const pkField = this.getField(index.pk);
+  //     const gsiValue = pkField.toGsi(pkValue);
+  //     formattedPk = this.formatGsiKey(this.modelPrefix, index.indexId, gsiValue);
+  //   }
   
-    // Convert sort key condition values using the field's toGsi method
-    let formattedSkCondition = null;
-    if (skCondition) {
-      const [[fieldName, condition]] = Object.entries(skCondition);
-      const field = this.getField(index.sk);  // Use the index's sort key field
+  //   // Convert sort key condition values using the field's toGsi method
+  //   let formattedSkCondition = null;
+  //   if (skCondition) {
+  //     const [[fieldName, condition]] = Object.entries(skCondition);
+  //     const field = this.getField(index.sk);  // Use the index's sort key field
       
-      // Convert the values in the condition using the field's toGsi method
-      if (typeof condition === 'object' && condition.$between) {
-        formattedSkCondition = {
-          [fieldName]: {  // Keep the original field name for validation
-            $between: condition.$between.map(value => field.toGsi(value))
-          }
-        };
-      } else if (typeof condition === 'object' && condition.$beginsWith) {
-        formattedSkCondition = {
-          [fieldName]: {  // Keep the original field name for validation
-            $beginsWith: field.toGsi(condition.$beginsWith)
-          }
-        };
-      } else {
-        formattedSkCondition = {
-          [fieldName]: field.toGsi(condition)  // Keep the original field name for validation
-        };
-      }
+  //     // Convert the values in the condition using the field's toGsi method
+  //     if (typeof condition === 'object' && condition.$between) {
+  //       formattedSkCondition = {
+  //         [fieldName]: {  // Keep the original field name for validation
+  //           $between: condition.$between.map(value => field.toGsi(value))
+  //         }
+  //       };
+  //     } else if (typeof condition === 'object' && condition.$beginsWith) {
+  //       formattedSkCondition = {
+  //         [fieldName]: {  // Keep the original field name for validation
+  //           $beginsWith: field.toGsi(condition.$beginsWith)
+  //         }
+  //       };
+  //     } else {
+  //       formattedSkCondition = {
+  //         [fieldName]: field.toGsi(condition)  // Keep the original field name for validation
+  //       };
+  //     }
 
-    }
+  //   }
   
-    const params = this.getBaseQueryParams(
-      index instanceof PrimaryKeyConfig ? '_pk' : `_${index.indexId}_pk`,
-      formattedPk,
-      skCondition ? { [index.sk]: skCondition[index.sk] } : null,
-      { 
-        ...options, 
-        indexName,
-        gsiIndexId: index.indexId,
-        gsiSortKeyName: `_${index.indexId}_sk`  // Pass the GSI sort key name
-      }
-    );
+  //   const params = this.getBaseQueryParams(
+  //     index instanceof PrimaryKeyConfig ? '_pk' : `_${index.indexId}_pk`,
+  //     formattedPk,
+  //     skCondition ? { [index.sk]: skCondition[index.sk] } : null,
+  //     { 
+  //       ...options, 
+  //       indexName,
+  //       gsiIndexId: index.indexId,
+  //       gsiSortKeyName: `_${index.indexId}_sk`  // Pass the GSI sort key name
+  //     }
+  //   );
   
-    // Add debug logging
-    logger.log('DynamoDB Query Params:', {
-      TableName: params.TableName,
-      IndexName: params.IndexName,
-      KeyConditionExpression: params.KeyConditionExpression,
-      ExpressionAttributeNames: params.ExpressionAttributeNames,
-      ExpressionAttributeValues: params.ExpressionAttributeValues
-    });
+  //   // Add debug logging
+  //   logger.log('DynamoDB Query Params:', {
+  //     TableName: params.TableName,
+  //     IndexName: params.IndexName,
+  //     KeyConditionExpression: params.KeyConditionExpression,
+  //     ExpressionAttributeNames: params.ExpressionAttributeNames,
+  //     ExpressionAttributeValues: params.ExpressionAttributeValues
+  //   });
 
-    const response = await this.documentClient.query(params);
+  //   const response = await this.documentClient.query(params);
   
-    // Add debug logging
-    logger.log('DynamoDB Response:', {
-      Count: response.Count,
-      ScannedCount: response.ScannedCount,
-      Items: response.Items?.map(item => ({
-        name: item.name,
-        category: item.category,
-        status: item.status
-      }))
-    });
+  //   // Add debug logging
+  //   logger.log('DynamoDB Response:', {
+  //     Count: response.Count,
+  //     ScannedCount: response.ScannedCount,
+  //     Items: response.Items?.map(item => ({
+  //       name: item.name,
+  //       category: item.category,
+  //       status: item.status
+  //     }))
+  //   });
     
-    let totalItems;
-    if (options.countOnly) {
-      totalItems = response.Count;
-    } else if (options.startKey) {
-      totalItems = (options.previousCount || 0) + response.Items.length;
-    } else {
-      totalItems = response.Items.length;
-    }
+  //   let totalItems;
+  //   if (options.countOnly) {
+  //     totalItems = response.Count;
+  //   } else if (options.startKey) {
+  //     totalItems = (options.previousCount || 0) + response.Items.length;
+  //   } else {
+  //     totalItems = response.Items.length;
+  //   }
     
-    return this.processQueryResponse(response, { 
-      ...options, 
-      totalItems 
-    });
-  }
+  //   return this.processQueryResponse(response, { 
+  //     ...options, 
+  //     totalItems 
+  //   });
+  // }
 
   static async _saveItem(primaryId, jsUpdates, options = {}) {
     try {

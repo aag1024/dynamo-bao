@@ -2,7 +2,6 @@ const {
   BaseModel, 
   PrimaryKeyConfig,
   IndexConfig,
-  GSI_INDEX_ID1
 } = require('../../src/model');
 
 const { 

@@ -6,16 +6,24 @@ const { defaultLogger: logger } = require('./utils/logger');
 const { KeyConditionBuilder } = require('./key-condition');
 const { ObjectNotFound } = require('./object-not-found');
 const assert = require('assert');
+const ValidationMethods = require('./validation-mixin');
+const UniqueConstraintMethods = require('./unique-constraint-mixin');
 
-// Constants for GSI indexes
-const GSI_INDEX_ID1 = 'gsi1';
-const GSI_INDEX_ID2 = 'gsi2';
-const GSI_INDEX_ID3 = 'gsi3';
 
-// Constants for unique constraints
-const UNIQUE_CONSTRAINT_ID1 = '_uc1';
-const UNIQUE_CONSTRAINT_ID2 = '_uc2';
-const UNIQUE_CONSTRAINT_ID3 = '_uc3';
+const {
+  PrimaryKeyConfig,
+  IndexConfig,
+  UniqueConstraintConfig
+} = require('./model-config');
+
+const {
+  GSI_INDEX_ID1,
+  GSI_INDEX_ID2,
+  GSI_INDEX_ID3,
+  UNIQUE_CONSTRAINT_ID1,
+  UNIQUE_CONSTRAINT_ID2,
+  UNIQUE_CONSTRAINT_ID3
+} = require('./constants');
 
 const GID_SEPARATOR = "##__SK__##";
 const UNIQUE_CONSTRAINT_KEY = "_raft_uc";
@@ -32,47 +40,6 @@ const BATCH_REQUESTS = new Map(); // testId -> { modelName-delay -> batch }
 const DEFAULT_BATCH_DELAY_MS = 5;
 const BATCH_REQUEST_TIMEOUT = 30000; // 30 seconds max lifetime for a batch
 
-class PrimaryKeyConfig {
-  constructor(pk, sk = 'modelPrefix') {
-    this.pk = pk;
-    this.sk = sk;
-  }
-
-  getPkFieldName() {
-    return '_pk';
-  }
-
-  getSkFieldName() {
-    return '_sk';
-  }
-}
-
-class IndexConfig {
-  constructor(pk, sk, indexId) {
-    this.pk = pk;
-    this.sk = sk;
-    this.indexId = indexId;
-  }
-
-  getIndexName() {
-    return this.indexId;
-  }
-
-  getPkFieldName() {
-    return `_${this.indexId}_pk`;
-  }
-
-  getSkFieldName() {
-    return `_${this.indexId}_sk`;
-  }
-}
-
-class UniqueConstraintConfig {
-  constructor(field, constraintId) {
-    this.field = field;
-    this.constraintId = constraintId;
-  }
-}
 
 class BaseModel {
   static _testId = null;
@@ -87,6 +54,12 @@ class BaseModel {
   static uniqueConstraints = {};
 
   static defaultQueryLimit = 100;
+
+  static {
+    // Initialize validation methods
+    Object.assign(BaseModel, ValidationMethods);
+    Object.assign(BaseModel, UniqueConstraintMethods);
+  }
 
   static setTestId(testId) {
     this._testId = testId;
@@ -112,90 +85,6 @@ class BaseModel {
     }
 
     return fieldDef;
-  }
-
-  static validateConfiguration() {
-    if (!this.modelPrefix) {
-      throw new Error(`${this.name} must define a modelPrefix`);
-    }
-
-    if (!this.primaryKey) {
-      throw new Error(`${this.name} must define a primaryKey`);
-    }
-
-    // Update to use TtlFieldClass instead of TtlField
-    Object.entries(this.fields).forEach(([fieldName, field]) => {
-      if (field instanceof TtlFieldClass && fieldName !== 'ttl') {
-        throw new Error(`TtlField must be named 'ttl', found '${fieldName}' in ${this.name}`);
-      }
-    });
-
-    // Ensure primary key fields are required
-    const pkField = this.getField(this.primaryKey.pk);
-    if (!pkField.required) {
-      logger.warn(`Warning: Primary key field '${this.primaryKey.pk}' in ${this.name} was not explicitly marked as required. Marking as required automatically.`);
-      pkField.required = true;
-    }
-    
-    const skField = this.getField(this.primaryKey.sk);
-    if (!skField.required) {
-      logger.warn(`Warning: Sort key field '${this.primaryKey.sk}' in ${this.name} was not explicitly marked as required. Marking as required automatically.`);
-      skField.required = true;
-    }
-
-    // Validate field names don't start with underscore
-    Object.keys(this.fields).forEach(fieldName => {
-      if (fieldName.startsWith('_')) {
-        throw new Error(`Field name '${fieldName}' in ${this.name} cannot start with underscore`);
-      }
-    });
-
-    const validIndexIds = [GSI_INDEX_ID1, GSI_INDEX_ID2, GSI_INDEX_ID3, undefined]; // undefined for PK-based indexes
-    
-    // Validate index names and referenced fields
-    Object.entries(this.indexes).forEach(([indexName, index]) => {
-      // Check if index name starts with underscore
-      if (indexName.startsWith('_')) {
-        throw new Error(`Index name '${indexName}' in ${this.name} cannot start with underscore`);
-      }
-
-      // Check if referenced fields start with underscore
-      if (index.pk !== 'modelPrefix' && index.pk.startsWith('_')) {
-        throw new Error(`Index '${indexName}' references invalid field '${index.pk}' (cannot start with underscore)`);
-      }
-      if (index.sk !== 'modelPrefix' && index.sk.startsWith('_')) {
-        throw new Error(`Index '${indexName}' references invalid field '${index.sk}' (cannot start with underscore)`);
-      }
-
-      // Check if this index matches the primary key configuration
-      const isPrimaryKeyIndex = (
-        index instanceof PrimaryKeyConfig &&
-        index.pk === this.primaryKey.pk &&
-        index.sk === this.primaryKey.sk
-      );
-
-      if (!validIndexIds.includes(index.indexId) && !isPrimaryKeyIndex) {
-        throw new Error(`Invalid index ID ${index.indexId} in ${this.name}`);
-      }
-
-      // These will throw errors if the fields don't exist
-      const idxPkField = this.getField(index.pk);
-      const idxSkField = this.getField(index.sk);
-    });
-
-    // Validate unique constraints
-    const validConstraintIds = [UNIQUE_CONSTRAINT_ID1, UNIQUE_CONSTRAINT_ID2, UNIQUE_CONSTRAINT_ID3];
-    Object.values(this.uniqueConstraints || {}).forEach(constraint => {
-      if (!validConstraintIds.includes(constraint.constraintId)) {
-        throw new Error(`Invalid constraint ID ${constraint.constraintId} in ${this.name}`);
-      }
-      
-      if (!this.getField(constraint.field)) {
-        throw new Error(
-          `Unique constraint field '${constraint.field}' not found in ${this.name} fields`
-        );
-      }
-    });
   }
 
   static getPkValue(data) {
@@ -250,55 +139,6 @@ class BaseModel {
         [r.ConsumedCapacity]
       );
     return allCapacity.length ? allCapacity : null;
-  }
-
-  static async _createUniqueConstraint(field, value, relatedId, constraintId = UNIQUE_CONSTRAINT_ID1) {
-    const testId = this.manager.getTestId();
-    const key = this.formatUniqueConstraintKey(constraintId, this.modelPrefix, field, value);
-
-    let item = {
-      _pk: key,
-      _sk: UNIQUE_CONSTRAINT_KEY,
-      uniqueValue: key,
-      relatedId: relatedId,
-      relatedModel: this.name,
-    };
-
-    if (testId) {
-      item._gsi_test_id = testId;
-    }
-
-    return {
-      Put: {
-        TableName: this.table,
-        Item: item,
-        ConditionExpression: 'attribute_not_exists(#pk) OR (relatedId = :relatedId AND relatedModel = :modelName)',
-        ExpressionAttributeNames: {
-          '#pk': '_pk'
-        },
-        ExpressionAttributeValues: {
-          ':relatedId': relatedId,
-          ':modelName': this.name
-        }
-      }
-    };
-  }
-
-  static async _removeUniqueConstraint(field, value, relatedId, constraintId = UNIQUE_CONSTRAINT_ID1) {
-    return {
-      Delete: {
-        TableName: this.table,
-        Key: {
-          _pk: this.formatUniqueConstraintKey(constraintId, this.modelPrefix, field, value),
-          _sk: UNIQUE_CONSTRAINT_KEY
-        },
-        ConditionExpression: 'relatedId = :relatedId AND relatedModel = :modelName',
-        ExpressionAttributeValues: {
-          ':relatedId': relatedId,
-          ':modelName': this.name
-        }
-      }
-    };
   }
 
   static async batchFind(primaryIds, loaderContext = null) {
@@ -670,64 +510,6 @@ class BaseModel {
       lastEvaluatedKey: response.LastEvaluatedKey,
       consumedCapacity: response.ConsumedCapacity,
     };
-  }
-
-  static async validateUniqueConstraints(data, currentId = null) {
-    logger.debug('validateUniqueConstraints called on', this.name, {
-      modelTestId: this._testId,
-      managerTestId: this.manager.getTestId(),
-      instanceKey: this._testId || 'default'
-    });
-
-    if (!this.uniqueConstraints) {
-      return;
-    }
-
-    const docClient = this.manager.documentClient;
-    const tableName = this.manager.tableName;
-
-    for (const [name, constraint] of Object.entries(this.uniqueConstraints)) {
-      const value = data[constraint.field];
-      if (!value) continue;
-
-      try {
-        const key = this.formatUniqueConstraintKey(
-          constraint.constraintId,
-          this.modelPrefix,
-          constraint.field,
-          value
-        );
-
-        logger.debug('Checking unique constraint:', {
-          key,
-          field: constraint.field,
-          value,
-          testId: this.manager.getTestId(),
-          managerTestId: this.manager.getTestId()
-        });
-
-        const result = await docClient.get({
-          TableName: tableName,
-          Key: {
-            _pk: key,
-            _sk: UNIQUE_CONSTRAINT_KEY
-          }
-        });
-        
-        if (result.Item) {
-          logger.debug('Found existing constraint:', result.Item);
-          if (!currentId || result.Item.relatedId !== currentId) {
-            throw new Error(`${constraint.field} must be unique`);
-          }
-        }
-      } catch (innerError) {
-        if (innerError.message.includes('must be unique')) {
-          throw innerError;
-        }
-        console.error('Error checking unique constraint:', innerError);
-        throw new Error(`Failed to validate ${constraint.field} uniqueness`);
-      }
-    }
   }
 
   static getDyKeyForPkSk(pkSk) {
@@ -1793,14 +1575,7 @@ module.exports = {
   IndexConfig: (pk, sk, indexId) => new IndexConfig(pk, sk, indexId),
   UniqueConstraintConfig: (field, constraintId) => new UniqueConstraintConfig(field, constraintId),
   BATCH_REQUEST_TIMEOUT,
-  BATCH_REQUESTS,
-  // Constants
-  GSI_INDEX_ID1,
-  GSI_INDEX_ID2,
-  GSI_INDEX_ID3,
-  UNIQUE_CONSTRAINT_ID1,
-  UNIQUE_CONSTRAINT_ID2,
-  UNIQUE_CONSTRAINT_ID3,
+  BATCH_REQUESTS
 };
 
 

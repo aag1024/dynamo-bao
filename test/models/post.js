@@ -3,9 +3,12 @@ const {
   BaseModel, 
   PrimaryKeyConfig,
   IndexConfig,
+} = require('../../src/model');
+
+const {
   GSI_INDEX_ID1,
   GSI_INDEX_ID2
-} = require('../../src/model');
+} = require('../../src/constants');
 
 const { 
   StringField, 

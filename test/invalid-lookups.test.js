@@ -4,10 +4,11 @@ const {
   BaseModel, 
   PrimaryKeyConfig, 
   IndexConfig, 
-  UniqueConstraintConfig, 
-  GSI_INDEX_ID1, 
-  UNIQUE_CONSTRAINT_ID1 
+  UniqueConstraintConfig
 } = require('../src/model');
+
+const { GSI_INDEX_ID1, UNIQUE_CONSTRAINT_ID1 } = require('../src/constants');
+
 const { StringField } = require('../src/fields');
 const { cleanupTestData, verifyCleanup } = require('./utils/test-utils');
 const { ulid } = require('ulid');

@@ -1,6 +1,6 @@
 const dynamoBao = require('../src');
 const testConfig = require('./config');
-const { BaseModel, PrimaryKeyConfig, BATCH_REQUEST_TIMEOUT, BATCH_REQUESTS } = require('../src/model');
+const { BaseModel, PrimaryKeyConfig } = require('../src/model');
 const { StringField } = require('../src/fields');
 const { cleanupTestData, verifyCleanup } = require('./utils/test-utils');
 const { ulid } = require('ulid');

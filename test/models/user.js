@@ -4,12 +4,15 @@ const {
   PrimaryKeyConfig,
   IndexConfig,
   UniqueConstraintConfig,
+} = require('../../src/model');
+
+const {
   GSI_INDEX_ID1,
   GSI_INDEX_ID2,
   GSI_INDEX_ID3,
   UNIQUE_CONSTRAINT_ID1,
   UNIQUE_CONSTRAINT_ID2
-} = require('../../src/model');
+} = require('../../src/constants');
 
 const { 
   StringField, 

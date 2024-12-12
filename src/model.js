@@ -3,15 +3,15 @@ const { RelatedFieldClass, StringField, TtlFieldClass } = require('./fields');
 const { ModelManager } = require('./model-manager');
 const { defaultLogger: logger } = require('./utils/logger');
 const { ObjectNotFound } = require('./object-not-found');
-const ValidationMethods = require('./validation-mixin');
-const UniqueConstraintMethods = require('./unique-constraint-mixin');
-const QueryMethods = require('./query-mixin');
-const MutationMethods = require('./mutation-mixin');
+const ValidationMethods = require('./mixins/validation-mixin');
+const UniqueConstraintMethods = require('./mixins/unique-constraint-mixin');
+const QueryMethods = require('./mixins/query-mixin');
+const MutationMethods = require('./mixins/mutation-mixin');
 const { 
   BatchLoadingMethods,
   BATCH_REQUESTS,
   BATCH_REQUEST_TIMEOUT
-} = require('./batch-loading-mixin');
+} = require('./mixins/batch-loading-mixin');
 
 const {
   PrimaryKeyConfig,
@@ -42,7 +42,7 @@ class BaseModel {
     Object.assign(BaseModel, UniqueConstraintMethods);
     Object.assign(BaseModel, QueryMethods);
     Object.assign(BaseModel, MutationMethods);
-    Object.assign(BaseModel, BatchLoadingMethods);  // Add the new mixin
+    Object.assign(BaseModel, BatchLoadingMethods); 
   }
 
   static setTestId(testId) {

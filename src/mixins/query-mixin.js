@@ -1,8 +1,8 @@
-const { defaultLogger: logger } = require('./utils/logger');
-const { KeyConditionBuilder } = require('./key-condition');
-const { FilterExpressionBuilder } = require('./filter-expression');
-const { ObjectNotFound } = require('./object-not-found');
-const { PrimaryKeyConfig } = require('./model-config');
+const { defaultLogger: logger } = require('../utils/logger');
+const { KeyConditionBuilder } = require('../key-condition');
+const { FilterExpressionBuilder } = require('../filter-expression');
+const { ObjectNotFound } = require('../object-not-found');
+const { PrimaryKeyConfig } = require('../model-config');
 const assert = require('assert');
 
 const QueryMethods = {

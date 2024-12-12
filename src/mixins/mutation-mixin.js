@@ -1,4 +1,4 @@
-const { defaultLogger: logger } = require('./utils/logger');
+const { defaultLogger: logger } = require('../utils/logger');
 
 const MutationMethods = {
   async create(data) {

@@ -1,6 +1,6 @@
-const { defaultLogger: logger } = require('./utils/logger');
-const { TtlFieldClass } = require('./fields');
-const { PrimaryKeyConfig } = require('./model-config');
+const { defaultLogger: logger } = require('../utils/logger');
+const { TtlFieldClass } = require('../fields');
+const { PrimaryKeyConfig } = require('../model-config');
 const {
     GSI_INDEX_ID1,
     GSI_INDEX_ID2,
@@ -8,7 +8,7 @@ const {
     UNIQUE_CONSTRAINT_ID1,
     UNIQUE_CONSTRAINT_ID2,
     UNIQUE_CONSTRAINT_ID3
-} = require('./constants');
+} = require('../constants');
 
 const ValidationMethods = {
   validateConfiguration() {

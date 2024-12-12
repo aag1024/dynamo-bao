@@ -1,5 +1,5 @@
-const { defaultLogger: logger } = require('./utils/logger');
-const { UNIQUE_CONSTRAINT_KEY } = require('./constants');
+const { defaultLogger: logger } = require('../utils/logger');
+const { UNIQUE_CONSTRAINT_KEY } = require('../constants');
 
 const UniqueConstraintMethods = {
   async validateUniqueConstraints(data, currentId = null) {

@@ -1,5 +1,6 @@
 const { defaultLogger: logger } = require('../utils/logger');
 const { pluginManager } = require('../plugin-manager');
+const { retryOperation } = require('../utils/retry-helper');
 
 const MutationMethods = {
   async create(data) {
@@ -98,10 +99,12 @@ const MutationMethods = {
       }
     }
 
-    const response = await this.documentClient.transactWrite({
-      TransactItems: transactItems,
-      ReturnConsumedCapacity: 'TOTAL'
-    });
+    const response = await retryOperation(() => 
+      this.documentClient.transactWrite({
+        TransactItems: transactItems,
+        ReturnConsumedCapacity: 'TOTAL'
+      })
+    );
 
     await pluginManager.executeHooks(this.name, 'afterDelete', primaryId, options);
 
@@ -300,10 +303,12 @@ const MutationMethods = {
 
           logger.debug('transactItems', JSON.stringify(transactItems, null, 2));
 
-          response = await this.documentClient.transactWrite({
-            TransactItems: transactItems,
-            ReturnConsumedCapacity: 'TOTAL'
-          });
+          response = await retryOperation(() => 
+            this.documentClient.transactWrite({
+              TransactItems: transactItems,
+              ReturnConsumedCapacity: 'TOTAL'
+            })
+          );
           
           // Fetch the item since transactWrite doesn't return values
           const savedItem = await this.find(primaryId, { batchDelay: 0 });
@@ -322,18 +327,12 @@ const MutationMethods = {
           logger.debug('updateParams', JSON.stringify(updateParams, null, 2));
           
           try {
-            // Convert the update operation to a promise
-            const updatePromise = new Promise((resolve, reject) => {
+            response = await retryOperation(() => 
               this.documentClient.update({
                 ...updateParams,
                 ReturnConsumedCapacity: 'TOTAL'
-              }, (err, data) => {
-                if (err) reject(err);
-                else resolve(data);
-              });
-            });
-
-            response = await updatePromise;
+              })
+            );
           } catch (error) {
             logger.error(`DynamoDB update failed for ${primaryId}:`, error);
             throw error;

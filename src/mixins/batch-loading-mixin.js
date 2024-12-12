@@ -19,6 +19,28 @@ const BatchLoadingMethods = {
   async batchFind(primaryIds, loaderContext = null) {
     if (!primaryIds?.length) return { items: {}, ConsumedCapacity: [] };
 
+    // Add retry wrapper function
+    const retryOperation = async (operation, maxRetries = 3) => {
+      for (let attempt = 0; attempt < maxRetries; attempt++) {
+        try {
+          return await operation();
+        } catch (error) {
+          if (attempt === maxRetries - 1) throw error;
+          
+          // Check if it's a network-related error
+          if (error.name === 'TimeoutError' || 
+              error.code === 'NetworkingError' ||
+              error.message.includes('getaddrinfo ENOTFOUND')) {
+            const delay = Math.pow(2, attempt) * 100; // exponential backoff
+            await new Promise(resolve => setTimeout(resolve, delay));
+            continue;
+          }
+          
+          throw error; // rethrow non-network errors immediately
+        }
+      }
+    };
+
     // Initialize results object
     const results = {};
     let idsToLoad = [];
@@ -60,14 +82,17 @@ const BatchLoadingMethods = {
       let retryCount = 0;
 
       while (unprocessedKeys.length > 0 && retryCount < maxRetries) {
-        const batchResult = await this.documentClient.batchGet({
-          RequestItems: {
-            [this.table]: {
-              Keys: unprocessedKeys
-            }
-          },
-          ReturnConsumedCapacity: 'TOTAL'
-        });
+        // Wrap the batchGet call with our retry function
+        const batchResult = await retryOperation(() => 
+          this.documentClient.batchGet({
+            RequestItems: {
+              [this.table]: {
+                Keys: unprocessedKeys
+              }
+            },
+            ReturnConsumedCapacity: 'TOTAL'
+          })
+        );
 
         // Process successful items
         if (batchResult.Responses?.[this.table]) {

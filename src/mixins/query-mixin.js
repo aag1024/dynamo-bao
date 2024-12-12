@@ -4,6 +4,7 @@ const { FilterExpressionBuilder } = require('../filter-expression');
 const { ObjectNotFound } = require('../object-not-found');
 const { PrimaryKeyConfig } = require('../model-config');
 const assert = require('assert');
+const { retryOperation } = require('../utils/retry-helper');
 
 const QueryMethods = {
   async queryByPrimaryKey(pkValue, skCondition = null, options = {}) {
@@ -14,7 +15,10 @@ const QueryMethods = {
       options
     );
 
-    const response = await this.documentClient.query(params);
+    const response = await retryOperation(() => 
+      this.documentClient.query(params)
+    );
+    
     return this.processQueryResponse(response, options);
   },
 
@@ -121,7 +125,9 @@ const QueryMethods = {
       ExpressionAttributeValues: params.ExpressionAttributeValues
     });
 
-    const response = await this.documentClient.query(params);
+    const response = await retryOperation(() => 
+      this.documentClient.query(params)
+    );
   
     // Add debug logging
     logger.log('DynamoDB Response:', {

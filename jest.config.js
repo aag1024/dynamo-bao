@@ -1,3 +1,3 @@
-module.exports = {
-    testPathIgnorePatterns: ['/test/codegen/', ]
-  }
+// module.exports = {
+//     testPathIgnorePatterns: ['/test/codegen/', ]
+//   }

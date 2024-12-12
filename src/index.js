@@ -3,26 +3,17 @@ const config = require('./config');
 const fs = require('fs');
 const path = require('path');
 const { ModelManager } = require('./model-manager');
-
 const { defaultLogger: logger } = require('./utils/logger');
-
 const fields = require('./fields');
+const constants = require('./constants');
 
 const { 
     BaseModel,
     PrimaryKeyConfig,
     IndexConfig,
     UniqueConstraintConfig,
-    GSI_INDEX_ID1,
-    GSI_INDEX_ID2,
-    GSI_INDEX_ID3,
-    GSI_INDEX_ID4,
-    UNIQUE_CONSTRAINT_ID1,
-    UNIQUE_CONSTRAINT_ID2,
-    UNIQUE_CONSTRAINT_ID3,
-    UNIQUE_CONSTRAINT_ID4,
-  } = require('./model');
-  
+} = require('./model');
+
 function findModelFiles(dir) {
   let results = [];
   const items = fs.readdirSync(dir);
@@ -122,15 +113,8 @@ const firstExport = {
   IndexConfig,
   UniqueConstraintConfig,
   
-  // Constants
-  GSI_INDEX_ID1,
-  GSI_INDEX_ID2,
-  GSI_INDEX_ID3,
-  GSI_INDEX_ID4,
-  UNIQUE_CONSTRAINT_ID1,
-  UNIQUE_CONSTRAINT_ID2,
-  UNIQUE_CONSTRAINT_ID3,
-  UNIQUE_CONSTRAINT_ID4,
+  // Export the constants module directly
+  constants,
 
   models: {},
 };

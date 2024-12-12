@@ -324,7 +324,7 @@ const MutationMethods = {
 
             response = await updatePromise;
           } catch (error) {
-            console.error(`DynamoDB update failed for ${primaryId}:`, error);
+            logger.error(`DynamoDB update failed for ${primaryId}:`, error);
             throw error;
           }
 
@@ -353,7 +353,7 @@ const MutationMethods = {
         throw error;
       }
     } catch (error) {
-      console.error(`Error in _saveItem for ${primaryId}:`, error);
+      logger.error(`Error in _saveItem for ${primaryId}:`, error);
       throw error;
     }
   },

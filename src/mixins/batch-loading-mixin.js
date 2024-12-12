@@ -4,7 +4,7 @@ const { ObjectNotFound } = require('../object-not-found');
 // Move these constants from model.js to here
 const BATCH_REQUESTS = new Map(); // testId -> { modelName-delay -> batch }
 const DEFAULT_BATCH_DELAY_MS = 5;
-const BATCH_REQUEST_TIMEOUT = 30000; // 30 seconds max lifetime for a batch
+const BATCH_REQUEST_TIMEOUT = 10000; // 10 seconds max lifetime for a batch
 
 const BatchLoadingMethods = {
   getBatchRequests() {

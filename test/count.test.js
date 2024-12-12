@@ -81,9 +81,6 @@ describe('Count Query Tests', () => {
   });
 
   test('should return only count for simple index query', async () => {
-    console.log('Index configuration:', TestUser.indexes.byStatus);
-    console.log('GSI_INDEX_ID1:', GSI_INDEX_ID1);
-
     const result = await TestUser.queryByIndex('byStatus', 'active', null, {
       countOnly: true
     });

@@ -9,6 +9,7 @@ const assert = require('assert');
 const ValidationMethods = require('./validation-mixin');
 const UniqueConstraintMethods = require('./unique-constraint-mixin');
 const QueryMethods = require('./query-mixin');
+const MutationMethods = require('./mutation-mixin');
 
 
 const {
@@ -61,6 +62,7 @@ class BaseModel {
     Object.assign(BaseModel, ValidationMethods);
     Object.assign(BaseModel, UniqueConstraintMethods);
     Object.assign(BaseModel, QueryMethods);
+    Object.assign(BaseModel, MutationMethods);
   }
 
   static setTestId(testId) {

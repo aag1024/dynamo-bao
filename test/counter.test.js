@@ -126,7 +126,6 @@ describe('Counter Field Tests', () => {
 
   test('should handle concurrent increments correctly', async () => {
     const counterId = `test-counter-${Date.now()}`;
-    console.log('Creating test counter:', counterId);
     
     // Create a fresh counter
     const counter = await TestCounter.create({
@@ -134,22 +133,13 @@ describe('Counter Field Tests', () => {
         count: 0
     });
     
-    console.log('Starting concurrent updates test');
     const updates = [];
-    
-    console.log('Creating update promises');
     for (let i = 0; i < 5; i++) {
-        console.log(`Pushing update ${i} for ${counterId}`);
         updates.push(TestCounter.update(counterId, { count: '+1' }));
     }
     
-    console.log('About to await Promise.all');
     await Promise.all(updates);
-    console.log('All updates completed');
-    
-    console.log('About to fetch final counter');
     const finalCounter = await TestCounter.find(counterId);
-    console.log('Final counter fetched:', finalCounter.count);
     
     expect(finalCounter.count).toBe(5);
   }, 15000);

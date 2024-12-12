@@ -1,6 +1,7 @@
 const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
 const { DynamoDBDocument } = require('@aws-sdk/lib-dynamodb');
 const { defaultLogger: logger } = require('./utils/logger');
+const { pluginManager } = require('./plugin-manager');
 
 class ModelManager {
   static _instances = new Map();
@@ -54,6 +55,13 @@ class ModelManager {
   // Registry methods
   registerModel(ModelClass) {
     this._models.set(ModelClass.name, ModelClass);
+    
+    // Add plugin support to the model class
+    ModelClass.registerPlugin = function(plugin) {
+      pluginManager.registerPlugin(this.name, plugin);
+    };
+
+    // Initialize as before
     ModelClass._testId = this._testId;
     if (this._initialized) {
       ModelClass.documentClient = this._docClient;

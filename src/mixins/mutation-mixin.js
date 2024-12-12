@@ -1,4 +1,5 @@
 const { defaultLogger: logger } = require('../utils/logger');
+const { pluginManager } = require('../plugin-manager');
 
 const MutationMethods = {
   async create(data) {
@@ -33,12 +34,16 @@ const MutationMethods = {
       _sk: skValue
     });
     
+    await pluginManager.executeHooks(this.name, 'beforeSave', processedData, { isNew: true });
     const result = await this._saveItem(primaryId, processedData, { isNew: true });
+    await pluginManager.executeHooks(this.name, 'afterSave', result, { isNew: true });
     
     return result;
   },
 
   async update(primaryId, data, options = {}) {
+    await pluginManager.executeHooks(this.name, 'beforeSave', data, { ...options, isNew: false });
+
     Object.entries(data).forEach(([fieldName, value]) => {
       const field = this.getField(fieldName);
       if (field) {
@@ -50,11 +55,15 @@ const MutationMethods = {
       ...options,
       isNew: false
     });
+
+    await pluginManager.executeHooks(this.name, 'afterSave', result, { ...options, isNew: false });
     
     return result;
   },
 
-  async delete(primaryId) {
+  async delete(primaryId, options = {}) {
+    await pluginManager.executeHooks(this.name, 'beforeDelete', primaryId, options);
+
     const item = await this.find(primaryId, { batchDelay: 0 });
     if (!item) {
       throw new Error('Item not found');
@@ -93,6 +102,8 @@ const MutationMethods = {
       TransactItems: transactItems,
       ReturnConsumedCapacity: 'TOTAL'
     });
+
+    await pluginManager.executeHooks(this.name, 'afterDelete', primaryId, options);
 
     // Return deleted item info with capacity information
     item.setConsumedCapacity(response.ConsumedCapacity, 'write', false);

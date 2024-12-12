@@ -59,16 +59,16 @@ class ModelManager {
     // Add plugin support to the model class
     ModelClass.registerPlugin = function(plugin) {
       pluginManager.registerPlugin(this.name, plugin);
-    };
-
-    // Extend the model's constructor to apply plugin methods
-    const originalConstructor = ModelClass.prototype.constructor;
-    ModelClass.prototype.constructor = function(...args) {
-      // Call the original constructor
-      originalConstructor.apply(this, args);
       
-      // Apply plugin methods to the instance
-      pluginManager.applyMethodsToInstance(ModelClass.name, this);
+      // Apply methods directly to the prototype
+      if (plugin.methods) {
+        Object.entries(plugin.methods).forEach(([methodName, methodFn]) => {
+          if (ModelClass.prototype[methodName]) {
+            logger.warn(`Method ${methodName} already exists for model ${this.name}`);
+          }
+          ModelClass.prototype[methodName] = methodFn;
+        });
+      }
     };
 
     // Initialize as before
@@ -78,6 +78,7 @@ class ModelManager {
       ModelClass.table = this._tableName;
       ModelClass.validateConfiguration();
     }
+
     return ModelClass;
   }
 

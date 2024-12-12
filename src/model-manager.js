@@ -61,6 +61,16 @@ class ModelManager {
       pluginManager.registerPlugin(this.name, plugin);
     };
 
+    // Extend the model's constructor to apply plugin methods
+    const originalConstructor = ModelClass.prototype.constructor;
+    ModelClass.prototype.constructor = function(...args) {
+      // Call the original constructor
+      originalConstructor.apply(this, args);
+      
+      // Apply plugin methods to the instance
+      pluginManager.applyMethodsToInstance(ModelClass.name, this);
+    };
+
     // Initialize as before
     ModelClass._testId = this._testId;
     if (this._initialized) {

@@ -1,5 +1,5 @@
 // src/model.js
-const { RelatedFieldClass, StringField, TtlFieldClass } = require('./fields');
+const { RelatedFieldClass, StringField } = require('./fields');
 const { ModelManager } = require('./model-manager');
 const { defaultLogger: logger } = require('./utils/logger');
 const { ObjectNotFound } = require('./object-not-found');

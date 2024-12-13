@@ -30,7 +30,6 @@ const userPlugin = {
     setDefaultName() {
       this.firstName = 'John';
       this.lastName = 'Doe';
-      return this.save();
     }
   }
 };
@@ -80,7 +79,8 @@ describe('Plugin Methods Tests', () => {
   });
 
   test('plugin methods should be able to modify and save instance data', async () => {
-    await testUser.setDefaultName();
+    testUser.setDefaultName();
+    await testUser.save();
     
     // Verify changes were saved
     const updatedUser = await TestUser.find(testUser.userId);

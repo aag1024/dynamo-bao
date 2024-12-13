@@ -16,7 +16,9 @@ const config = {
     level: 'ERROR',
   },
   paths: {
-    modelsDir: path.resolve(__dirname, "./models")
+    modelsDir: path.resolve(__dirname, "./models"),
+    pluginsDir: path.resolve(__dirname, "./plugins"),
+    fieldsDir: path.resolve(__dirname, "./fields"),
   }
 };
 

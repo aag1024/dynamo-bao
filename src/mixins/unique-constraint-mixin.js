@@ -1,3 +1,4 @@
+const { GetCommand } = require('@aws-sdk/lib-dynamodb');
 const { defaultLogger: logger } = require('../utils/logger');
 const { UNIQUE_CONSTRAINT_KEY } = require('../constants');
 
@@ -37,13 +38,13 @@ const UniqueConstraintMethods = {
           managerTestId: this.manager.getTestId()
         });
 
-        const result = await docClient.get({
+        const result = await docClient.send(new GetCommand({
           TableName: tableName,
           Key: {
             _pk: key,
             _sk: UNIQUE_CONSTRAINT_KEY
           }
-        });
+        }));
         
         if (result.Item) {
           logger.debug('Found existing constraint:', result.Item);

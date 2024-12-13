@@ -1,6 +1,7 @@
 require('dotenv').config();
 
 const LOG_LEVELS = {
+  OFF: -1,
   ERROR: 0,
   WARN: 1,
   INFO: 2,
@@ -14,7 +15,7 @@ class Logger {
   }
 
   log(level, ...args) {
-    if (LOG_LEVELS[level] <= LOG_LEVELS[this.currentLevel]) {
+    if (this.currentLevel !== 'OFF' && LOG_LEVELS[level] <= LOG_LEVELS[this.currentLevel]) {
       const prefix = `[${level}] ${this.context}:`;
       console.log(prefix, ...args);
     }

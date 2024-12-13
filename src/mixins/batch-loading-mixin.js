@@ -1,6 +1,7 @@
 const { defaultLogger: logger } = require('../utils/logger');
 const { ObjectNotFound } = require('../object-not-found');
 const { pluginManager } = require('../plugin-manager');
+const { BatchGetCommand, GetCommand } = require('@aws-sdk/lib-dynamodb');
 
 // Move these constants from model.js to here
 const BATCH_REQUESTS = new Map(); // testId -> { modelName-delay -> batch }
@@ -84,14 +85,14 @@ const BatchLoadingMethods = {
       while (unprocessedKeys.length > 0 && retryCount < maxRetries) {
         // Wrap the batchGet call with our retry function
         const batchResult = await retryOperation(() => 
-          this.documentClient.batchGet({
+          this.documentClient.send(new BatchGetCommand({
             RequestItems: {
               [this.table]: {
                 Keys: unprocessedKeys
               }
             },
             ReturnConsumedCapacity: 'TOTAL'
-          })
+          }))
         );
 
         // Process successful items
@@ -152,11 +153,11 @@ const BatchLoadingMethods = {
       // Direct DynamoDB request logic
       const pkSk = this.parsePrimaryId(primaryId);
       const dyKey = this.getDyKeyForPkSk(pkSk);
-      const result = await this.documentClient.get({
+      const result = await this.documentClient.send(new GetCommand({
         TableName: this.table,
         Key: dyKey,
         ReturnConsumedCapacity: 'TOTAL'
-      });
+      }));
 
       let instance;
       if (!result.Item) {

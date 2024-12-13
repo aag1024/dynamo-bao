@@ -1,3 +1,4 @@
+const { TransactWriteCommand, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
 const { defaultLogger: logger } = require('../utils/logger');
 const { pluginManager } = require('../plugin-manager');
 const { retryOperation } = require('../utils/retry-helper');
@@ -100,10 +101,10 @@ const MutationMethods = {
     }
 
     const response = await retryOperation(() => 
-      this.documentClient.transactWrite({
+      this.documentClient.send(new TransactWriteCommand({
         TransactItems: transactItems,
         ReturnConsumedCapacity: 'TOTAL'
-      })
+      }))
     );
 
     await pluginManager.executeHooks(this.name, 'afterDelete', primaryId, options);
@@ -304,10 +305,10 @@ const MutationMethods = {
           logger.debug('transactItems', JSON.stringify(transactItems, null, 2));
 
           response = await retryOperation(() => 
-            this.documentClient.transactWrite({
+            this.documentClient.send(new TransactWriteCommand({
               TransactItems: transactItems,
               ReturnConsumedCapacity: 'TOTAL'
-            })
+            }))
           );
           
           // Fetch the item since transactWrite doesn't return values
@@ -328,10 +329,10 @@ const MutationMethods = {
           
           try {
             response = await retryOperation(() => 
-              this.documentClient.update({
+              this.documentClient.send(new UpdateCommand({
                 ...updateParams,
                 ReturnConsumedCapacity: 'TOTAL'
-              })
+              }))
             );
           } catch (error) {
             logger.error(`DynamoDB update failed for ${primaryId}:`, error);

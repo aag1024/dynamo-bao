@@ -5,6 +5,7 @@ const { ObjectNotFound } = require('../object-not-found');
 const { PrimaryKeyConfig } = require('../model-config');
 const assert = require('assert');
 const { retryOperation } = require('../utils/retry-helper');
+const { QueryCommand } = require('@aws-sdk/lib-dynamodb');
 
 const QueryMethods = {
   async queryByPrimaryKey(pkValue, skCondition = null, options = {}) {
@@ -16,7 +17,7 @@ const QueryMethods = {
     );
 
     const response = await retryOperation(() => 
-      this.documentClient.query(params)
+      this.documentClient.send(new QueryCommand(params))
     );
     
     return this.processQueryResponse(response, options);
@@ -126,7 +127,7 @@ const QueryMethods = {
     });
 
     const response = await retryOperation(() => 
-      this.documentClient.query(params)
+      this.documentClient.send(new QueryCommand(params))
     );
   
     // Add debug logging

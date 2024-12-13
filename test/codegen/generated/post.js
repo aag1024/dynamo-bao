@@ -12,6 +12,7 @@ const {
   GSI_INDEX_ID2
 } = require('dynamo-bao').constants;
 
+
 const { 
     UlidField,
     RelatedField,
@@ -19,6 +20,9 @@ const {
     CreateDateField,
     VersionField
 } = require('dynamo-bao').fields;
+
+
+
 
 const { Comment } = require('./comment');
 const { TaggedPost } = require('./tagged-post');

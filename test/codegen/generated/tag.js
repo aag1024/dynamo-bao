@@ -6,11 +6,15 @@ const {
   PrimaryKeyConfig
 } = require('dynamo-bao');
 
+
 const { 
     UlidField,
     StringField,
     CreateDateField
 } = require('dynamo-bao').fields;
+
+
+
 
 const { TaggedPost } = require('./tagged-post');
 
@@ -18,7 +22,7 @@ class Tag extends BaseModel {
   static modelPrefix = 't';
   
   static fields = {
-    tagId: UlidField({ required: true, autoAssign: true }),
+    tagId: UlidField({ autoAssign: true, required: true }),
     name: StringField({ required: true }),
     createdAt: CreateDateField(),
   };

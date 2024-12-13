@@ -8,22 +8,22 @@ const {
 
 
 const { 
-    RelatedField,
+    UlidField,
     StringField
 } = require('dynamo-bao').fields;
 
 
+const { EmailField } = require('../custom-fields/email-field');
 
 
 
-
-class UserProfile extends BaseModel {
-  static modelPrefix = 'up';
+class UserWithEmail extends BaseModel {
+  static modelPrefix = 'u';
   
   static fields = {
-    userId: RelatedField('User', { required: true }),
-    name: StringField({ required: true }),
-    profilePictureUrl: StringField(),
+    userId: UlidField({ required: true, autoAssign: true }),
+    email: EmailField({ required: true, allowedDomains: ["company.com","subsidiary.com"] }),
+    name: StringField(),
   };
 
   static primaryKey = PrimaryKeyConfig('userId', 'modelPrefix');
@@ -32,9 +32,6 @@ class UserProfile extends BaseModel {
 
 
 
-  async cgGetUser() {
-    return await this.getOrLoadRelatedField('userId');
-  }
 }
 
-module.exports = { UserProfile };
+module.exports = { UserWithEmail };

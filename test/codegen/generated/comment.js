@@ -7,6 +7,7 @@ const {
   IndexConfig
 } = require('dynamo-bao');
 
+
 const { 
     UlidField,
     RelatedField,
@@ -17,16 +18,19 @@ const {
 
 
 
+
+
+
 class Comment extends BaseModel {
   static modelPrefix = 'c';
   
   static fields = {
-    commentId: UlidField({ required: true, autoAssign: true }),
+    commentId: UlidField({ autoAssign: true, required: true }),
     authorId: RelatedField('User', { required: false }),
     postId: RelatedField('Post', { required: false }),
     text: StringField(),
     createdAt: CreateDateField(),
-    numLikes: IntegerField(),
+    numLikes: IntegerField({ defaultValue: 0 }),
   };
 
   static primaryKey = PrimaryKeyConfig('postId', 'commentId');

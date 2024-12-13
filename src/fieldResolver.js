@@ -1,10 +1,9 @@
 const path = require('path');
+const fs = require('fs');
 
 class FieldResolver {
   constructor(builtInFieldsPath, customFieldsPath) {
-    console.log('Loading built-in fields from:', builtInFieldsPath);
     this.builtInFields = require(builtInFieldsPath);
-    console.log('Available built-in fields:', Object.keys(this.builtInFields));
     this.customFieldsPath = customFieldsPath;
     this.fieldDefinitionCache = new Map();
 
@@ -15,30 +14,46 @@ class FieldResolver {
   }
 
   getFieldDefinition(fieldType) {
-    console.log('Looking for field type:', fieldType);
     
     if (this.fieldDefinitionCache.has(fieldType)) {
-      console.log('Found in cache');
       return this.fieldDefinitionCache.get(fieldType);
     }
 
     // Try custom fields if available
     if (this.customFieldsPath) {
       try {
-        console.log('Looking in custom fields:', this.customFieldsPath);
-        const customFields = require(this.customFieldsPath);
-        if (customFields[fieldType]) {
-          console.log('Found in custom fields');
-          const fieldDefinition = customFields[fieldType];
-          this.fieldDefinitionCache.set(fieldType, fieldDefinition);
-          return fieldDefinition;
+        // Convert to kebab case for file name
+        const baseName = fieldType.replace(/Field$/, '');
+        const kebabName = baseName
+          .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
+          .toLowerCase();
+        const fieldPath = path.join(this.customFieldsPath, `${kebabName}-field.js`);
+        
+        if (fs.existsSync(fieldPath)) {
+          const customField = require(fieldPath);
+          // Get the field from the exports using the original field type name
+          const fieldDefinition = customField[fieldType];
+          if (fieldDefinition) {
+            this.fieldDefinitionCache.set(fieldType, fieldDefinition);
+            return fieldDefinition;
+          }
         }
       } catch (err) {
-        console.log('Error loading custom fields:', err.message);
+        console.error('Error loading custom field:', err.message);
       }
     }
 
     throw new Error(`Field type '${fieldType}' not found in built-in or custom fields`);
+  }
+
+  isCustomField(fieldType) {
+    if (!this.customFieldsPath) return false;
+    const baseName = fieldType.replace(/Field$/, '');
+    const kebabName = baseName
+      .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
+      .toLowerCase();
+    const fieldPath = path.join(this.customFieldsPath, `${kebabName}-field.js`);
+    return fs.existsSync(fieldPath);
   }
 }
 

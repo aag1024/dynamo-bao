@@ -11,6 +11,7 @@ const {
   UNIQUE_CONSTRAINT_ID1
 } = require('dynamo-bao').constants;
 
+
 const { 
     UlidField,
     StringField,
@@ -18,13 +19,16 @@ const {
     ModifiedDateField
 } = require('dynamo-bao').fields;
 
+
+
+
 const { Post } = require('./post');
 
 class User extends BaseModel {
   static modelPrefix = 'u';
   
   static fields = {
-    userId: UlidField({ required: true, autoAssign: true }),
+    userId: UlidField({ autoAssign: true, required: true }),
     name: StringField({ required: true }),
     email: StringField({ required: true }),
     profilePictureUrl: StringField(),

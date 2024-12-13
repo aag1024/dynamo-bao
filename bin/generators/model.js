@@ -10,6 +10,7 @@ function generateModelClass(modelName, modelConfig, allModels, fieldResolver) {
 
   // Track which fields, constants, and models are actually used
   const usedFields = new Set();
+  const customFields = new Set();
   const baseImports = new Set(['BaseModel']);
   const constantImports = new Set();
 
@@ -22,16 +23,27 @@ function generateModelClass(modelName, modelConfig, allModels, fieldResolver) {
         throw new Error(`Field type '${fieldConfig.type}' not found for ${modelName}.${fieldName}`);
       }
       
-      usedFields.add(fieldConfig.type);
+      // Track if this is a built-in or custom field
+      if (fieldResolver.isCustomField(fieldConfig.type)) {
+        customFields.add(fieldConfig.type);
+      } else {
+        usedFields.add(fieldConfig.type);
+      }
       
       if (fieldConfig.type === 'RelatedField') {
         return `    ${fieldName}: ${fieldConfig.type}('${fieldConfig.model}', { required: ${!!fieldConfig.required} }),`;
       }
 
-      const options = [];
-      if (fieldConfig.required) options.push('required: true');
-      if (fieldConfig.autoAssign) options.push('autoAssign: true');
-      
+      // Build options object from all field config properties except 'type'
+      const options = Object.entries(fieldConfig)
+        .filter(([key]) => key !== 'type')
+        .map(([key, value]) => {
+          // Handle different types of values
+          if (typeof value === 'string') return `${key}: '${value}'`;
+          if (Array.isArray(value)) return `${key}: ${JSON.stringify(value)}`;
+          return `${key}: ${value}`;
+        });
+
       const optionsStr = options.length ? `{ ${options.join(', ')} }` : '';
       return `    ${fieldName}: ${fieldConfig.type}(${optionsStr}),`;
     })
@@ -82,6 +94,18 @@ function generateModelClass(modelName, modelConfig, allModels, fieldResolver) {
   const baseImportStr = Array.from(baseImports).join(',\n  ');
   const constantImportStr = Array.from(constantImports).join(',\n  ');
   const fieldImports = Array.from(usedFields).join(',\n    ');
+  
+  // Generate custom field imports
+  const customFieldImports = Array.from(customFields)
+    .map(fieldType => {
+      // Remove 'Field' suffix before converting to kebab case
+      const baseName = fieldType.replace(/Field$/, '');
+      const kebabName = baseName
+        .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
+        .toLowerCase();
+      return `const { ${fieldType} } = require('../custom-fields/${kebabName}-field');`;
+    })
+    .join('\n');
 
   // Generate the final code with separated imports
   return `// 🧨 🧨 🧨 🧨 🧨 🧨 🧨 🧨 🧨 🧨 🧨 🧨 🧨 🧨 🧨  
@@ -95,9 +119,13 @@ ${constantImports.size > 0 ? `const {
   ${constantImportStr}
 } = require('dynamo-bao').constants;
 
-` : ''}const { 
+` : ''}
+${usedFields.size > 0 ? `const { 
     ${fieldImports}
 } = require('dynamo-bao').fields;
+
+` : ''}
+${customFieldImports}
 
 ${Array.from(relatedModels).map(model => {
   const kebabName = model
@@ -154,7 +182,7 @@ function generateModelFiles(models, outputDir, fieldResolver) {
     
     const filePath = path.join(outputDir, `${fileName}.js`);
     fs.writeFileSync(filePath, code);
-    logger.debug(`Generated ${filePath}`);
+    console.log(`Generated ${filePath}`);
   });
 }
 

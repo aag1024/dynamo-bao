@@ -8,9 +8,16 @@ const { createLogger } = require('./utils/scriptLogger');
 const FieldResolver = require('../src/fieldResolver');
 const logger = createLogger('CodeGen');
 
-function loadConfig() {
+function loadConfig(definitionsPath) {
   try {
-    return require(path.resolve(process.cwd(), './config.js'));
+    // First try environment variable
+    if (process.env.DYNAMO_BAO_CONFIG) {
+      return require(path.resolve(process.cwd(), process.env.DYNAMO_BAO_CONFIG));
+    }
+    
+    // Then try config.js in the same directory as definitions
+    const configPath = path.resolve(path.dirname(definitionsPath), 'config.js');
+    return require(configPath);
   } catch (err) {
     logger.debug('No config file found, using defaults');
     return {};
@@ -72,7 +79,7 @@ function main() {
   }
   
   try {
-    const config = loadConfig();
+    const config = loadConfig(definitionsPath);
     
     // Built-in fields are in fields.js
     const builtInFieldsPath = path.resolve(__dirname, '../src/fields.js');

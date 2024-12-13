@@ -5,6 +5,10 @@ const path = require('path');
 const chokidar = require('chokidar');
 const { loadModelDefinitions } = require('./codegen');
 const { generateModelFiles } = require('./generators/model');
+const FieldResolver = require('../src/fieldResolver');
+const { createLogger } = require('./utils/scriptLogger');
+
+const logger = createLogger('Watch');
 
 function loadConfig() {
   const configPath = path.resolve(process.cwd(), './config.js');
@@ -23,10 +27,18 @@ function generateModels(definitionsPath) {
   
   try {
     const definitions = loadModelDefinitions(definitionsPath);
-    generateModelFiles(definitions.models, config.paths.modelsDir);
-    console.log('Models generated successfully');
+    const builtInFieldsPath = path.resolve(__dirname, '../src/fields');
+    const customFieldsPath = path.resolve(path.dirname(definitionsPath), 'custom-fields');
+    
+    const fieldResolver = new FieldResolver(
+      builtInFieldsPath,
+      fs.existsSync(customFieldsPath) ? customFieldsPath : null
+    );
+
+    generateModelFiles(definitions.models, config.paths.modelsDir, fieldResolver);
+    logger.info('Models generated successfully');
   } catch (error) {
-    console.error('Error generating models:', error);
+    logger.error('Error generating models:', error);
   }
 }
 

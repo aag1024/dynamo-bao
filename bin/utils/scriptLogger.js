@@ -1,25 +1,10 @@
-const DEBUG = process.env.DEBUG === 'true';
+const createLogger = (name) => {
+  return {
+    debug: (...args) => console.log(`[${name}]`, ...args),
+    info: (...args) => console.log(`[${name}]`, ...args),
+    warn: (...args) => console.warn(`[${name}]`, ...args),
+    error: (...args) => console.error(`[${name}]`, ...args)
+  };
+};
 
-class ScriptLogger {
-  constructor(context) {
-    this.context = context;
-  }
-
-  debug(...args) {
-    if (DEBUG) {
-      console.log(`[${this.context}]`, ...args);
-    }
-  }
-
-  warn(...args) {
-    console.warn(`[${this.context}]`, ...args);
-  }
-
-  error(...args) {
-    console.error(`[${this.context}]`, ...args);
-  }
-}
-
-module.exports = {
-  createLogger: (context) => new ScriptLogger(context)
-}; 
+module.exports = { createLogger }; 

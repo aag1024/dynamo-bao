@@ -75,7 +75,7 @@ const BatchLoadingMethods = {
       const batchIds = idsToLoad.slice(i, i + 100);
       const Keys = batchIds.map(id => {
         const pkSk = this.parsePrimaryId(id);
-        return this.getDyKeyForPkSk(pkSk);
+        return this._getDyKeyForPkSk(pkSk);
       });
 
       let unprocessedKeys = Keys;
@@ -152,7 +152,7 @@ const BatchLoadingMethods = {
     if (batchDelay === 0) {
       // Direct DynamoDB request logic
       const pkSk = this.parsePrimaryId(primaryId);
-      const dyKey = this.getDyKeyForPkSk(pkSk);
+      const dyKey = this._getDyKeyForPkSk(pkSk);
       const result = await this.documentClient.send(new GetCommand({
         TableName: this.table,
         Key: dyKey,

@@ -30,7 +30,7 @@ class Tag extends BaseModel {
   async cgGetPosts(mapSkCondition=null, limit=null, direction='ASC', startKey=null) {
     return await TaggedPost.getRelatedObjectsViaMap(
       "postsForTag",
-      this.getPkValue(),
+      this._getPkValue(),
       "postId",
       mapSkCondition,
       limit,
@@ -41,7 +41,7 @@ class Tag extends BaseModel {
   async cgGetRecentPosts(mapSkCondition=null, limit=null, direction='ASC', startKey=null) {
     return await TaggedPost.getRelatedObjectsViaMap(
       "recentPostsForTag",
-      this.getPkValue(),
+      this._getPkValue(),
       "postId",
       mapSkCondition,
       limit,

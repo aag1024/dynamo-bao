@@ -25,11 +25,11 @@ const MutationMethods = {
     });
 
     // Now calculate primary key values using the processed data
-    const pkValue = this.getPkValue(processedData);
-    const skValue = this.getSkValue(processedData);
+    const pkValue = this._getPkValue(processedData);
+    const skValue = this._getSkValue(processedData);
     
     // Format the primary key
-    const pk = this.formatPrimaryKey(this.modelPrefix, pkValue);
+    const pk = this._formatPrimaryKey(this.modelPrefix, pkValue);
     const primaryId = this.getPrimaryId({
       ...processedData,
       _pk: pk,
@@ -47,7 +47,7 @@ const MutationMethods = {
     await pluginManager.executeHooks(this.name, 'beforeSave', data, { ...options, isNew: false });
 
     Object.entries(data).forEach(([fieldName, value]) => {
-      const field = this.getField(fieldName);
+      const field = this._getField(fieldName);
       if (field) {
         field.validate(value, fieldName);
       }
@@ -138,7 +138,7 @@ const MutationMethods = {
       }
 
       // Validate unique constraints before attempting save
-      await this.validateUniqueConstraints(jsUpdates, isNew ? null : primaryId);
+      await this._validateUniqueConstraints(jsUpdates, isNew ? null : primaryId);
 
       const transactItems = [];
       const dyUpdatesToSave = {};
@@ -172,7 +172,7 @@ const MutationMethods = {
       // Handle unique constraints
       for (const constraint of Object.values(this.uniqueConstraints || {})) {
         const fieldName = constraint.field;
-        const field = this.getField(fieldName);
+        const field = this._getField(fieldName);
         const dyNewValue = dyUpdatesToSave[fieldName];
         const dyCurrentValue = currentItem?._originalData[fieldName];
 
@@ -215,7 +215,7 @@ const MutationMethods = {
       }
 
       // Add GSI keys
-      const indexKeys = this.getIndexKeys(dyUpdatesToSave);
+      const indexKeys = this._getIndexKeys(dyUpdatesToSave);
       logger.debug('indexKeys', indexKeys);
       Object.assign(dyUpdatesToSave, indexKeys);
 
@@ -247,7 +247,7 @@ const MutationMethods = {
           : [constraints.fieldMatches];
 
         matchFields.forEach((fieldName, index) => {
-          if (!this.getField(fieldName)) {
+          if (!this._getField(fieldName)) {
             throw new Error(`Unknown field in fieldMatches constraint: ${fieldName}`);
           }
 
@@ -265,7 +265,7 @@ const MutationMethods = {
       // When building update expression, pass both old and new data
       const { updateExpression, names, values } = this._buildUpdateExpression(dyUpdatesToSave);
 
-      const dyKey = this.getDyKeyForPkSk(this.parsePrimaryId(primaryId));
+      const dyKey = this._getDyKeyForPkSk(this.parsePrimaryId(primaryId));
       logger.debug('dyKey', dyKey);
       
       // Create the update params
@@ -359,7 +359,7 @@ const MutationMethods = {
         }
 
         if (error.name === 'TransactionCanceledException') {
-          await this.validateUniqueConstraints(jsUpdates, isNew ? null : primaryId);
+          await this._validateUniqueConstraints(jsUpdates, isNew ? null : primaryId);
         }
         throw error;
       }
@@ -381,7 +381,7 @@ const MutationMethods = {
       // Skip undefined values
       if (value === undefined) continue;
 
-      const field = this.getField(fieldName);
+      const field = this._getField(fieldName);
       
       // Handle null values differently - use REMOVE instead of SET
       if (value === null) {
@@ -427,6 +427,49 @@ const MutationMethods = {
       names,
       values
     };
+  },
+
+  _getIndexKeys(data) {
+    const indexKeys = {};
+    
+    Object.entries(this.indexes).forEach(([indexName, index]) => {
+      let pkValue, skValue;
+      
+      // Handle partition key
+      if (index.pk === 'modelPrefix') {
+        pkValue = this.modelPrefix;
+      } else {
+        const pkField = this._getField(index.pk);
+        pkValue = data[index.pk];
+        if (pkValue !== undefined) {
+          pkValue = pkField.toGsi(pkValue);
+        }
+      }
+      
+      // Handle sort key
+      if (index.sk === 'modelPrefix') {
+        skValue = this.modelPrefix;
+      } else {
+        const skField = this._getField(index.sk);
+        skValue = data[index.sk];
+        if (skValue !== undefined) {
+          skValue = skField.toGsi(skValue);
+        }
+      }
+      
+      if (pkValue !== undefined && skValue !== undefined && index.indexId !== undefined) {
+        logger.debug('indexKeys', {
+          pkValue,
+          skValue,
+          indexId: index.indexId
+        });
+        const gsiPk = this._formatGsiKey(this.modelPrefix, index.indexId, pkValue);
+        indexKeys[`_${index.indexId}_pk`] = gsiPk;
+        indexKeys[`_${index.indexId}_sk`] = skValue;
+      }
+    });
+    
+    return indexKeys;
   }
 };
 

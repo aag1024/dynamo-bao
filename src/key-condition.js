@@ -177,7 +177,7 @@ class KeyConditionBuilder {
     }
 
     // Get the field definition to use its toGsi method
-    const field = model.getField(fieldName);
+    const field = model._getField(fieldName);
     const nameKey = '#sk';
     const names = { '#sk': gsiSortKeyName };
 

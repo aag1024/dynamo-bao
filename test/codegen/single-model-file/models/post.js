@@ -53,7 +53,7 @@ class Post extends BaseModel {
   async cgQueryComments(skCondition = null, options = {}) {
     const results = await Comment.queryByIndex(
       'commentsForPost',
-      this.getPkValue(),
+      this._getPkValue(),
       skCondition,
       options
     );
@@ -63,7 +63,7 @@ class Post extends BaseModel {
   async cgGetTags(mapSkCondition=null, limit=null, direction='ASC', startKey=null) {
     return await TaggedPost.getRelatedObjectsViaMap(
       "tagsForPost",
-      this.getPkValue(),
+      this._getPkValue(),
       "tagId",
       mapSkCondition,
       limit,

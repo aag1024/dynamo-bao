@@ -9,9 +9,9 @@ const { QueryCommand } = require('@aws-sdk/lib-dynamodb');
 
 const QueryMethods = {
   async queryByPrimaryKey(pkValue, skCondition = null, options = {}) {
-    const params = this.getBaseQueryParams(
+    const params = this._getBaseQueryParams(
       '_pk',
-      this.formatPrimaryKey(this.modelPrefix, pkValue),
+      this._formatPrimaryKey(this.modelPrefix, pkValue),
       skCondition,
       options
     );
@@ -20,7 +20,7 @@ const QueryMethods = {
       this.documentClient.send(new QueryCommand(params))
     );
     
-    return this.processQueryResponse(response, options);
+    return this._processQueryResponse(response, options);
   },
 
   async getRelatedObjectsViaMap(indexName, pkValue, targetField, mapSkCondition=null, 
@@ -98,14 +98,14 @@ const QueryMethods = {
     // Format the partition key using the field's toGsi method
     let formattedPk;
     if (index instanceof PrimaryKeyConfig) {
-      formattedPk = this.formatPrimaryKey(this.modelPrefix, pkValue);
+      formattedPk = this._formatPrimaryKey(this.modelPrefix, pkValue);
     } else {
-      const pkField = this.getField(index.pk);
+      const pkField = this._getField(index.pk);
       const gsiValue = pkField.toGsi(pkValue);
-      formattedPk = this.formatGsiKey(this.modelPrefix, index.indexId, gsiValue);
+      formattedPk = this._formatGsiKey(this.modelPrefix, index.indexId, gsiValue);
     }
   
-    const params = this.getBaseQueryParams(
+    const params = this._getBaseQueryParams(
       index instanceof PrimaryKeyConfig ? '_pk' : `_${index.indexId}_pk`,
       formattedPk,
       skCondition ? { [index.sk]: skCondition[index.sk] } : null,
@@ -150,13 +150,13 @@ const QueryMethods = {
       totalItems = response.Items.length;
     }
     
-    return this.processQueryResponse(response, { 
+    return this._processQueryResponse(response, { 
       ...options, 
       totalItems 
     });
   },
 
-  getBaseQueryParams(pkFieldName, pkValue, skCondition, options = {}) {
+  _getBaseQueryParams(pkFieldName, pkValue, skCondition, options = {}) {
     const keyBuilder = new KeyConditionBuilder();
     let keyConditionExpression = `#pk = :pk`;
     const expressionNames = { '#pk': pkFieldName };
@@ -226,7 +226,7 @@ const QueryMethods = {
     return params;
   },
 
-  async processQueryResponse(response, options = {}) {
+  async _processQueryResponse(response, options = {}) {
     if (options.countOnly) {
       return {
         count: response.Count,
@@ -265,49 +265,6 @@ const QueryMethods = {
       lastEvaluatedKey: response.LastEvaluatedKey,
       consumedCapacity: response.ConsumedCapacity,
     };
-  },
-
-  getIndexKeys(data) {
-    const indexKeys = {};
-    
-    Object.entries(this.indexes).forEach(([indexName, index]) => {
-      let pkValue, skValue;
-      
-      // Handle partition key
-      if (index.pk === 'modelPrefix') {
-        pkValue = this.modelPrefix;
-      } else {
-        const pkField = this.getField(index.pk);
-        pkValue = data[index.pk];
-        if (pkValue !== undefined) {
-          pkValue = pkField.toGsi(pkValue);
-        }
-      }
-      
-      // Handle sort key
-      if (index.sk === 'modelPrefix') {
-        skValue = this.modelPrefix;
-      } else {
-        const skField = this.getField(index.sk);
-        skValue = data[index.sk];
-        if (skValue !== undefined) {
-          skValue = skField.toGsi(skValue);
-        }
-      }
-      
-      if (pkValue !== undefined && skValue !== undefined && index.indexId !== undefined) {
-        logger.debug('indexKeys', {
-          pkValue,
-          skValue,
-          indexId: index.indexId
-        });
-        const gsiPk = this.formatGsiKey(this.modelPrefix, index.indexId, pkValue);
-        indexKeys[`_${index.indexId}_pk`] = gsiPk;
-        indexKeys[`_${index.indexId}_sk`] = skValue;
-      }
-    });
-    
-    return indexKeys;
   }
 };
 

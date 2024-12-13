@@ -91,7 +91,7 @@ describe('Capacity Tracking', () => {
   describe('Query Operations', () => {
     test('should track capacity for query operations', async () => {
       const result = await verifyCapacityUsage(
-        async () => await Comment.queryByIndex('commentsForPost', testPost.getPkValue()),
+        async () => await Comment.queryByIndex('commentsForPost', testPost._getPkValue()),
         1.0,  // Expected RCU
         0     // Expected WCU
       );
@@ -102,7 +102,7 @@ describe('Capacity Tracking', () => {
       const result = await verifyCapacityUsage(
         async () => await Comment.queryByIndex(
           'commentsForPost',
-          testPost.getPkValue(),
+          testPost._getPkValue(),
           null,
           {
             loadRelated: true,

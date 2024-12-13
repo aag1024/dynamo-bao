@@ -81,7 +81,7 @@ describe('Related Field Queries', () => {
       const user = await User.find(testUser.userId);
       const posts = await Post.queryByIndex(
         'postsForUser',
-        user.getPkValue());
+        user._getPkValue());
       
       expect(posts.items).toHaveLength(2);
       posts.items.forEach(post => {
@@ -93,7 +93,7 @@ describe('Related Field Queries', () => {
       const user = await User.find(testUser.userId);
       const firstPage = await Post.queryByIndex(
         'postsForUser',
-        user.getPkValue(),
+        user._getPkValue(),
         null, 
         {
           limit: 1,
@@ -106,7 +106,7 @@ describe('Related Field Queries', () => {
 
       const secondPage = await Post.queryByIndex(
         'postsForUser',
-        user.getPkValue(),
+        user._getPkValue(),
         null, 
         {
           limit: 2,
@@ -126,7 +126,7 @@ describe('Related Field Queries', () => {
       const tag = await Tag.find(testTags[0].tagId);
       const posts = await TaggedPost.getRelatedObjectsViaMap(
         "postsForTag",
-        tag.getPkValue(),
+        tag._getPkValue(),
         "postId"
       );
       
@@ -140,7 +140,7 @@ describe('Related Field Queries', () => {
       const post = await Post.find(testPosts[0].postId);
       const tags = await TaggedPost.getRelatedObjectsViaMap(
         "tagsForPost",
-        post.getPkValue(),
+        post._getPkValue(),
         "tagId"
       );
       
@@ -154,7 +154,7 @@ describe('Related Field Queries', () => {
       const tag = await Tag.find(testTags[0].tagId);
       const firstPage = await TaggedPost.getRelatedObjectsViaMap(
         "postsForTag",
-        tag.getPkValue(),
+        tag._getPkValue(),
         "postId",
         null,
         1,
@@ -166,7 +166,7 @@ describe('Related Field Queries', () => {
 
       const secondPage = await TaggedPost.getRelatedObjectsViaMap(
         "postsForTag",
-        tag.getPkValue(),
+        tag._getPkValue(),
         "postId",
         null,
         2,
@@ -185,7 +185,7 @@ describe('Related Field Queries', () => {
       const user = await User.find(testUser.userId);
       const posts = await Post.queryByIndex(
         'postsForUser',
-        user.getPkValue(),
+        user._getPkValue(),
         null,
         {
           limit: null,
@@ -206,7 +206,7 @@ describe('Related Field Queries', () => {
       const user = await User.find(testUser.userId);
       const posts = await Post.queryByIndex(
         'postsForUser',
-        user.getPkValue(),
+        user._getPkValue(),
         null,
         {
           limit: null,
@@ -227,7 +227,7 @@ describe('Related Field Queries', () => {
       const user = await User.find(testUser.userId);
       const firstPage = await Post.queryByIndex(
         'postsForUser',
-        user.getPkValue(),
+        user._getPkValue(),
         null,
         {
           limit: 1,
@@ -242,7 +242,7 @@ describe('Related Field Queries', () => {
 
       const secondPage = await Post.queryByIndex(
         'postsForUser',
-        user.getPkValue(),
+        user._getPkValue(),
         null,
         {
           limit: 1,

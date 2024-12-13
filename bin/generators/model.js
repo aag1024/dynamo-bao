@@ -205,7 +205,7 @@ function generateQueryMethods(modelName, modelConfig, allModels) {
   async cgQuery${otherModelName}s(skCondition = null, options = {}) {
     const results = await ${otherModelName}.queryByIndex(
       '${primaryKeyIndexName}',
-      this.getPkValue(),
+      this._getPkValue(),
       skCondition,
       options
     );
@@ -238,7 +238,7 @@ function generateQueryMethods(modelName, modelConfig, allModels) {
   async ${methodName}(skCondition = null, options = {}) {
     const results = await ${otherModelName}.queryByIndex(
       '${indexName}',
-      this.getPkValue(),
+      this._getPkValue(),
       skCondition,
       options
     );
@@ -288,7 +288,7 @@ function generateQueryMethods(modelName, modelConfig, allModels) {
   async ${methodName}(mapSkCondition=null, limit=null, direction='ASC', startKey=null) {
     return await ${mapModelName}.getRelatedObjectsViaMap(
       "${indexName}",
-      this.getPkValue(),
+      this._getPkValue(),
       "${targetFieldName}",
       mapSkCondition,
       limit,

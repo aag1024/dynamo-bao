@@ -204,7 +204,7 @@ let testUser, testPost, testId;
         // Query comments using the post instance
         const result = await Comment.queryByIndex(
           'commentsForPost',
-          testPost.getPkValue()
+          testPost._getPkValue()
         );
         
         expect(result.items).toHaveLength(2);
@@ -231,7 +231,7 @@ let testUser, testPost, testId;
         // Get first page
         const firstPage = await Comment.queryByIndex(
           'commentsForPost',
-          testPost.getPkValue(),
+          testPost._getPkValue(),
           null,
           {
             limit: 1
@@ -243,7 +243,7 @@ let testUser, testPost, testId;
         // Get second page
         const secondPage = await Comment.queryByIndex(
           'commentsForPost',
-          testPost.getPkValue(),
+          testPost._getPkValue(),
           null,
           {
             limit: 2,
@@ -266,7 +266,7 @@ let testUser, testPost, testId;
 
         const result = await Comment.queryByIndex(
           'commentsForPost',
-          emptyPost.getPkValue()
+          emptyPost._getPkValue()
         );
         
         expect(result.items).toHaveLength(0);

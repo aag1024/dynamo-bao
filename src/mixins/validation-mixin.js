@@ -28,13 +28,13 @@ const ValidationMethods = {
     });
 
     // Ensure primary key fields are required
-    const pkField = this.getField(this.primaryKey.pk);
+    const pkField = this._getField(this.primaryKey.pk);
     if (!pkField.required) {
       logger.warn(`Warning: Primary key field '${this.primaryKey.pk}' in ${this.name} was not explicitly marked as required. Marking as required automatically.`);
       pkField.required = true;
     }
     
-    const skField = this.getField(this.primaryKey.sk);
+    const skField = this._getField(this.primaryKey.sk);
     if (!skField.required) {
       logger.warn(`Warning: Sort key field '${this.primaryKey.sk}' in ${this.name} was not explicitly marked as required. Marking as required automatically.`);
       skField.required = true;
@@ -80,8 +80,8 @@ const ValidationMethods = {
       }
 
       // These will throw errors if the fields don't exist
-      const idxPkField = this.getField(index.pk);
-      const idxSkField = this.getField(index.sk);
+      const idxPkField = this._getField(index.pk);
+      const idxSkField = this._getField(index.sk);
     });
 
     // Validate unique constraints
@@ -96,7 +96,7 @@ const ValidationMethods = {
         throw new Error(`Invalid constraint ID ${constraint.constraintId} in ${this.name}`);
       }
       
-      if (!this.getField(constraint.field)) {
+      if (!this._getField(constraint.field)) {
         throw new Error(
           `Unique constraint field '${constraint.field}' not found in ${this.name} fields`
         );

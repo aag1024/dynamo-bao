@@ -3,7 +3,7 @@ const { defaultLogger: logger } = require('../utils/logger');
 const { UNIQUE_CONSTRAINT_KEY } = require('../constants');
 
 const UniqueConstraintMethods = {
-  async validateUniqueConstraints(data, currentId = null) {
+  async _validateUniqueConstraints(data, currentId = null) {
     logger.debug('validateUniqueConstraints called on', this.name, {
       modelTestId: this._testId,
       managerTestId: this.manager.getTestId(),
@@ -22,7 +22,7 @@ const UniqueConstraintMethods = {
       if (!value) continue;
 
       try {
-        const key = UniqueConstraintMethods.formatUniqueConstraintKey.call(
+        const key = this._formatUniqueConstraintKey.call(
           this,
           constraint.constraintId,
           this.modelPrefix,
@@ -64,7 +64,7 @@ const UniqueConstraintMethods = {
 
   async _createUniqueConstraint(field, value, relatedId, constraintId) {
     const testId = this.manager.getTestId();
-    const key = UniqueConstraintMethods.formatUniqueConstraintKey.call(
+    const key = this._formatUniqueConstraintKey.call(
       this,
       constraintId,
       this.modelPrefix,
@@ -105,7 +105,7 @@ const UniqueConstraintMethods = {
       Delete: {
         TableName: this.table,
         Key: {
-          _pk: UniqueConstraintMethods.formatUniqueConstraintKey.call(
+          _pk: this._formatUniqueConstraintKey.call(
             this,
             constraintId,
             this.modelPrefix,
@@ -122,13 +122,6 @@ const UniqueConstraintMethods = {
       }
     };
   }
-};
-
-// Define the static method separately
-UniqueConstraintMethods.formatUniqueConstraintKey = function(constraintId, modelPrefix, field, value) {
-  const testId = this.manager.getTestId();
-  const baseKey = `${UNIQUE_CONSTRAINT_KEY}#${constraintId}#${modelPrefix}#${field}:${value}`;
-  return testId ? `[${testId}]#${baseKey}` : baseKey;
 };
 
 module.exports = UniqueConstraintMethods; 

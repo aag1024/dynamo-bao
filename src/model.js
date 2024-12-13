@@ -56,7 +56,7 @@ class BaseModel {
     return ModelManager.getInstance(this._testId);
   }
 
-  static getField(fieldName) {
+  static _getField(fieldName) {
     let fieldDef;
     if (SYSTEM_FIELDS.includes(fieldName) || fieldName === 'modelPrefix') {
       fieldDef = StringField();
@@ -71,23 +71,23 @@ class BaseModel {
     return fieldDef;
   }
 
-  static getPkValue(data) {
+  static _getPkValue(data) {
     if (!data) {
-      throw new Error('Data object is required for static getPkValue call');
+      throw new Error('Data object is required for static _getPkValue call');
     }
 
     const pkValue = this.primaryKey.pk === 'modelPrefix' ? 
       this.modelPrefix : 
       data[this.primaryKey.pk];
 
-    logger.debug('getPkValue', pkValue);
+    logger.debug('_getPkValue', pkValue);
 
     return pkValue;
   }
 
-  static getSkValue(data) {
+  static _getSkValue(data) {
     if (!data) {
-      throw new Error('Data object is required for static getSkValue call');
+      throw new Error('Data object is required for static _getSkValue call');
     }
     
     if (this.primaryKey.sk === 'modelPrefix') {
@@ -96,40 +96,36 @@ class BaseModel {
     return data[this.primaryKey.sk];
   }
 
-  getPkValue() {
-    return this.constructor.getPkValue(this._data);
+  _getPkValue() {
+    return this.constructor._getPkValue(this._data);
   }
 
-  getSkValue() {
-    return this.constructor.getSkValue(this._data);
+  _getSkValue() {
+    return this.constructor._getSkValue(this._data);
   }
 
-  static createPrefixedKey(prefix, value) {
-    return `${prefix}#${value}`;
-  }
-
-  static formatGsiKey(modelPrefix, indexId, value) {
+  static _formatGsiKey(modelPrefix, indexId, value) {
     const testId = this.manager.getTestId();
     const baseKey = `${modelPrefix}#${indexId}#${value}`;
     return testId ? `[${testId}]#${baseKey}` : baseKey;
   }
 
-  static formatPrimaryKey(modelPrefix, value) {
+  static _formatPrimaryKey(modelPrefix, value) {
     const testId = this.manager.getTestId();
     const baseKey = `${modelPrefix}#${value}`;
     return testId ? `[${testId}]#${baseKey}` : baseKey;
   }
 
-  static formatUniqueConstraintKey(constraintId, modelPrefix, field, value) {
+  static _formatUniqueConstraintKey(constraintId, modelPrefix, field, value) {
     const testId = this.manager.getTestId();
     const baseKey = `${UNIQUE_CONSTRAINT_KEY}#${constraintId}#${modelPrefix}#${field}:${value}`;
     return testId ? `[${testId}]#${baseKey}` : baseKey;
   }
 
-  static getDyKeyForPkSk(pkSk) {
+  static _getDyKeyForPkSk(pkSk) {
     if (this.primaryKey.sk === 'modelPrefix') {
       return {
-        _pk: this.formatPrimaryKey(this.modelPrefix, pkSk.pk),
+        _pk: this._formatPrimaryKey(this.modelPrefix, pkSk.pk),
         _sk: this.modelPrefix
       };
     }
@@ -140,7 +136,7 @@ class BaseModel {
       };
     } else {
       return {
-        _pk: this.formatPrimaryKey(this.modelPrefix, pkSk.pk),
+        _pk: this._formatPrimaryKey(this.modelPrefix, pkSk.pk),
         _sk: pkSk.sk
       };
     }
@@ -199,13 +195,13 @@ class BaseModel {
 
   // Returns the pk and sk values for a given object. These are encoded to work with
   // dynamo string keys. No test prefix or model prefix is applied.
-  static getPrimaryKeyValues(data) {
+  static _getPrimaryKeyValues(data) {
     if (!data) {
-      throw new Error('Data object is required for getPrimaryKeyValues call');
+      throw new Error('Data object is required for _getPrimaryKeyValues call');
     }
 
-    const pkField = this.getField(this.primaryKey.pk);
-    const skField = this.getField(this.primaryKey.sk);
+    const pkField = this._getField(this.primaryKey.pk);
+    const skField = this._getField(this.primaryKey.sk);
 
     if (skField === undefined && this.primaryKey.sk !== 'modelPrefix') {
       throw new Error(`SK field is required for getPkSk call`);
@@ -216,8 +212,8 @@ class BaseModel {
     }
 
     // If the field is set, use the GSI value, otherwise use the raw value
-    const pkValue = pkField ? pkField.toGsi(this.getPkValue(data)) : this.getPkValue(data);
-    const skValue = skField ? skField.toGsi(this.getSkValue(data)) : this.getSkValue(data);
+    const pkValue = pkField ? pkField.toGsi(this._getPkValue(data)) : this._getPkValue(data);
+    const skValue = skField ? skField.toGsi(this._getSkValue(data)) : this._getSkValue(data);
 
     if (pkValue === undefined || skValue === undefined || pkValue === null || skValue === null) {
       throw new Error(`PK and SK must be defined to get a PkSk`);
@@ -228,14 +224,14 @@ class BaseModel {
       sk: skValue
     }
 
-    logger.debug("getPrimaryKeyValues", key);
+    logger.debug("_getPrimaryKeyValues", key);
 
     return key;
   }
 
   static getPrimaryId(data) {
     logger.debug("getPrimaryId", data);
-    const pkSk = this.getPrimaryKeyValues(data);
+    const pkSk = this._getPrimaryKeyValues(data);
     logger.debug("getPrimaryId", pkSk);
 
     let primaryId;
@@ -279,7 +275,7 @@ class BaseModel {
     const changes = {};
     logger.debug('_changes Set contains:', Array.from(this._changes));
     for (const field of this._changes) {
-        const fieldDef = this.constructor.getField(field);
+        const fieldDef = this.constructor._getField(field);
         logger.debug('Field definition for', field, ':', {
             type: fieldDef.constructor.name,
             field: fieldDef
@@ -413,7 +409,7 @@ class BaseModel {
       throw new Error(`${constraint.field} value is required`);
     }
   
-    const key = this.formatUniqueConstraintKey(
+    const key = this._formatUniqueConstraintKey(
       constraint.constraintId,
       this.modelPrefix,
       constraint.field,

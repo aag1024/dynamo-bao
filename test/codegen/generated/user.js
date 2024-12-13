@@ -42,7 +42,7 @@ class User extends BaseModel {
   async cgQueryPosts(skCondition = null, options = {}) {
     const results = await Post.queryByIndex(
       'postsForUser',
-      this.getPkValue(),
+      this._getPkValue(),
       skCondition,
       options
     );

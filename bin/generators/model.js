@@ -3,7 +3,7 @@ const fs = require('fs');
 const { createLogger } = require('../utils/scriptLogger');
 const logger = createLogger('ModelGen');
 
-function generateModelClass(modelName, modelConfig, allModels) {
+function generateModelClass(modelName, modelConfig, allModels, fieldResolver) {
   if (!modelConfig || !modelConfig.fields) {
     throw new Error(`Invalid model configuration for ${modelName}: missing fields`);
   }
@@ -16,13 +16,16 @@ function generateModelClass(modelName, modelConfig, allModels) {
   // Generate fields and track used field types
   const fields = Object.entries(modelConfig.fields)
     .map(([fieldName, fieldConfig]) => {
-      // Use the field type directly, assuming it ends in 'Field'
-      const fieldClass = fieldConfig.type.endsWith('Field') ? fieldConfig.type : `${fieldConfig.type}Field`;
+      // Verify the field exists before using it
+      const fieldClass = fieldResolver.getFieldDefinition(fieldConfig.type);
+      if (!fieldClass) {
+        throw new Error(`Field type '${fieldConfig.type}' not found for ${modelName}.${fieldName}`);
+      }
       
-      usedFields.add(fieldClass);
+      usedFields.add(fieldConfig.type);
       
       if (fieldConfig.type === 'RelatedField') {
-        return `    ${fieldName}: ${fieldClass}('${fieldConfig.model}', { required: ${!!fieldConfig.required} }),`;
+        return `    ${fieldName}: ${fieldConfig.type}('${fieldConfig.model}', { required: ${!!fieldConfig.required} }),`;
       }
 
       const options = [];
@@ -30,7 +33,7 @@ function generateModelClass(modelName, modelConfig, allModels) {
       if (fieldConfig.autoAssign) options.push('autoAssign: true');
       
       const optionsStr = options.length ? `{ ${options.join(', ')} }` : '';
-      return `    ${fieldName}: ${fieldClass}(${optionsStr}),`;
+      return `    ${fieldName}: ${fieldConfig.type}(${optionsStr}),`;
     })
     .join('\n');
 
@@ -136,13 +139,13 @@ function generateUniqueConstraintMethods(modelConfig) {
     .join('\n');
 }
 
-function generateModelFiles(models, outputDir) {
+function generateModelFiles(models, outputDir, fieldResolver) {
   if (!fs.existsSync(outputDir)) {
     fs.mkdirSync(outputDir, { recursive: true });
   }
 
   Object.entries(models).forEach(([modelName, modelConfig]) => {
-    const code = generateModelClass(modelName, modelConfig, models);
+    const code = generateModelClass(modelName, modelConfig, models, fieldResolver);
     
     // Convert model name from PascalCase to kebab-case for the file name
     const fileName = modelName

@@ -5,9 +5,19 @@ const path = require('path');
 const yaml = require('js-yaml');
 const { generateModelFiles } = require('./generators/model');
 const { createLogger } = require('./utils/scriptLogger');
+const FieldResolver = require('../src/fieldResolver');
 const logger = createLogger('CodeGen');
 
-function loadModelDefinitions(definitionsPath) {
+function loadConfig() {
+  try {
+    return require(path.resolve(process.cwd(), './config.js'));
+  } catch (err) {
+    logger.debug('No config file found, using defaults');
+    return {};
+  }
+}
+
+function loadModelDefinitions(definitionsPath, fieldResolver) {
   const models = {};
 
   if (fs.statSync(definitionsPath).isDirectory()) {
@@ -43,7 +53,7 @@ function loadModelDefinitions(definitionsPath) {
   }
 
   logger.debug('Final merged models:', models);
-  return { models };
+  return { models, fieldResolver };
 }
 
 function main() {
@@ -62,8 +72,18 @@ function main() {
   }
   
   try {
-    const definitions = loadModelDefinitions(definitionsPath);
-    generateModelFiles(definitions.models, outputDir);
+    const config = loadConfig();
+    
+    // Built-in fields are in fields.js
+    const builtInFieldsPath = path.resolve(__dirname, '../src/fields.js');
+    
+    const fieldResolver = new FieldResolver(
+      builtInFieldsPath,
+      config?.paths?.fieldsDir
+    );
+    
+    const definitions = loadModelDefinitions(definitionsPath, fieldResolver);
+    generateModelFiles(definitions.models, outputDir, definitions.fieldResolver);
   } catch (error) {
     console.error('Error generating models:', error);
     console.error('Stack trace:', error.stack);

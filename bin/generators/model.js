@@ -3,7 +3,7 @@ const fs = require('fs');
 const { createLogger } = require('../utils/scriptLogger');
 const logger = createLogger('ModelGen');
 
-function generateModelClass(modelName, modelConfig, allModels, fieldResolver) {
+function generateModelClass(modelName, modelConfig, allModels, fieldResolver, outputDir) {
   if (!modelConfig || !modelConfig.fields) {
     throw new Error(`Invalid model configuration for ${modelName}: missing fields`);
   }
@@ -97,6 +97,12 @@ function generateModelClass(modelName, modelConfig, allModels, fieldResolver) {
   const constantImportStr = Array.from(constantImports).join(',\n  ');
   const fieldImports = Array.from(usedFields).join(',\n    ');
 
+  logger.debug('fieldResolver customFields', fieldResolver.customFieldsPath);
+
+  // get relative path for fieldResolver.customFieldsPath from projectPath
+  const relativePath = path.relative(outputDir, fieldResolver.customFieldsPath);
+  logger.debug('relativePath', relativePath);
+
   // Generate custom field imports
   const customFieldImports = Array.from(customFields)
     .map(fieldType => {
@@ -105,7 +111,7 @@ function generateModelClass(modelName, modelConfig, allModels, fieldResolver) {
       const kebabName = baseName
         .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
         .toLowerCase();
-      return `const { ${fieldType} } = require('../fields/${kebabName}-field');`;
+      return `const { ${fieldType} } = require('${relativePath}/${kebabName}-field');`;
     })
     .join('\n');
 
@@ -181,12 +187,13 @@ function generateModelFiles(models, outputDir, fieldResolver) {
       .toLowerCase();
     
     const filePath = path.join(outputDir, `${fileName}.js`);
+
     // delete the file if it exists
     if (fs.existsSync(filePath)) {
       fs.unlinkSync(filePath);
     }
 
-    const code = generateModelClass(modelName, modelConfig, models, fieldResolver);
+    const code = generateModelClass(modelName, modelConfig, models, fieldResolver, outputDir);
   
     fs.writeFileSync(filePath, code);
     console.log(`Generated ${filePath}`);

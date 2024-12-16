@@ -26,7 +26,7 @@ class FieldResolver {
 
     // Try custom fields if available
     if (this.customFieldsPath) {
-    //  try {
+     try {
         // Convert to kebab case for file name
         const baseName = fieldType.replace(/Field$/, '');
         const kebabName = baseName
@@ -48,9 +48,9 @@ class FieldResolver {
             return fieldDefinition;
           }
         }
-    //   } catch (err) {
-    //     console.error('Error loading custom field:', err);
-    //   }
+      } catch (err) {
+        console.error('Error loading custom field:', err);
+      }
     }
 
     throw new Error(`Field type '${fieldType}' not found in built-in or custom fields`);

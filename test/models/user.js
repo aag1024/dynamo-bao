@@ -1,29 +1,29 @@
 // src/models/user.js
-const { 
-  BaseModel, 
+const {
+  BaseModel,
   PrimaryKeyConfig,
   IndexConfig,
   UniqueConstraintConfig,
-} = require('../../src/model');
+} = require("../../src/model");
 
 const {
   GSI_INDEX_ID1,
   GSI_INDEX_ID2,
   GSI_INDEX_ID3,
   UNIQUE_CONSTRAINT_ID1,
-  UNIQUE_CONSTRAINT_ID2
-} = require('../../src/constants');
+  UNIQUE_CONSTRAINT_ID2,
+} = require("../../src/constants");
 
-const { 
-  StringField, 
-  CreateDateField, 
-  ModifiedDateField, 
-  UlidField 
-} = require('../../src/fields');
+const {
+  StringField,
+  CreateDateField,
+  ModifiedDateField,
+  UlidField,
+} = require("../../src/fields");
 
 class User extends BaseModel {
-  static modelPrefix = 'u';
-  
+  static modelPrefix = "u";
+
   static fields = {
     userId: UlidField({ autoAssign: true }),
     name: StringField({ required: true }),
@@ -31,29 +31,32 @@ class User extends BaseModel {
     externalId: StringField(),
     externalPlatform: StringField(),
     profileImageUrl: StringField(),
-    role: StringField({ 
+    role: StringField({
       required: true,
-      defaultValue: 'user'
+      defaultValue: "user",
     }),
-    status: StringField({ 
+    status: StringField({
       required: true,
-      defaultValue: 'active'
+      defaultValue: "active",
     }),
     createdAt: CreateDateField(),
     modifiedAt: ModifiedDateField(),
   };
 
-  static primaryKey = PrimaryKeyConfig('userId');
+  static primaryKey = PrimaryKeyConfig("userId");
 
   static indexes = {
-    byPlatform: IndexConfig('externalPlatform', 'userId', GSI_INDEX_ID1),
-    byRole: IndexConfig('role', 'status', GSI_INDEX_ID2),
-    byStatus: IndexConfig('status', 'createdAt', GSI_INDEX_ID3)
+    byPlatform: IndexConfig("externalPlatform", "userId", GSI_INDEX_ID1),
+    byRole: IndexConfig("role", "status", GSI_INDEX_ID2),
+    byStatus: IndexConfig("status", "createdAt", GSI_INDEX_ID3),
   };
 
   static uniqueConstraints = {
-    uniqueEmail: UniqueConstraintConfig('email', UNIQUE_CONSTRAINT_ID1),
-    uniqueExternalId: UniqueConstraintConfig('externalId', UNIQUE_CONSTRAINT_ID2)
+    uniqueEmail: UniqueConstraintConfig("email", UNIQUE_CONSTRAINT_ID1),
+    uniqueExternalId: UniqueConstraintConfig(
+      "externalId",
+      UNIQUE_CONSTRAINT_ID2,
+    ),
   };
 }
 

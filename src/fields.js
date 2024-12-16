@@ -1,6 +1,6 @@
-require('dotenv').config();
-const { ulid, decodeTime } = require('ulid');
-const { defaultLogger: logger } = require('./utils/logger');
+require("dotenv").config();
+const { ulid, decodeTime } = require("ulid");
+const { defaultLogger: logger } = require("./utils/logger");
 
 class BaseField {
   constructor(options = {}) {
@@ -11,8 +11,8 @@ class BaseField {
 
   getInitialValue() {
     if (this.defaultValue) {
-      return typeof this.defaultValue === 'function' 
-        ? this.defaultValue() 
+      return typeof this.defaultValue === "function"
+        ? this.defaultValue()
         : this.defaultValue;
     }
     return undefined;
@@ -20,7 +20,7 @@ class BaseField {
 
   validate(value) {
     if (this.required && (value === null || value === undefined)) {
-      throw new Error('Field is required');
+      throw new Error("Field is required");
     }
     return true;
   }
@@ -43,28 +43,28 @@ class BaseField {
 
   getUpdateExpression(fieldName, value) {
     if (value === undefined) return null;
-    
+
     const attributeName = `#${fieldName}`;
     const attributeValue = `:${fieldName}`;
 
     if (value === null) {
       return {
-        type: 'REMOVE',
+        type: "REMOVE",
         expression: `${attributeName}`,
         attrNameKey: attributeName,
         attrValueKey: attributeValue,
         fieldName: fieldName,
-        fieldValue: null
+        fieldValue: null,
       };
     }
-    
+
     return {
-      type: 'SET',
+      type: "SET",
       expression: `${attributeName} = ${attributeValue}`,
       attrNameKey: attributeName,
       attrValueKey: attributeValue,
       fieldName: fieldName,
-      fieldValue: value
+      fieldValue: value,
     };
   }
 
@@ -81,30 +81,37 @@ class StringField extends BaseField {
 class DateTimeField extends BaseField {
   validate(value) {
     if (this.required && value === undefined) {
-      throw new Error('Field is required');
+      throw new Error("Field is required");
     }
-    if (value !== undefined && !(value instanceof Date) && typeof value !== 'number' && typeof value !== 'string') {
-      throw new Error('DateTimeField value must be a Date object, timestamp number, or ISO string');
+    if (
+      value !== undefined &&
+      !(value instanceof Date) &&
+      typeof value !== "number" &&
+      typeof value !== "string"
+    ) {
+      throw new Error(
+        "DateTimeField value must be a Date object, timestamp number, or ISO string",
+      );
     }
   }
 
   toDy(value) {
     if (!value) return null;
-    
+
     try {
       // Convert any input to timestamp
       if (value instanceof Date) {
         return value.getTime();
       }
-      if (typeof value === 'string') {
+      if (typeof value === "string") {
         return new Date(value).getTime();
       }
-      if (typeof value === 'number') {
+      if (typeof value === "number") {
         return value;
       }
       return null;
     } catch (error) {
-      console.warn('Error converting date value:', error);
+      console.warn("Error converting date value:", error);
       return null;
     }
   }
@@ -114,30 +121,32 @@ class DateTimeField extends BaseField {
     try {
       return new Date(Number(value));
     } catch (error) {
-      console.warn('Error parsing date value:', error);
+      console.warn("Error parsing date value:", error);
       return null;
     }
   }
 
   toGsi(value) {
-    if (!value) return '0';
+    if (!value) return "0";
     try {
       // Convert to timestamp string with padding for correct sorting
       const timestamp = this.toDy(value);
-      if (!timestamp) return '0';
-      const result = timestamp.toString().padStart(20, '0');
+      if (!timestamp) return "0";
+      const result = timestamp.toString().padStart(20, "0");
       // logger.log('Converting to GSI:', { value, timestamp, result });
       return result;
     } catch (error) {
-      console.warn('Error converting date for GSI:', error);
-      return '0';
+      console.warn("Error converting date for GSI:", error);
+      return "0";
     }
   }
 }
 
 class IntegerField extends BaseField {
   getInitialValue() {
-    return this.options.defaultValue !== undefined ? this.options.defaultValue : null;
+    return this.options.defaultValue !== undefined
+      ? this.options.defaultValue
+      : null;
   }
 
   toDy(value) {
@@ -156,13 +165,15 @@ class IntegerField extends BaseField {
 
   toGsi(value) {
     // Pad with zeros for proper string sorting
-    return value != null ? value.toString().padStart(20, '0') : '';
+    return value != null ? value.toString().padStart(20, "0") : "";
   }
 }
 
 class FloatField extends BaseField {
   getInitialValue() {
-    return this.options.defaultValue !== undefined ? this.options.defaultValue : null;
+    return this.options.defaultValue !== undefined
+      ? this.options.defaultValue
+      : null;
   }
 
   toDy(value) {
@@ -185,7 +196,7 @@ class FloatField extends BaseField {
 
   toGsi(value) {
     // Scientific notation with padding for consistent sorting
-    return value != null ? value.toExponential(20) : '';
+    return value != null ? value.toExponential(20) : "";
   }
 }
 
@@ -193,7 +204,7 @@ class CreateDateField extends DateTimeField {
   constructor(options = {}) {
     super({
       ...options,
-      required: true
+      required: true,
     });
   }
 
@@ -207,14 +218,13 @@ class CreateDateField extends DateTimeField {
     }
     return value instanceof Date ? value.getTime() : value;
   }
-
 }
 
 class ModifiedDateField extends DateTimeField {
   constructor(options = {}) {
     super({
       ...options,
-      required: true
+      required: true,
     });
   }
 
@@ -236,7 +246,7 @@ class UlidField extends BaseField {
   constructor(options = {}) {
     super({
       ...options,
-      required: true
+      required: true,
     });
     this.autoAssign = options.autoAssign || false;
   }
@@ -250,21 +260,21 @@ class UlidField extends BaseField {
 
   validate(value) {
     if (!value && !this.autoAssign) {
-      throw new Error('ULID is required');
+      throw new Error("ULID is required");
     }
-    
+
     if (value) {
       // Check if it's a valid ULID format
       // ULIDs are 26 characters, uppercase alphanumeric
       if (!/^[0-9A-Z]{26}$/.test(value)) {
-        throw new Error('Invalid ULID format');
+        throw new Error("Invalid ULID format");
       }
 
       try {
         // Attempt to decode the timestamp to verify it's valid
         decodeTime(value);
       } catch (error) {
-        throw new Error('Invalid ULID: could not decode timestamp');
+        throw new Error("Invalid ULID: could not decode timestamp");
       }
     }
     return true;
@@ -276,7 +286,7 @@ class UlidField extends BaseField {
   }
 
   toGsi(value) {
-    return value || '';
+    return value || "";
   }
 }
 
@@ -288,11 +298,17 @@ class RelatedField extends BaseField {
 
   validate(value) {
     if (this.required && !value) {
-      throw new Error('Field is required');
+      throw new Error("Field is required");
     }
     // Allow both string IDs and model instances
-    if (value && typeof value !== 'string' && (!value.getPrimaryId || typeof value.getPrimaryId !== 'function')) {
-      throw new Error('Related field value must be a string ID or model instance');
+    if (
+      value &&
+      typeof value !== "string" &&
+      (!value.getPrimaryId || typeof value.getPrimaryId !== "function")
+    ) {
+      throw new Error(
+        "Related field value must be a string ID or model instance",
+      );
     }
     return true;
   }
@@ -300,7 +316,7 @@ class RelatedField extends BaseField {
   toDy(value) {
     if (!value) return null;
     // If we're given a model instance, get its ID
-    if (typeof value === 'object' && value.getPrimaryId) {
+    if (typeof value === "object" && value.getPrimaryId) {
       return value.getPrimaryId();
     }
     return value;
@@ -311,7 +327,7 @@ class RelatedField extends BaseField {
   }
 
   toGsi(value) {
-    return this.toDy(value) || '';
+    return this.toDy(value) || "";
   }
 }
 
@@ -325,12 +341,12 @@ class CounterField extends BaseField {
     super.validate(value);
     if (value !== undefined) {
       // Accept increment/decrement operations (e.g., '+1', '-5')
-      if (typeof value === 'string' && /^[+-]\d+$/.test(value)) {
+      if (typeof value === "string" && /^[+-]\d+$/.test(value)) {
         return true;
       }
       // Accept regular integer values
       if (!Number.isInteger(value)) {
-        throw new Error('CounterField value must be an integer');
+        throw new Error("CounterField value must be an integer");
       }
     }
     return true;
@@ -341,7 +357,10 @@ class CounterField extends BaseField {
   }
 
   toDy(value) {
-    if (typeof value === 'string' && (value.startsWith('+') || value.startsWith('-'))) {
+    if (
+      typeof value === "string" &&
+      (value.startsWith("+") || value.startsWith("-"))
+    ) {
       return value;
     }
     return super.toDy(value);
@@ -363,49 +382,52 @@ class CounterField extends BaseField {
     let expObj = {
       attrNameKey: attributeName,
       attrValueKey: attributeValue,
-      type: 'SET',
+      type: "SET",
       expression: `${attributeName} = ${attributeValue}`,
       fieldName: fieldName,
-      fieldValue: value
+      fieldValue: value,
     };
 
-    logger.log('CounterField - getUpdateExpression', fieldName, value);
+    logger.log("CounterField - getUpdateExpression", fieldName, value);
 
     if (value === null) {
       expObj = {
         ...expObj,
-        type: 'REMOVE',
+        type: "REMOVE",
         expression: `${attributeName}`,
-        fieldValue: null
+        fieldValue: null,
       };
     }
-    
+
     // If the value is relative (has + or - prefix), use ADD
-    if (typeof value === 'string' && (value.startsWith('+') || value.startsWith('-'))) {
+    if (
+      typeof value === "string" &&
+      (value.startsWith("+") || value.startsWith("-"))
+    ) {
       const numericValue = parseInt(value, 10);
-      
+
       // Return just the expression part without the ADD keyword
       expObj = {
         ...expObj,
-        type: 'ADD',
+        type: "ADD",
         expression: `${attributeName} ${attributeValue}`,
         fieldValue: numericValue,
       };
     }
-    
+
     return expObj;
   }
 
   toGsi(value) {
-    return value != null ? value.toString().padStart(20, '0') : '';
+    return value != null ? value.toString().padStart(20, "0") : "";
   }
 }
 
 class BinaryField extends BaseField {
   getInitialValue() {
     if (this.defaultValue) {
-      return typeof this.defaultValue === 'function' 
-        ? this.defaultValue() 
+      return typeof this.defaultValue === "function"
+        ? this.defaultValue()
         : this.defaultValue;
     }
     return null;
@@ -413,18 +435,20 @@ class BinaryField extends BaseField {
 
   validate(value) {
     super.validate(value);
-    if (value !== undefined && 
-        value !== null && 
-        !(value instanceof Buffer) && 
-        !(value instanceof Uint8Array)) {
-      throw new Error('BinaryField value must be a Buffer or Uint8Array');
+    if (
+      value !== undefined &&
+      value !== null &&
+      !(value instanceof Buffer) &&
+      !(value instanceof Uint8Array)
+    ) {
+      throw new Error("BinaryField value must be a Buffer or Uint8Array");
     }
     return true;
   }
 
   toDy(value) {
     if (!value) return null;
-    
+
     return value;
   }
 
@@ -434,7 +458,7 @@ class BinaryField extends BaseField {
   }
 
   toGsi(value) {
-    throw new Error('BinaryField does not support GSI conversion');
+    throw new Error("BinaryField does not support GSI conversion");
   }
 }
 
@@ -442,7 +466,7 @@ class VersionField extends BaseField {
   constructor(options = {}) {
     super({
       ...options,
-      required: true
+      required: true,
     });
     this.defaultValue = options.defaultValue || ulid;
   }
@@ -451,16 +475,16 @@ class VersionField extends BaseField {
     super.validate(value);
     if (value !== undefined) {
       // Verify it's a valid ULID string
-      if (typeof value !== 'string' || value.length !== 26) {
-        throw new Error('VersionField value must be a valid ULID');
+      if (typeof value !== "string" || value.length !== 26) {
+        throw new Error("VersionField value must be a valid ULID");
       }
     }
     return true;
   }
 
   getInitialValue() {
-    return typeof this.defaultValue === 'function' 
-      ? this.defaultValue() 
+    return typeof this.defaultValue === "function"
+      ? this.defaultValue()
       : this.defaultValue;
   }
 
@@ -480,8 +504,8 @@ class VersionField extends BaseField {
 class BooleanField extends BaseField {
   validate(value) {
     super.validate(value);
-    if (value !== undefined && value !== null && typeof value !== 'boolean') {
-      throw new Error('BooleanField value must be a boolean');
+    if (value !== undefined && value !== null && typeof value !== "boolean") {
+      throw new Error("BooleanField value must be a boolean");
     }
     return true;
   }
@@ -506,26 +530,26 @@ class BooleanField extends BaseField {
 
   toGsi(value) {
     if (value === undefined || value === null) {
-      return '';
+      return "";
     }
     // Convert to '0' or '1' for consistent string sorting
-    return value ? '1' : '0';
+    return value ? "1" : "0";
   }
 }
 
 class TtlField extends DateTimeField {
   validate(value) {
     if (value === null || value === undefined) {
-      return true;  // Allow null/undefined for field removal
+      return true; // Allow null/undefined for field removal
     }
-    return super.validate(value);  // Use parent validation for dates
+    return super.validate(value); // Use parent validation for dates
   }
 
   toDy(value) {
-    logger.log('TTL toDy', value);
-    if (value === undefined) return undefined;  // Skip field
-    if (value === null) return null;           // Remove field
-    
+    logger.log("TTL toDy", value);
+    if (value === undefined) return undefined; // Skip field
+    if (value === null) return null; // Remove field
+
     // Convert any valid date input to Unix timestamp in seconds
     let date;
     if (value instanceof Date) {
@@ -533,18 +557,18 @@ class TtlField extends DateTimeField {
     } else {
       date = new Date(value);
       if (isNaN(date.getTime())) {
-        throw new Error('Invalid date value provided for TTL field');
+        throw new Error("Invalid date value provided for TTL field");
       }
     }
-    
+
     const timestamp = Math.floor(date.getTime() / 1000);
     return timestamp;
   }
 
   fromDy(value) {
-    logger.log('TTL fromDy', value);
+    logger.log("TTL fromDy", value);
     if (value === undefined || value === null) {
-      return null;  // Convert both undefined and null to null
+      return null; // Convert both undefined and null to null
     }
     return new Date(value * 1000);
   }
@@ -556,7 +580,8 @@ const createDateTimeField = (options) => new DateTimeField(options);
 const createCreateDateField = (options) => new CreateDateField(options);
 const createModifiedDateField = (options) => new ModifiedDateField(options);
 const createUlidField = (options) => new UlidField(options);
-const createRelatedField = (modelName, options) => new RelatedField(modelName, options);
+const createRelatedField = (modelName, options) =>
+  new RelatedField(modelName, options);
 const createIntegerField = (options) => new IntegerField(options);
 const createFloatField = (options) => new FloatField(options);
 const createCounterField = (options) => new CounterField(options);
@@ -581,7 +606,7 @@ module.exports = {
   VersionField: createVersionField,
   BooleanField: createBooleanField,
   TtlField: createTtlField,
-  
+
   // Classes (for instanceof checks)
   StringFieldClass: StringField,
   DateTimeFieldClass: DateTimeField,
@@ -595,5 +620,5 @@ module.exports = {
   BinaryFieldClass: BinaryField,
   VersionFieldClass: VersionField,
   BooleanFieldClass: BooleanField,
-  TtlFieldClass: TtlField
-}; 
+  TtlFieldClass: TtlField,
+};

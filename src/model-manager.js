@@ -1,11 +1,11 @@
-const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
-const { DynamoDBDocument } = require('@aws-sdk/lib-dynamodb');
-const { defaultLogger: logger } = require('./utils/logger');
-const { pluginManager } = require('./plugin-manager');
+const { DynamoDBClient } = require("@aws-sdk/client-dynamodb");
+const { DynamoDBDocument } = require("@aws-sdk/lib-dynamodb");
+const { defaultLogger: logger } = require("./utils/logger");
+const { pluginManager } = require("./plugin-manager");
 
 class ModelManager {
   static _instances = new Map();
-  
+
   constructor(config = {}) {
     this._initialized = false;
     this._docClient = null;
@@ -15,7 +15,7 @@ class ModelManager {
   }
 
   static getInstance(testId = null) {
-    const key = testId || 'default';
+    const key = testId || "default";
     if (!ModelManager._instances.has(key)) {
       const instance = new ModelManager();
       instance._testId = testId;
@@ -25,8 +25,8 @@ class ModelManager {
   }
 
   init(config = {}) {
-    const client = new DynamoDBClient({ 
-      region: config.aws.region
+    const client = new DynamoDBClient({
+      region: config.aws.region,
     });
     this._docClient = DynamoDBDocument.from(client);
     this._tableName = config.db.tableName;
@@ -55,16 +55,18 @@ class ModelManager {
   // Registry methods
   registerModel(ModelClass) {
     this._models.set(ModelClass.name, ModelClass);
-    
+
     // Add plugin support to the model class
-    ModelClass.registerPlugin = function(plugin) {
+    ModelClass.registerPlugin = function (plugin) {
       pluginManager.registerPlugin(this.name, plugin);
-      
+
       // Apply methods directly to the prototype
       if (plugin.methods) {
         Object.entries(plugin.methods).forEach(([methodName, methodFn]) => {
           if (ModelClass.prototype[methodName]) {
-            logger.warn(`Method ${methodName} already exists for model ${this.name}`);
+            logger.warn(
+              `Method ${methodName} already exists for model ${this.name}`,
+            );
           }
           ModelClass.prototype[methodName] = methodFn;
         });
@@ -101,4 +103,4 @@ class ModelManager {
   }
 }
 
-module.exports = { ModelManager }; 
+module.exports = { ModelManager };

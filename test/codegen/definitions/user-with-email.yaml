@@ -1,16 +1,16 @@
 models:
   UserWithEmail:
-    modelPrefix: 'u'
+    modelPrefix: "u"
     fields:
-      userId: 
+      userId:
         type: UlidField
         required: true
         autoAssign: true
       email:
         type: EmailField
         required: true
-        allowedDomains: ['company.com', 'subsidiary.com']
+        allowedDomains: ["company.com", "subsidiary.com"]
       name:
         type: StringField
     primaryKey:
-      partitionKey: userId 
+      partitionKey: userId

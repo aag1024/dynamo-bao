@@ -1,18 +1,18 @@
-const dynamoBao = require('../../src');
-const testConfig = require('../config');
-const { cleanupTestData, verifyCleanup } = require('../utils/test-utils');
-const { ulid } = require('ulid');
-const { UserWithEmail } = require('./generated/user-with-email');
+const dynamoBao = require("../../src");
+const testConfig = require("../config");
+const { cleanupTestData, verifyCleanup } = require("../utils/test-utils");
+const { ulid } = require("ulid");
+const { UserWithEmail } = require("./generated/user-with-email");
 
 let testId;
 
-describe('Custom Fields', () => {
+describe("Custom Fields", () => {
   beforeEach(async () => {
     testId = ulid();
-  
+
     const manager = dynamoBao.initModels({
       ...testConfig,
-      testId: testId
+      testId: testId,
     });
 
     // Register the model
@@ -31,84 +31,88 @@ describe('Custom Fields', () => {
     }
   });
 
-  describe('Email Field', () => {
-    test('should create user with valid company email', async () => {
+  describe("Email Field", () => {
+    test("should create user with valid company email", async () => {
       const user = await UserWithEmail.create({
-        name: 'Test User',
-        email: 'test@company.com'
+        name: "Test User",
+        email: "test@company.com",
       });
 
-      expect(user.email).toBe('test@company.com');
-      
+      expect(user.email).toBe("test@company.com");
+
       // Verify persistence
       const fetchedUser = await UserWithEmail.find(user.userId);
-      expect(fetchedUser.email).toBe('test@company.com');
+      expect(fetchedUser.email).toBe("test@company.com");
     });
 
-    test('should create user with valid subsidiary email', async () => {
+    test("should create user with valid subsidiary email", async () => {
       const user = await UserWithEmail.create({
-        name: 'Test User',
-        email: 'test@subsidiary.com'
+        name: "Test User",
+        email: "test@subsidiary.com",
       });
 
-      expect(user.email).toBe('test@subsidiary.com');
+      expect(user.email).toBe("test@subsidiary.com");
     });
 
-    test('should reject email from unauthorized domain', async () => {
+    test("should reject email from unauthorized domain", async () => {
       await expect(async () => {
         await UserWithEmail.create({
-          name: 'Invalid User',
-          email: 'test@gmail.com'
+          name: "Invalid User",
+          email: "test@gmail.com",
         });
-      }).rejects.toThrow('Email domain must be one of: company.com, subsidiary.com');
+      }).rejects.toThrow(
+        "Email domain must be one of: company.com, subsidiary.com",
+      );
     });
 
-    test('should reject invalid email format', async () => {
+    test("should reject invalid email format", async () => {
       await expect(async () => {
         await UserWithEmail.create({
-          name: 'Invalid User',
-          email: 'not-an-email'
+          name: "Invalid User",
+          email: "not-an-email",
         });
-      }).rejects.toThrow('Invalid email format');
+      }).rejects.toThrow("Invalid email format");
     });
 
-    test('should allow updating to valid company email', async () => {
+    test("should allow updating to valid company email", async () => {
       const user = await UserWithEmail.create({
-        name: 'Test User',
-        email: 'test@company.com'
+        name: "Test User",
+        email: "test@company.com",
       });
 
       const updatedUser = await UserWithEmail.update(user.userId, {
-        email: 'new@subsidiary.com'
+        email: "new@subsidiary.com",
       });
 
-      expect(updatedUser.email).toBe('new@subsidiary.com');
+      expect(updatedUser.email).toBe("new@subsidiary.com");
     });
 
-    test('should reject update with unauthorized domain', async () => {
+    test("should reject update with unauthorized domain", async () => {
       const user = await UserWithEmail.create({
-        name: 'Test User',
-        email: 'test@company.com'
+        name: "Test User",
+        email: "test@company.com",
       });
 
       await expect(async () => {
         await UserWithEmail.update(user.userId, {
-          email: 'test@gmail.com'
+          email: "test@gmail.com",
         });
-      }).rejects.toThrow('Email domain must be one of: company.com, subsidiary.com');
+      }).rejects.toThrow(
+        "Email domain must be one of: company.com, subsidiary.com",
+      );
     });
 
-    test('should reject update with invalid email format', async () => {
+    test("should reject update with invalid email format", async () => {
       const user = await UserWithEmail.create({
-        name: 'Test User',
-        email: 'test@company.com'
+        name: "Test User",
+        email: "test@company.com",
       });
 
       await expect(async () => {
         await UserWithEmail.update(user.userId, {
-          email: 'invalid-email'
+          email: "invalid-email",
         });
-      }).rejects.toThrow('Invalid email format');
+      }).rejects.toThrow("Invalid email format");
     });
   });
-}); 
+});

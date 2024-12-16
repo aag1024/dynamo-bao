@@ -1,6 +1,6 @@
 service: dynamo-bao-table
 
-frameworkVersion: '3'
+frameworkVersion: "3"
 
 useDotenv: true
 
@@ -75,4 +75,3 @@ resources:
         TimeToLiveSpecification:
           AttributeName: ttl
           Enabled: true
-          

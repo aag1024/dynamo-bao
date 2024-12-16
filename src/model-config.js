@@ -1,15 +1,15 @@
 class PrimaryKeyConfig {
-  constructor(pk, sk = 'modelPrefix') {
+  constructor(pk, sk = "modelPrefix") {
     this.pk = pk;
     this.sk = sk;
   }
 
   getPkFieldName() {
-    return '_pk';
+    return "_pk";
   }
 
   getSkFieldName() {
-    return '_sk';
+    return "_sk";
   }
 }
 
@@ -43,5 +43,5 @@ class UniqueConstraintConfig {
 module.exports = {
   PrimaryKeyConfig,
   IndexConfig,
-  UniqueConstraintConfig
-}; 
+  UniqueConstraintConfig,
+};

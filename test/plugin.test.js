@@ -1,32 +1,32 @@
-const dynamoBao = require('../src');
-const testConfig = require('./config');
-const { BaseModel, PrimaryKeyConfig } = require('../src/model');
-const { StringField } = require('../src/fields');
-const { cleanupTestData, verifyCleanup } = require('./utils/test-utils');
-const { ulid } = require('ulid');
+const dynamoBao = require("../src");
+const testConfig = require("./config");
+const { BaseModel, PrimaryKeyConfig } = require("../src/model");
+const { StringField } = require("../src/fields");
+const { cleanupTestData, verifyCleanup } = require("./utils/test-utils");
+const { ulid } = require("ulid");
 
 let testId;
 
 class TestModel extends BaseModel {
-  static modelPrefix = 'tm';
-  
+  static modelPrefix = "tm";
+
   static fields = {
     id: StringField({ required: true }),
-    name: StringField()
+    name: StringField(),
   };
 
-  static primaryKey = PrimaryKeyConfig('id');
+  static primaryKey = PrimaryKeyConfig("id");
 }
 
-describe('Plugin System Tests', () => {
+describe("Plugin System Tests", () => {
   let testModel;
 
   beforeEach(async () => {
     testId = ulid();
-  
+
     const manager = dynamoBao.initModels({
       ...testConfig,
-      testId: testId
+      testId: testId,
     });
 
     manager.registerModel(TestModel);
@@ -39,7 +39,7 @@ describe('Plugin System Tests', () => {
     // Create a new instance for each test
     testModel = await TestModel.create({
       id: `test-${Date.now()}`,
-      name: 'Test Model'
+      name: "Test Model",
     });
   });
 
@@ -50,46 +50,46 @@ describe('Plugin System Tests', () => {
     }
   });
 
-  test('should execute beforeSave and afterSave hooks', async () => {
+  test("should execute beforeSave and afterSave hooks", async () => {
     const hookCalls = [];
-    
+
     const testPlugin = {
       async beforeSave(instance, options) {
-        hookCalls.push('beforeSave');
-        instance.name = 'Modified by beforeSave';
+        hookCalls.push("beforeSave");
+        instance.name = "Modified by beforeSave";
       },
       async afterSave(instance, options) {
-        hookCalls.push('afterSave');
-      }
+        hookCalls.push("afterSave");
+      },
     };
 
     TestModel.registerPlugin(testPlugin);
 
     // Update the model
-    testModel.name = 'New Name';
+    testModel.name = "New Name";
     await testModel.save();
 
     // Verify hooks were called in order
-    expect(hookCalls).toEqual(['beforeSave', 'afterSave']);
-    
+    expect(hookCalls).toEqual(["beforeSave", "afterSave"]);
+
     // Verify beforeSave modification was saved
-    expect(testModel.name).toBe('Modified by beforeSave');
+    expect(testModel.name).toBe("Modified by beforeSave");
 
     // Verify changes persisted to database
     const fetchedModel = await TestModel.find(testModel.id);
-    expect(fetchedModel.name).toBe('Modified by beforeSave');
+    expect(fetchedModel.name).toBe("Modified by beforeSave");
   });
 
-  test('should not execute hooks when no changes to save', async () => {
+  test("should not execute hooks when no changes to save", async () => {
     const hookCalls = [];
-    
+
     const testPlugin = {
       async beforeSave(instance, options) {
-        hookCalls.push('beforeSave');
+        hookCalls.push("beforeSave");
       },
       async afterSave(instance, options) {
-        hookCalls.push('afterSave');
-      }
+        hookCalls.push("afterSave");
+      },
     };
 
     TestModel.registerPlugin(testPlugin);
@@ -101,63 +101,60 @@ describe('Plugin System Tests', () => {
     expect(hookCalls).toEqual([]);
   });
 
-  test('should pass options to hooks', async () => {
+  test("should pass options to hooks", async () => {
     let capturedOptions;
-    
+
     const testPlugin = {
       async beforeSave(instance, options) {
         capturedOptions = options;
-      }
+      },
     };
 
     TestModel.registerPlugin(testPlugin);
 
     const testOptions = { skipValidation: true };
-    testModel.name = 'New Name';
+    testModel.name = "New Name";
     await testModel.save(testOptions);
 
     expect(capturedOptions).toMatchObject(testOptions);
   });
 
-  test('should support multiple plugins', async () => {
+  test("should support multiple plugins", async () => {
     const hookCalls = [];
-    
+
     const plugin1 = {
       async beforeSave(instance, options) {
-        hookCalls.push('plugin1:beforeSave');
-      }
+        hookCalls.push("plugin1:beforeSave");
+      },
     };
 
     const plugin2 = {
       async beforeSave(instance, options) {
-        hookCalls.push('plugin2:beforeSave');
-      }
+        hookCalls.push("plugin2:beforeSave");
+      },
     };
 
     TestModel.registerPlugin(plugin1);
     TestModel.registerPlugin(plugin2);
 
-    testModel.name = 'New Name';
+    testModel.name = "New Name";
     await testModel.save();
 
-    expect(hookCalls).toEqual([
-      'plugin1:beforeSave',
-      'plugin2:beforeSave'
-    ]);
+    expect(hookCalls).toEqual(["plugin1:beforeSave", "plugin2:beforeSave"]);
   });
 
-  test('should execute beforeDelete and afterDelete hooks', async () => {
+  test("should execute beforeDelete and afterDelete hooks", async () => {
     const hookCalls = [];
-    
+
     const testPlugin = {
       async beforeDelete(primaryId, options) {
-        hookCalls.push('beforeDelete');
+        hookCalls.push("beforeDelete");
         expect(primaryId).toBe(testModel.id);
       },
       async afterDelete(primaryId, options) {
-        hookCalls.push('afterDelete');
+        hookCalls.push("afterDelete");
         expect(primaryId).toBe(testModel.id);
-      }
+      },
     };
 
     TestModel.registerPlugin(testPlugin);
@@ -166,20 +163,20 @@ describe('Plugin System Tests', () => {
     await TestModel.delete(testModel.id);
 
     // Verify hooks were called in order
-    expect(hookCalls).toEqual(['beforeDelete', 'afterDelete']);
+    expect(hookCalls).toEqual(["beforeDelete", "afterDelete"]);
 
     // Verify deletion
     const result = await TestModel.find(testModel.id);
     expect(result.exists()).toBe(false);
   });
 
-  test('should pass options to delete hooks', async () => {
+  test("should pass options to delete hooks", async () => {
     let capturedOptions;
-    
+
     const testPlugin = {
       async beforeDelete(primaryId, options) {
         capturedOptions = options;
-      }
+      },
     };
 
     TestModel.registerPlugin(testPlugin);
@@ -189,4 +186,4 @@ describe('Plugin System Tests', () => {
 
     expect(capturedOptions).toMatchObject(testOptions);
   });
-}); 
+});

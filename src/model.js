@@ -1,32 +1,32 @@
 // src/model.js
-const { RelatedFieldClass, StringField } = require('./fields');
-const { ModelManager } = require('./model-manager');
-const { defaultLogger: logger } = require('./utils/logger');
-const { ObjectNotFound } = require('./object-not-found');
-const ValidationMethods = require('./mixins/validation-mixin');
-const UniqueConstraintMethods = require('./mixins/unique-constraint-mixin');
-const QueryMethods = require('./mixins/query-mixin');
-const MutationMethods = require('./mixins/mutation-mixin');
-const { 
+const { RelatedFieldClass, StringField } = require("./fields");
+const { ModelManager } = require("./model-manager");
+const { defaultLogger: logger } = require("./utils/logger");
+const { ObjectNotFound } = require("./object-not-found");
+const ValidationMethods = require("./mixins/validation-mixin");
+const UniqueConstraintMethods = require("./mixins/unique-constraint-mixin");
+const QueryMethods = require("./mixins/query-mixin");
+const MutationMethods = require("./mixins/mutation-mixin");
+const {
   BatchLoadingMethods,
   BATCH_REQUESTS,
-  BATCH_REQUEST_TIMEOUT
-} = require('./mixins/batch-loading-mixin');
+  BATCH_REQUEST_TIMEOUT,
+} = require("./mixins/batch-loading-mixin");
 
 const {
   PrimaryKeyConfig,
   IndexConfig,
-  UniqueConstraintConfig
-} = require('./model-config');
+  UniqueConstraintConfig,
+} = require("./model-config");
 
 const GID_SEPARATOR = "##__SK__##";
-const { UNIQUE_CONSTRAINT_KEY, SYSTEM_FIELDS } = require('./constants');
+const { UNIQUE_CONSTRAINT_KEY, SYSTEM_FIELDS } = require("./constants");
 
 class BaseModel {
   static _testId = null;
   static table = null;
   static documentClient = null;
-  
+
   // These should be overridden by child classes
   static modelPrefix = null;
   static fields = {};
@@ -42,7 +42,7 @@ class BaseModel {
     Object.assign(BaseModel, UniqueConstraintMethods);
     Object.assign(BaseModel, QueryMethods);
     Object.assign(BaseModel, MutationMethods);
-    Object.assign(BaseModel, BatchLoadingMethods); 
+    Object.assign(BaseModel, BatchLoadingMethods);
   }
 
   static setTestId(testId) {
@@ -58,7 +58,7 @@ class BaseModel {
 
   static _getField(fieldName) {
     let fieldDef;
-    if (SYSTEM_FIELDS.includes(fieldName) || fieldName === 'modelPrefix') {
+    if (SYSTEM_FIELDS.includes(fieldName) || fieldName === "modelPrefix") {
       fieldDef = StringField();
     } else {
       fieldDef = this.fields[fieldName];
@@ -73,24 +73,25 @@ class BaseModel {
 
   static _getPkValue(data) {
     if (!data) {
-      throw new Error('Data object is required for static _getPkValue call');
+      throw new Error("Data object is required for static _getPkValue call");
     }
 
-    const pkValue = this.primaryKey.pk === 'modelPrefix' ? 
-      this.modelPrefix : 
-      data[this.primaryKey.pk];
+    const pkValue =
+      this.primaryKey.pk === "modelPrefix"
+        ? this.modelPrefix
+        : data[this.primaryKey.pk];
 
-    logger.debug('_getPkValue', pkValue);
+    logger.debug("_getPkValue", pkValue);
 
     return pkValue;
   }
 
   static _getSkValue(data) {
     if (!data) {
-      throw new Error('Data object is required for static _getSkValue call');
+      throw new Error("Data object is required for static _getSkValue call");
     }
-    
-    if (this.primaryKey.sk === 'modelPrefix') {
+
+    if (this.primaryKey.sk === "modelPrefix") {
       return this.modelPrefix;
     }
     return data[this.primaryKey.sk];
@@ -123,28 +124,27 @@ class BaseModel {
   }
 
   static _getDyKeyForPkSk(pkSk) {
-    if (this.primaryKey.sk === 'modelPrefix') {
+    if (this.primaryKey.sk === "modelPrefix") {
       return {
         _pk: this._formatPrimaryKey(this.modelPrefix, pkSk.pk),
-        _sk: this.modelPrefix
+        _sk: this.modelPrefix,
       };
-    }
-    else if (this.primaryKey.pk === 'modelPrefix') {
+    } else if (this.primaryKey.pk === "modelPrefix") {
       return {
         _pk: this.modelPrefix,
-        _sk: pkSk.sk
+        _sk: pkSk.sk,
       };
     } else {
       return {
         _pk: this._formatPrimaryKey(this.modelPrefix, pkSk.pk),
-        _sk: pkSk.sk
+        _sk: pkSk.sk,
       };
     }
   }
-  
+
   constructor(jsData = {}) {
     this._dyData = {};
-    SYSTEM_FIELDS.forEach(key => {
+    SYSTEM_FIELDS.forEach((key) => {
       if (jsData[key] !== undefined) {
         this._dyData[key] = jsData[key];
       }
@@ -158,11 +158,12 @@ class BaseModel {
     // Initialize fields with data
     Object.entries(this.constructor.fields).forEach(([fieldName, field]) => {
       // Convert initial value to DynamoDB format
-      let value = jsData[fieldName] === undefined ? 
-        field.getInitialValue() : 
-        jsData[fieldName];
+      let value =
+        jsData[fieldName] === undefined
+          ? field.getInitialValue()
+          : jsData[fieldName];
       this._dyData[fieldName] = field.toDy(value);
-      
+
       // Define property getter/setter that always works with _dyData
       Object.defineProperty(this, fieldName, {
         get: () => field.fromDy(this._dyData[fieldName]),
@@ -176,7 +177,7 @@ class BaseModel {
               delete this._relatedObjects[fieldName];
             }
           }
-        }
+        },
       });
     });
   }
@@ -186,8 +187,8 @@ class BaseModel {
     newObj._dyData = dyItem;
     newObj._resetChangeTracking();
 
-    logger.debug('createFromDyItem', dyItem, newObj);
-    logger.debug('createFromDyItem.name', newObj.name);
+    logger.debug("createFromDyItem", dyItem, newObj);
+    logger.debug("createFromDyItem.name", newObj.name);
     return newObj;
   }
 
@@ -199,32 +200,41 @@ class BaseModel {
   // dynamo string keys. No test prefix or model prefix is applied.
   static _getPrimaryKeyValues(data) {
     if (!data) {
-      throw new Error('Data object is required for _getPrimaryKeyValues call');
+      throw new Error("Data object is required for _getPrimaryKeyValues call");
     }
 
     const pkField = this._getField(this.primaryKey.pk);
     const skField = this._getField(this.primaryKey.sk);
 
-    if (skField === undefined && this.primaryKey.sk !== 'modelPrefix') {
+    if (skField === undefined && this.primaryKey.sk !== "modelPrefix") {
       throw new Error(`SK field is required for getPkSk call`);
     }
 
-    if (pkField === undefined && this.primaryKey.pk !== 'modelPrefix') {
+    if (pkField === undefined && this.primaryKey.pk !== "modelPrefix") {
       throw new Error(`PK field is required for getPkSk call`);
     }
 
     // If the field is set, use the GSI value, otherwise use the raw value
-    const pkValue = pkField ? pkField.toGsi(this._getPkValue(data)) : this._getPkValue(data);
-    const skValue = skField ? skField.toGsi(this._getSkValue(data)) : this._getSkValue(data);
+    const pkValue = pkField
+      ? pkField.toGsi(this._getPkValue(data))
+      : this._getPkValue(data);
+    const skValue = skField
+      ? skField.toGsi(this._getSkValue(data))
+      : this._getSkValue(data);
 
-    if (pkValue === undefined || skValue === undefined || pkValue === null || skValue === null) {
+    if (
+      pkValue === undefined ||
+      skValue === undefined ||
+      pkValue === null ||
+      skValue === null
+    ) {
       throw new Error(`PK and SK must be defined to get a PkSk`);
     }
 
     let key = {
       pk: pkValue,
-      sk: skValue
-    }
+      sk: skValue,
+    };
 
     logger.debug("_getPrimaryKeyValues", key);
 
@@ -237,15 +247,14 @@ class BaseModel {
     logger.debug("getPrimaryId", pkSk);
 
     let primaryId;
-    if (this.primaryKey.pk === 'modelPrefix') {
+    if (this.primaryKey.pk === "modelPrefix") {
       primaryId = pkSk.sk;
-    } else if (this.primaryKey.sk === 'modelPrefix') {
+    } else if (this.primaryKey.sk === "modelPrefix") {
       primaryId = pkSk.pk;
     } else {
       primaryId = pkSk.pk + GID_SEPARATOR + pkSk.sk;
     }
 
-    
     return primaryId;
   }
 
@@ -254,41 +263,41 @@ class BaseModel {
   }
 
   static parsePrimaryId(primaryId) {
-      if (!primaryId) {
-        throw new Error('Primary ID is required to parse');
-      }
-  
-      if (primaryId.indexOf(GID_SEPARATOR) !== -1) {
-        const [pk, sk] = primaryId.split(GID_SEPARATOR);
-        return {pk, sk};
+    if (!primaryId) {
+      throw new Error("Primary ID is required to parse");
+    }
+
+    if (primaryId.indexOf(GID_SEPARATOR) !== -1) {
+      const [pk, sk] = primaryId.split(GID_SEPARATOR);
+      return { pk, sk };
+    } else {
+      if (this.primaryKey.pk === "modelPrefix") {
+        return { pk: this.modelPrefix, sk: primaryId };
+      } else if (this.primaryKey.sk === "modelPrefix") {
+        return { pk: primaryId, sk: this.modelPrefix };
       } else {
-        if (this.primaryKey.pk === 'modelPrefix') {
-          return { pk: this.modelPrefix, sk: primaryId };
-        } else if (this.primaryKey.sk === 'modelPrefix') {
-          return { pk: primaryId, sk: this.modelPrefix };
-        } else {
-          throw new Error(`Invalid primary ID: ${primaryId}`);
-        }
+        throw new Error(`Invalid primary ID: ${primaryId}`);
       }
+    }
   }
 
   // Get only changed fields - convert from Dynamo to JS format
   getChanges() {
     const changes = {};
-    logger.debug('_changes Set contains:', Array.from(this._changes));
+    logger.debug("_changes Set contains:", Array.from(this._changes));
     for (const field of this._changes) {
-        const fieldDef = this.constructor._getField(field);
-        logger.debug('Field definition for', field, ':', {
-            type: fieldDef.constructor.name,
-            field: fieldDef
-        });
-        const dyValue = this._dyData[field];
-        logger.debug('Converting value:', {
-            field,
-            dyValue,
-            fromDyExists: typeof fieldDef.fromDy === 'function'
-        });
-        changes[field] = fieldDef.fromDy(dyValue);
+      const fieldDef = this.constructor._getField(field);
+      logger.debug("Field definition for", field, ":", {
+        type: fieldDef.constructor.name,
+        field: fieldDef,
+      });
+      const dyValue = this._dyData[field];
+      logger.debug("Converting value:", {
+        field,
+        dyValue,
+        fromDyExists: typeof fieldDef.fromDy === "function",
+      });
+      changes[field] = fieldDef.fromDy(dyValue);
     }
     return changes;
   }
@@ -313,15 +322,16 @@ class BaseModel {
     const changes = this.getChanges();
     logger.debug("save() - changes", changes);
     const updatedObj = await this.constructor.update(
-      this.getPrimaryId(), 
-      changes, 
-      { instanceObj: this, ...options });
+      this.getPrimaryId(),
+      changes,
+      { instanceObj: this, ...options },
+    );
 
     this._dyData = updatedObj._dyData;
-    
+
     // Reset change tracking after successful save
     this._resetChangeTracking();
-    
+
     return this;
   }
 
@@ -329,34 +339,37 @@ class BaseModel {
     if (this._relatedObjects[fieldName]) {
       return this._relatedObjects[fieldName];
     }
-    
+
     const field = this.constructor.fields[fieldName];
     if (!field || !field.modelName) {
       throw new Error(`Field ${fieldName} is not a valid relation field`);
     }
-    
+
     const value = this[fieldName];
     if (!value) return null;
-    
+
     const ModelClass = this.constructor.manager.getModel(field.modelName);
-    this._relatedObjects[fieldName] = await ModelClass.find(value, { loaderContext });
+    this._relatedObjects[fieldName] = await ModelClass.find(value, {
+      loaderContext,
+    });
     return this._relatedObjects[fieldName];
   }
 
   async loadRelatedData(fieldNames = null, loaderContext = null) {
     const promises = [];
-    
+
     for (const [fieldName, field] of Object.entries(this.constructor.fields)) {
       if (fieldNames && !fieldNames.includes(fieldName)) {
         continue;
       }
-      
+
       if (field instanceof RelatedFieldClass && this[fieldName]) {
         promises.push(
-          this._loadRelatedField(fieldName, field, loaderContext)
-            .then(instance => {
+          this._loadRelatedField(fieldName, field, loaderContext).then(
+            (instance) => {
               this._relatedObjects[fieldName] = instance;
-            })
+            },
+          ),
         );
       }
     }
@@ -368,16 +381,16 @@ class BaseModel {
   async _loadRelatedField(fieldName, field, loaderContext = null) {
     const value = this[fieldName];
     if (!value) return null;
-    
+
     const ModelClass = this.constructor.manager.getModel(field.modelName);
-    
+
     if (value instanceof ModelClass) {
       return value;
     }
 
     // Load the instance and track its capacity
     const relatedInstance = await ModelClass.find(value, { loaderContext });
-    
+
     return relatedInstance;
   }
 
@@ -389,42 +402,48 @@ class BaseModel {
     return this._relatedObjects[fieldName];
   }
 
-  static async findByUniqueConstraint(constraintName, value, loaderContext = null) {
+  static async findByUniqueConstraint(
+    constraintName,
+    value,
+    loaderContext = null,
+  ) {
     const constraint = this.uniqueConstraints[constraintName];
     if (!constraint) {
-      throw new Error(`Unknown unique constraint '${constraintName}' in ${this.name}`);
+      throw new Error(
+        `Unknown unique constraint '${constraintName}' in ${this.name}`,
+      );
     }
 
     if (!value) {
       throw new Error(`${constraint.field} value is required`);
     }
-  
+
     const key = this._formatUniqueConstraintKey(
       constraint.constraintId,
       this.modelPrefix,
       constraint.field,
-      value
+      value,
     );
-  
+
     const result = await this.documentClient.get({
       TableName: this.table,
       Key: {
         _pk: key,
-        _sk: UNIQUE_CONSTRAINT_KEY
+        _sk: UNIQUE_CONSTRAINT_KEY,
       },
-      ReturnConsumedCapacity: 'TOTAL'
+      ReturnConsumedCapacity: "TOTAL",
     });
-  
+
     if (!result.Item) {
       return new ObjectNotFound(result.ConsumedCapacity);
     }
-  
+
     const item = await this.find(result.Item.relatedId, { loaderContext });
-  
+
     if (item) {
       item.addConsumedCapacity(result.ConsumedCapacity);
     }
-  
+
     return item;
   }
 
@@ -432,13 +451,13 @@ class BaseModel {
     return true;
   }
 
-  setConsumedCapacity(capacity, type = 'read', fromContext = false) {
+  setConsumedCapacity(capacity, type = "read", fromContext = false) {
     this.clearConsumedCapacity();
     this.addConsumedCapacity(capacity, type, fromContext);
   }
-  
-  addConsumedCapacity(capacity, type = 'read', fromContext = false) {
-    if (type !== 'read' && type !== 'write' && type !== 'total') {
+
+  addConsumedCapacity(capacity, type = "read", fromContext = false) {
+    if (type !== "read" && type !== "write" && type !== "total") {
       throw new Error(`Invalid consumed capacity type: ${type}`);
     }
 
@@ -447,26 +466,28 @@ class BaseModel {
     }
 
     if (Array.isArray(capacity)) {
-      capacity.forEach(item => this.addConsumedCapacity(item, type, fromContext));
+      capacity.forEach((item) =>
+        this.addConsumedCapacity(item, type, fromContext),
+      );
     } else {
       if (capacity.consumedCapacity) {
         this._consumedCapacity.push({
           consumedCapacity: capacity.consumedCapacity,
           fromContext: capacity.fromContext || fromContext,
-          type: capacity.type || type
+          type: capacity.type || type,
         });
       } else {
         this._consumedCapacity.push({
           consumedCapacity: capacity,
           fromContext: fromContext,
-          type: type
+          type: type,
         });
       }
     }
   }
-  
+
   getNumericConsumedCapacity(type, includeRelated = false) {
-    if (type !== 'read' && type !== 'write' && type !== 'total') {
+    if (type !== "read" && type !== "write" && type !== "total") {
       throw new Error(`Invalid consumed capacitytype: ${type}`);
     }
 
@@ -476,7 +497,10 @@ class BaseModel {
     }
 
     let total = consumedCapacity.reduce((sum, capacity) => {
-      if (!capacity.fromContext && (capacity.type === type || type === 'total')) {
+      if (
+        !capacity.fromContext &&
+        (capacity.type === type || type === "total")
+      ) {
         return sum + (capacity.consumedCapacity?.CapacityUnits || 0);
       }
       return sum;
@@ -486,7 +510,10 @@ class BaseModel {
       // Sum up capacity from any loaded related objects
       for (const relatedObj of Object.values(this._relatedObjects)) {
         if (relatedObj) {
-          const relatedCapacity = relatedObj.getNumericConsumedCapacity(type, true);
+          const relatedCapacity = relatedObj.getNumericConsumedCapacity(
+            type,
+            true,
+          );
           total += relatedCapacity;
         }
       }
@@ -494,7 +521,7 @@ class BaseModel {
 
     return total;
   }
-  
+
   getConsumedCapacity() {
     return this._consumedCapacity;
   }
@@ -508,9 +535,8 @@ module.exports = {
   BaseModel,
   PrimaryKeyConfig: (pk, sk) => new PrimaryKeyConfig(pk, sk),
   IndexConfig: (pk, sk, indexId) => new IndexConfig(pk, sk, indexId),
-  UniqueConstraintConfig: (field, constraintId) => new UniqueConstraintConfig(field, constraintId),
+  UniqueConstraintConfig: (field, constraintId) =>
+    new UniqueConstraintConfig(field, constraintId),
   BATCH_REQUEST_TIMEOUT,
-  BATCH_REQUESTS
+  BATCH_REQUESTS,
 };
-
-

@@ -1,35 +1,35 @@
-const dynamoBao = require('../src');
-const testConfig = require('./config');
-const { BaseModel, PrimaryKeyConfig } = require('../src/model');
-const { StringField, IntegerField, BooleanField } = require('../src/fields');
-const { cleanupTestData, verifyCleanup } = require('./utils/test-utils');
-const { ulid } = require('ulid');
+const dynamoBao = require("../src");
+const testConfig = require("./config");
+const { BaseModel, PrimaryKeyConfig } = require("../src/model");
+const { StringField, IntegerField, BooleanField } = require("../src/fields");
+const { cleanupTestData, verifyCleanup } = require("./utils/test-utils");
+const { ulid } = require("ulid");
 
 const printPerfStats = false;
 const PERF_THRESHOLDS = {
-  simple: 0.005,    // 5 microseconds per instance
-  complex: 0.05,    // 50 microseconds per instance
-  sparse: 0.05      // 50 microseconds per instance
+  simple: 0.005, // 5 microseconds per instance
+  complex: 0.05, // 50 microseconds per instance
+  sparse: 0.05, // 50 microseconds per instance
 };
 
 let testId;
 
 // Simple model with just two fields
 class SimpleModel extends BaseModel {
-  static modelPrefix = 'sm';
-  
+  static modelPrefix = "sm";
+
   static fields = {
     id: StringField({ required: true }),
-    name: StringField()
+    name: StringField(),
   };
 
-  static primaryKey = PrimaryKeyConfig('id');
+  static primaryKey = PrimaryKeyConfig("id");
 }
 
 // Complex model with many fields and different types
 class ComplexModel extends BaseModel {
-  static modelPrefix = 'cm';
-  
+  static modelPrefix = "cm";
+
   static fields = {
     id: StringField({ required: true }),
     name: StringField(),
@@ -87,19 +87,19 @@ class ComplexModel extends BaseModel {
     expenses: IntegerField(),
     profit: IntegerField(),
     quarter: IntegerField(),
-    year: IntegerField()
+    year: IntegerField(),
   };
 
-  static primaryKey = PrimaryKeyConfig('id');
+  static primaryKey = PrimaryKeyConfig("id");
 }
 
-describe('Performance Tests - Model Instantiation', () => {
+describe("Performance Tests - Model Instantiation", () => {
   beforeEach(async () => {
     testId = ulid();
-    
+
     const manager = dynamoBao.initModels({
       ...testConfig,
-      testId: testId
+      testId: testId,
     });
 
     manager.registerModel(SimpleModel);
@@ -123,28 +123,28 @@ describe('Performance Tests - Model Instantiation', () => {
     for (let i = 0; i < count; i++) {
       const data = {
         id: `test-${i}`,
-        name: `Test ${i}`
+        name: `Test ${i}`,
       };
-      
+
       // Add extra fields for complex model
       if (Model === ComplexModel) {
         Object.assign(data, {
           age: 25,
           email: `test${i}@example.com`,
           isActive: true,
-          address: '123 Test St',
-          phone: '555-0000',
+          address: "123 Test St",
+          phone: "555-0000",
           score: 100,
           lastLogin: new Date().toISOString(),
           preferences: '{"theme":"dark"}',
-          status: 'active',
+          status: "active",
           metadata: '{"version":"1.0"}',
           // Additional field values
           title: `Title ${i}`,
           description: `Description for item ${i}`,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
-          category: 'Test Category',
+          category: "Test Category",
           tags: '["test", "performance"]',
           rating: 4,
           views: 1000,
@@ -157,36 +157,36 @@ describe('Performance Tests - Model Instantiation', () => {
           isFeatured: true,
           isSponsored: false,
           isPremium: true,
-          region: 'North',
-          country: 'Test Country',
-          city: 'Test City',
-          zipCode: '12345',
-          latitude: '40.7128',
-          longitude: '-74.0060',
-          website: 'https://example.com',
+          region: "North",
+          country: "Test Country",
+          city: "Test City",
+          zipCode: "12345",
+          latitude: "40.7128",
+          longitude: "-74.0060",
+          website: "https://example.com",
           socialMedia: '{"twitter": "@test"}',
-          department: 'Engineering',
-          role: 'Developer',
+          department: "Engineering",
+          role: "Developer",
           salary: 100000,
           experience: 5,
-          education: 'Masters',
+          education: "Masters",
           skills: '["JavaScript", "Python"]',
           languages: '["English", "Spanish"]',
           certifications: '["AWS", "GCP"]',
           projects: '["Project A", "Project B"]',
-          supervisor: 'John Doe',
-          team: 'Alpha',
-          division: 'R&D',
-          costCenter: 'CC001',
+          supervisor: "John Doe",
+          team: "Alpha",
+          division: "R&D",
+          costCenter: "CC001",
           budget: 1000000,
           revenue: 2000000,
           expenses: 1500000,
           profit: 500000,
           quarter: 2,
-          year: 2024
+          year: 2024,
         });
       }
-      
+
       instances.push(new Model(data));
     }
     return instances;
@@ -202,48 +202,56 @@ describe('Performance Tests - Model Instantiation', () => {
     const start = process.hrtime.bigint();
     const instances = createInstances(Model, count);
     const end = process.hrtime.bigint();
-    
+
     const timeInMs = Number(end - start) / 1_000_000;
     return {
       timeInMs,
       instanceCount: instances.length,
-      avgTimePerInstance: timeInMs / count
+      avgTimePerInstance: timeInMs / count,
     };
   };
 
-  test('should measure instantiation performance for 1k instances', () => {
+  test("should measure instantiation performance for 1k instances", () => {
     const count = 1000;
-    
+
     const simpleResults = runPerformanceTest(SimpleModel, count);
     const complexResults = runPerformanceTest(ComplexModel, count);
-    
+
     logPerfStats(`Simple Model (${count} instances)`, simpleResults);
     logPerfStats(`Complex Model (${count} instances)`, complexResults);
-    
+
     expect(simpleResults.instanceCount).toBe(count);
     expect(complexResults.instanceCount).toBe(count);
-    expect(simpleResults.avgTimePerInstance).toBeLessThan(PERF_THRESHOLDS.simple);
-    expect(complexResults.avgTimePerInstance).toBeLessThan(PERF_THRESHOLDS.complex);
+    expect(simpleResults.avgTimePerInstance).toBeLessThan(
+      PERF_THRESHOLDS.simple,
+    );
+    expect(complexResults.avgTimePerInstance).toBeLessThan(
+      PERF_THRESHOLDS.complex,
+    );
   });
 
-  test('should measure instantiation performance for 10k instances', () => {
+  test("should measure instantiation performance for 10k instances", () => {
     const count = 10000;
-    
+
     const simpleResults = runPerformanceTest(SimpleModel, count);
     const complexResults = runPerformanceTest(ComplexModel, count);
-    
+
     logPerfStats(`Simple Model (${count} instances)`, simpleResults);
     logPerfStats(`Complex Model (${count} instances)`, complexResults);
-    
+
     expect(simpleResults.instanceCount).toBe(count);
     expect(complexResults.instanceCount).toBe(count);
-    expect(simpleResults.avgTimePerInstance).toBeLessThan(PERF_THRESHOLDS.simple);
-    expect(complexResults.avgTimePerInstance).toBeLessThan(PERF_THRESHOLDS.complex);
+    expect(simpleResults.avgTimePerInstance).toBeLessThan(
+      PERF_THRESHOLDS.simple,
+    );
+    expect(complexResults.avgTimePerInstance).toBeLessThan(
+      PERF_THRESHOLDS.complex,
+    );
   });
 
-  test('should measure instantiation performance for sparse complex model (10k instances)', () => {
+  test("should measure instantiation performance for sparse complex model (10k instances)", () => {
     const count = 10000;
-    
+
     const createSparseInstances = (count) => {
       const instances = [];
       for (let i = 0; i < count; i++) {
@@ -253,9 +261,9 @@ describe('Performance Tests - Model Instantiation', () => {
           name: `Test ${i}`,
           email: `test${i}@example.com`,
           isActive: true,
-          score: 100
+          score: 100,
         };
-        
+
         instances.push(new ComplexModel(data));
       }
       return instances;
@@ -264,17 +272,17 @@ describe('Performance Tests - Model Instantiation', () => {
     const start = process.hrtime.bigint();
     const instances = createSparseInstances(count);
     const end = process.hrtime.bigint();
-    
+
     const timeInMs = Number(end - start) / 1_000_000;
     const results = {
       timeInMs,
       instanceCount: instances.length,
-      avgTimePerInstance: timeInMs / count
+      avgTimePerInstance: timeInMs / count,
     };
-    
+
     logPerfStats(`Sparse Complex Model (${count} instances)`, results);
-    
+
     expect(results.instanceCount).toBe(count);
     expect(results.avgTimePerInstance).toBeLessThan(PERF_THRESHOLDS.sparse);
   });
-}); 
+});

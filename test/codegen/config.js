@@ -1,7 +1,7 @@
-const path = require('path');
+const path = require("path");
 
 module.exports = {
   paths: {
-    fieldsDir: path.resolve(__dirname, './custom-fields')
-  }
-}; 
+    fieldsDir: path.resolve(__dirname, "./custom-fields"),
+  },
+};

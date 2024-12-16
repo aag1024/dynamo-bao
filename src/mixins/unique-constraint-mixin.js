@@ -1,13 +1,13 @@
-const { GetCommand } = require('@aws-sdk/lib-dynamodb');
-const { defaultLogger: logger } = require('../utils/logger');
-const { UNIQUE_CONSTRAINT_KEY } = require('../constants');
+const { GetCommand } = require("@aws-sdk/lib-dynamodb");
+const { defaultLogger: logger } = require("../utils/logger");
+const { UNIQUE_CONSTRAINT_KEY } = require("../constants");
 
 const UniqueConstraintMethods = {
   async _validateUniqueConstraints(data, currentId = null) {
-    logger.debug('validateUniqueConstraints called on', this.name, {
+    logger.debug("validateUniqueConstraints called on", this.name, {
       modelTestId: this._testId,
       managerTestId: this.manager.getTestId(),
-      instanceKey: this._testId || 'default'
+      instanceKey: this._testId || "default",
     });
 
     if (!this.uniqueConstraints) {
@@ -27,36 +27,38 @@ const UniqueConstraintMethods = {
           constraint.constraintId,
           this.modelPrefix,
           constraint.field,
-          value
+          value,
         );
 
-        logger.debug('Checking unique constraint:', {
+        logger.debug("Checking unique constraint:", {
           key,
           field: constraint.field,
           value,
           testId: this.manager.getTestId(),
-          managerTestId: this.manager.getTestId()
+          managerTestId: this.manager.getTestId(),
         });
 
-        const result = await docClient.send(new GetCommand({
-          TableName: tableName,
-          Key: {
-            _pk: key,
-            _sk: UNIQUE_CONSTRAINT_KEY
-          }
-        }));
-        
+        const result = await docClient.send(
+          new GetCommand({
+            TableName: tableName,
+            Key: {
+              _pk: key,
+              _sk: UNIQUE_CONSTRAINT_KEY,
+            },
+          }),
+        );
+
         if (result.Item) {
-          logger.debug('Found existing constraint:', result.Item);
+          logger.debug("Found existing constraint:", result.Item);
           if (!currentId || result.Item.relatedId !== currentId) {
             throw new Error(`${constraint.field} must be unique`);
           }
         }
       } catch (innerError) {
-        if (innerError.message.includes('must be unique')) {
+        if (innerError.message.includes("must be unique")) {
           throw innerError;
         }
-        console.error('Error checking unique constraint:', innerError);
+        console.error("Error checking unique constraint:", innerError);
         throw new Error(`Failed to validate ${constraint.field} uniqueness`);
       }
     }
@@ -69,7 +71,7 @@ const UniqueConstraintMethods = {
       constraintId,
       this.modelPrefix,
       field,
-      value
+      value,
     );
 
     let item = {
@@ -88,15 +90,16 @@ const UniqueConstraintMethods = {
       Put: {
         TableName: this.table,
         Item: item,
-        ConditionExpression: 'attribute_not_exists(#pk) OR (relatedId = :relatedId AND relatedModel = :modelName)',
+        ConditionExpression:
+          "attribute_not_exists(#pk) OR (relatedId = :relatedId AND relatedModel = :modelName)",
         ExpressionAttributeNames: {
-          '#pk': '_pk'
+          "#pk": "_pk",
         },
         ExpressionAttributeValues: {
-          ':relatedId': relatedId,
-          ':modelName': this.name
-        }
-      }
+          ":relatedId": relatedId,
+          ":modelName": this.name,
+        },
+      },
     };
   },
 
@@ -110,18 +113,19 @@ const UniqueConstraintMethods = {
             constraintId,
             this.modelPrefix,
             field,
-            value
+            value,
           ),
-          _sk: UNIQUE_CONSTRAINT_KEY
+          _sk: UNIQUE_CONSTRAINT_KEY,
         },
-        ConditionExpression: 'relatedId = :relatedId AND relatedModel = :modelName',
+        ConditionExpression:
+          "relatedId = :relatedId AND relatedModel = :modelName",
         ExpressionAttributeValues: {
-          ':relatedId': relatedId,
-          ':modelName': this.name
-        }
-      }
+          ":relatedId": relatedId,
+          ":modelName": this.name,
+        },
+      },
     };
-  }
+  },
 };
 
-module.exports = UniqueConstraintMethods; 
+module.exports = UniqueConstraintMethods;

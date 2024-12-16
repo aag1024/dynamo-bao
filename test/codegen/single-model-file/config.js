@@ -1,24 +1,24 @@
-const path = require('path');
-const dotenv = require('dotenv');
+const path = require("path");
+const dotenv = require("dotenv");
 
 // Load .env file
-const envPath = path.resolve(process.cwd(), '.env');
+const envPath = path.resolve(process.cwd(), ".env");
 dotenv.config({ path: envPath });
 
 const config = {
   aws: {
-    region: 'us-west-2',
+    region: "us-west-2",
   },
   db: {
-    tableName: 'dynamo-bao-test',
+    tableName: "dynamo-bao-test",
   },
   logging: {
-    level: 'ERROR',
+    level: "ERROR",
   },
   paths: {
     modelsDir: path.resolve(__dirname, "./models"),
-    modelsDefinitionDir: path.resolve(__dirname, "./models.yaml")
-  }
+    modelsDefinitionDir: path.resolve(__dirname, "./models.yaml"),
+  },
 };
 
 module.exports = config;

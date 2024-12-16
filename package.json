@@ -1,46 +1,47 @@
 {
-    "name": "dynamo-bao",
-    "version": "0.1.0",
-    "description": "Simple powerful data modeleling primatives for DynamoDB in JavaScript",
-    "main": "src/index.js",
-    "scripts": {
-        "test": "LOG_LEVEL=OFF jest",
-        "create-table": "node bin/dynamo-bao-create-table.js",
-        "watch": "node bin/watch.js"
-    },
-    "files": [
-        "src/",
-        "README.md",
-        "LICENSE"
-    ],
-    "keywords": [
-        "dynamodb",
-        "aws",
-        "database",
-        "orm",
-        "nosql",
-        "single-table-design"
-    ],
-    "author": "Adrian Graham",
-    "license": "MIT",
-    "repository": {
-        "type": "git",
-        "url": "git+https://github.com/adriangraham/dynamo-bao.git"
-    },
-    "dependencies": {
-        "@aws-sdk/client-dynamodb": "^3.521.0",
-        "@aws-sdk/lib-dynamodb": "^3.521.0",
-        "dotenv": "^16.4.7",
-        "js-yaml": "^4.1.0",
-        "ulid": "^2.3.0"
-    },
-    "devDependencies": {
-        "jest": "^29.7.0",
-        "serverless": "^3.38.0"
-    },
-    "bin": {
-        "dynamo-bao-create-table": "./bin/dynamo-bao-create-table.js",
-        "model-codegen": "./bin/codegen.js",
-        "dynamo-bao-watch": "./bin/watch.js"
-    }
+  "name": "dynamo-bao",
+  "version": "0.1.0",
+  "description": "Simple powerful data modeleling primatives for DynamoDB in JavaScript",
+  "main": "src/index.js",
+  "scripts": {
+    "test": "LOG_LEVEL=OFF jest",
+    "create-table": "node bin/dynamo-bao-create-table.js",
+    "watch": "node bin/watch.js"
+  },
+  "files": [
+    "src/",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "dynamodb",
+    "aws",
+    "database",
+    "orm",
+    "nosql",
+    "single-table-design"
+  ],
+  "author": "Adrian Graham",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/adriangraham/dynamo-bao.git"
+  },
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.521.0",
+    "@aws-sdk/lib-dynamodb": "^3.521.0",
+    "dotenv": "^16.4.7",
+    "js-yaml": "^4.1.0",
+    "ulid": "^2.3.0"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "prettier": "3.4.2",
+    "serverless": "^3.38.0"
+  },
+  "bin": {
+    "dynamo-bao-create-table": "./bin/dynamo-bao-create-table.js",
+    "model-codegen": "./bin/codegen.js",
+    "dynamo-bao-watch": "./bin/watch.js"
+  }
 }

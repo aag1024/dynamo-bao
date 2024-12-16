@@ -1,40 +1,33 @@
 // src/models/post.js
-const { 
-  BaseModel, 
-  PrimaryKeyConfig,
-  IndexConfig,
-} = require('../../src/model');
+const { BaseModel, PrimaryKeyConfig, IndexConfig } = require("../../src/model");
+
+const { GSI_INDEX_ID1, GSI_INDEX_ID2 } = require("../../src/constants");
 
 const {
-  GSI_INDEX_ID1,
-  GSI_INDEX_ID2
-} = require('../../src/constants');
-
-const { 
-  StringField, 
-  CreateDateField, 
-  UlidField, 
-  RelatedField, 
-  VersionField 
-} = require('../../src/fields');
+  StringField,
+  CreateDateField,
+  UlidField,
+  RelatedField,
+  VersionField,
+} = require("../../src/fields");
 
 class Post extends BaseModel {
-  static modelPrefix = 'p';
-  
+  static modelPrefix = "p";
+
   static fields = {
     postId: UlidField({ autoAssign: true }),
-    userId: RelatedField('User', { required: true }),
+    userId: RelatedField("User", { required: true }),
     title: StringField({ required: true }),
     content: StringField({ required: true }),
     createdAt: CreateDateField(),
     version: VersionField(),
   };
 
-  static primaryKey = PrimaryKeyConfig('postId');
+  static primaryKey = PrimaryKeyConfig("postId");
 
   static indexes = {
-    allPosts: IndexConfig('modelPrefix', 'postId', GSI_INDEX_ID1),
-    postsForUser: IndexConfig('userId', 'createdAt', GSI_INDEX_ID2)
+    allPosts: IndexConfig("modelPrefix", "postId", GSI_INDEX_ID1),
+    postsForUser: IndexConfig("userId", "createdAt", GSI_INDEX_ID2),
   };
 }
 

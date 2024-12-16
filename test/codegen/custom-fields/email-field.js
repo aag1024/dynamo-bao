@@ -1,4 +1,4 @@
-const { StringFieldClass } = require('../../../src/fields');
+const { StringFieldClass } = require("../../../src/fields");
 
 class EmailField extends StringFieldClass {
   constructor(options = {}) {
@@ -9,18 +9,20 @@ class EmailField extends StringFieldClass {
 
   validate(value) {
     super.validate(value);
-    
+
     if (!value) return true;
 
-    if (!value.includes('@')) {
-      throw new Error('Invalid email format');
+    if (!value.includes("@")) {
+      throw new Error("Invalid email format");
     }
 
     // If allowedDomains is specified, check if the email domain is allowed
     if (this.allowedDomains.length > 0) {
-      const domain = value.split('@')[1];
+      const domain = value.split("@")[1];
       if (!this.allowedDomains.includes(domain)) {
-        throw new Error(`Email domain must be one of: ${this.allowedDomains.join(', ')}`);
+        throw new Error(
+          `Email domain must be one of: ${this.allowedDomains.join(", ")}`,
+        );
       }
     }
 
@@ -34,5 +36,5 @@ const createEmailField = (options) => new EmailField(options);
 // Export both the factory function and the class
 module.exports = {
   EmailField: createEmailField,
-  EmailFieldClass: EmailField
-}; 
+  EmailFieldClass: EmailField,
+};

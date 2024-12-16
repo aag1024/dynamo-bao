@@ -1,27 +1,36 @@
 #!/usr/bin/env node
 
-const { DynamoDBClient, CreateTableCommand, ListTablesCommand } = require("@aws-sdk/client-dynamodb");
+const {
+  DynamoDBClient,
+  CreateTableCommand,
+  ListTablesCommand,
+} = require("@aws-sdk/client-dynamodb");
 const readline = require("readline");
 
 // Create DynamoDB client at the top level
 const client = new DynamoDBClient();
 
 async function checkAwsCredentials() {
-    try {
-      // Make a simple request that requires authentication
-      await client.send(new ListTablesCommand({}));
-      console.log("AWS credentials found and valid");
-      return true;
-    } catch (error) {
-      if (error.name === "UnrecognizedClientException" || 
-          error.name === "AccessDeniedException" ||
-          error.name === "CredentialsNotFound") {
-        console.error("AWS credentials not found or invalid. Please run aws configure to set your credentials.", error.message);
-        return false;
-      }
-      // If it's a different error (like network issues), throw it
-      throw error;
+  try {
+    // Make a simple request that requires authentication
+    await client.send(new ListTablesCommand({}));
+    console.log("AWS credentials found and valid");
+    return true;
+  } catch (error) {
+    if (
+      error.name === "UnrecognizedClientException" ||
+      error.name === "AccessDeniedException" ||
+      error.name === "CredentialsNotFound"
+    ) {
+      console.error(
+        "AWS credentials not found or invalid. Please run aws configure to set your credentials.",
+        error.message,
+      );
+      return false;
     }
+    // If it's a different error (like network issues), throw it
+    throw error;
+  }
 }
 
 // Function to prompt user for input
@@ -31,16 +40,20 @@ const prompt = (query) => {
     output: process.stdout,
   });
 
-  return new Promise((resolve) => rl.question(query, (answer) => {
-    rl.close();
-    resolve(answer);
-  }));
+  return new Promise((resolve) =>
+    rl.question(query, (answer) => {
+      rl.close();
+      resolve(answer);
+    }),
+  );
 };
 
 async function createTable() {
   // Prompt user for table name
   const defaultTableName = "dynamo-bao-dev";
-  const tableName = await prompt(`Enter table name [${defaultTableName}]: `) || defaultTableName;
+  const tableName =
+    (await prompt(`Enter table name [${defaultTableName}]: `)) ||
+    defaultTableName;
 
   // Define table parameters
   const params = {
@@ -88,9 +101,7 @@ async function createTable() {
       },
       {
         IndexName: "gsi_test",
-        KeySchema: [
-          { AttributeName: "_gsi_test_id", KeyType: "HASH" },
-        ],
+        KeySchema: [{ AttributeName: "_gsi_test_id", KeyType: "HASH" }],
         Projection: { ProjectionType: "ALL" },
       },
     ],
@@ -104,19 +115,22 @@ async function createTable() {
     // Create table
     const command = new CreateTableCommand(params);
     const response = await client.send(command);
-    console.log("Table created successfully:", response.TableDescription.TableName);
+    console.log(
+      "Table created successfully:",
+      response.TableDescription.TableName,
+    );
   } catch (error) {
     console.error("Error creating table:", error);
   }
 }
 
 async function main() {
-    await checkAwsCredentials();
-    await createTable();
+  await checkAwsCredentials();
+  await createTable();
 }
 
 // Run the main function
-main().catch(error => {
-    console.error('Error:', error);
-    process.exit(1);
+main().catch((error) => {
+  console.error("Error:", error);
+  process.exit(1);
 });

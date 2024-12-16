@@ -1,4 +1,4 @@
-const { defaultLogger: logger } = require('./utils/logger');
+const { defaultLogger: logger } = require("./utils/logger");
 
 class PluginManager {
   constructor() {
@@ -22,7 +22,7 @@ class PluginManager {
   async executeHooks(modelName, hookName, ...args) {
     const plugins = this.plugins.get(modelName) || [];
     for (const plugin of plugins) {
-      if (typeof plugin[hookName] === 'function') {
+      if (typeof plugin[hookName] === "function") {
         logger.debug(`Executing ${hookName} hook for ${modelName}`);
         await plugin[hookName](...args);
       }
@@ -43,11 +43,13 @@ class PluginManager {
     if (!this.methods.has(modelName)) {
       this.methods.set(modelName, new Map());
     }
-    
+
     const modelMethods = this.methods.get(modelName);
     Object.entries(methods).forEach(([methodName, methodFn]) => {
       if (modelMethods.has(methodName)) {
-        logger.warn(`Method ${methodName} already exists for model ${modelName}. It will be overwritten.`);
+        logger.warn(
+          `Method ${methodName} already exists for model ${modelName}. It will be overwritten.`,
+        );
       }
       modelMethods.set(methodName, methodFn);
     });
@@ -56,4 +58,4 @@ class PluginManager {
 
 // Singleton instance
 const pluginManager = new PluginManager();
-module.exports = { pluginManager }; 
+module.exports = { pluginManager };

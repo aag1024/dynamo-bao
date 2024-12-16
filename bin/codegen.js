@@ -78,8 +78,11 @@ function main() {
     outputDir = path.resolve(process.cwd(), args[1]);
   }
   
+
+  console.log('codegen definitionsPath', definitionsPath);
   try {
     const config = loadConfig(definitionsPath);
+    console.log('codegen config', config);
     
     // Built-in fields are in fields.js
     const builtInFieldsPath = path.resolve(__dirname, '../src/fields.js');

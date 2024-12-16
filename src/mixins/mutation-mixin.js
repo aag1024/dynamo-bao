@@ -2,58 +2,20 @@ const { TransactWriteCommand, UpdateCommand } = require('@aws-sdk/lib-dynamodb')
 const { defaultLogger: logger } = require('../utils/logger');
 const { pluginManager } = require('../plugin-manager');
 const { retryOperation } = require('../utils/retry-helper');
+const assert = require('assert');
 
 const MutationMethods = {
-  async create(data) {
-    // First process the data through _saveItem to handle auto-assigned fields
-    const processedData = {};
-    
-    // Handle fields and their initial values
-    for (const [key, field] of Object.entries(this.fields)) {
-      if (data[key] !== undefined) {
-        processedData[key] = data[key];
-      } else {
-        const initialValue = field.getInitialValue();
-        if (initialValue !== undefined) {
-          processedData[key] = initialValue;
-        }
-      }
-    }
-
-    Object.entries(this.fields).forEach(([fieldName, field]) => {
-      field.validate(processedData[fieldName], fieldName);
-    });
-
-    // Now calculate primary key values using the processed data
-    const pkValue = this._getPkValue(processedData);
-    const skValue = this._getSkValue(processedData);
-    
-    // Format the primary key
-    const pk = this._formatPrimaryKey(this.modelPrefix, pkValue);
-    const primaryId = this.getPrimaryId({
-      ...processedData,
-      _pk: pk,
-      _sk: skValue
-    });
-    
-    await pluginManager.executeHooks(this.name, 'beforeSave', processedData, { isNew: true });
-    const result = await this._saveItem(primaryId, processedData, { isNew: true });
+  async create(jsUpdates) {    
+    await pluginManager.executeHooks(this.name, 'beforeSave', jsUpdates, { isNew: true });
+    const result = await this._saveItem(null, jsUpdates, { isNew: true });
     await pluginManager.executeHooks(this.name, 'afterSave', result, { isNew: true });
-    
     return result;
   },
 
-  async update(primaryId, data, options = {}) {
-    await pluginManager.executeHooks(this.name, 'beforeSave', data, { ...options, isNew: false });
-
-    Object.entries(data).forEach(([fieldName, value]) => {
-      const field = this._getField(fieldName);
-      if (field) {
-        field.validate(value, fieldName);
-      }
-    });
+  async update(primaryId, jsUpdates, options = {}) {
+    await pluginManager.executeHooks(this.name, 'beforeSave', jsUpdates, { ...options, isNew: false });
     
-    const result = await this._saveItem(primaryId, data, { 
+    const result = await this._saveItem(primaryId, jsUpdates, { 
       ...options,
       isNew: false
     });
@@ -76,8 +38,8 @@ const MutationMethods = {
         Delete: {
           TableName: this.table,
           Key: {
-            _pk: item._data._pk,
-            _sk: item._data._sk
+            _pk: item._dyData._pk,
+            _sk: item._dyData._sk
           }
         }
       }
@@ -114,6 +76,22 @@ const MutationMethods = {
     return item;
   },
 
+  _createNewPrimaryId(jsUpdates) {
+    // Now calculate primary key values using the processed data
+    const pkValue = this._getPkValue(jsUpdates);
+    const skValue = this._getSkValue(jsUpdates);
+    
+    // Format the primary key
+    const pk = this._formatPrimaryKey(this.modelPrefix, pkValue);
+    const primaryId = this.getPrimaryId({
+      ...jsUpdates,
+      _pk: pk,
+      _sk: skValue
+    });
+
+    return primaryId;
+  },
+
   async _saveItem(primaryId, jsUpdates, options = {}) {
     try {
       const { 
@@ -122,23 +100,21 @@ const MutationMethods = {
         constraints = {} 
       } = options;
 
-      logger.debug('saveItem', primaryId);
+      logger.debug('saveItem', primaryId, isNew, instanceObj);
       let consumedCapacity = [];
       
       let currentItem = instanceObj;
       if (isNew) {
+        assert(primaryId === null || primaryId === undefined, 'primaryId should be null for new items');
         currentItem = null;
       } else if (!currentItem) {
         currentItem = await this.find(primaryId, { batchDelay: 0 });
         consumedCapacity = [...consumedCapacity, ...currentItem.getConsumedCapacity()];
-      }
+      } 
       
       if (!isNew && !currentItem) {
         throw new Error('Item not found');
       }
-
-      // Validate unique constraints before attempting save
-      await this._validateUniqueConstraints(jsUpdates, isNew ? null : primaryId);
 
       const transactItems = [];
       const dyUpdatesToSave = {};
@@ -148,7 +124,7 @@ const MutationMethods = {
       
       // Generate Dynamo Updates to save
       for (const [key, field] of Object.entries(this.fields)) {
-        if (jsUpdates[key] === undefined && isNew) {
+        if (isNew && jsUpdates[key] === undefined) {
           // Only set initial values during creation
           const initialValue = field.getInitialValue();
           if (initialValue !== undefined) {
@@ -169,12 +145,34 @@ const MutationMethods = {
         }
       }
 
+      if (isNew) {
+        primaryId = this._createNewPrimaryId(jsUpdates);
+
+        // validate required fields
+        for (const [fieldName, field] of Object.entries(this.fields)) {
+          if (field.required && (jsUpdates[fieldName] === undefined || jsUpdates[fieldName] === null)) {
+            throw new Error(`Field is required: ${fieldName} `);
+          }
+        }
+      }
+
+      Object.entries(jsUpdates).forEach(([fieldName, value]) => {
+        const field = this._getField(fieldName);
+        if (field) {
+          field.validate(value, fieldName);
+        }
+      });
+
+      // Validate unique constraints before attempting save
+      await this._validateUniqueConstraints(jsUpdates, isNew ? null : primaryId);
+
+
       // Handle unique constraints
       for (const constraint of Object.values(this.uniqueConstraints || {})) {
         const fieldName = constraint.field;
         const field = this._getField(fieldName);
         const dyNewValue = dyUpdatesToSave[fieldName];
-        const dyCurrentValue = currentItem?._originalData[fieldName];
+        const dyCurrentValue = currentItem?._loadedDyData[fieldName];
 
         logger.debug('uniqueConstraint', field, dyCurrentValue, dyNewValue);
 
@@ -209,7 +207,7 @@ const MutationMethods = {
       const testId = this.manager.getTestId();
       if (testId) {
         logger.debug("savedTestId", testId, currentItem);
-        if (testId !== currentItem?._originalData._gsi_test_id) {
+        if (testId !== currentItem?._loadedDyData._gsi_test_id) {
           dyUpdatesToSave._gsi_test_id = testId;
         }
       }
@@ -257,7 +255,7 @@ const MutationMethods = {
           conditionExpressions.push(`${nameKey} = ${valueKey}`);
           conditionNames[nameKey] = fieldName;
           conditionValues[valueKey] = currentItem ? 
-            currentItem._originalData[fieldName] : 
+            currentItem._loadedDyData[fieldName] : 
             undefined;
         });
       }
@@ -310,9 +308,15 @@ const MutationMethods = {
               ReturnConsumedCapacity: 'TOTAL'
             }))
           );
+
+          logger.debug('transactItems response', response);
+          logger.debug('primaryId to load', primaryId);
           
           // Fetch the item since transactWrite doesn't return values
           const savedItem = await this.find(primaryId, { batchDelay: 0 });
+
+          logger.debug('savedItem', savedItem);
+          logger.debug('savedItem.name', savedItem.name);
           
           if (!savedItem.exists()) {
             throw new Error('Failed to fetch saved item');
@@ -339,7 +343,9 @@ const MutationMethods = {
             throw error;
           }
 
-          const savedItem = new this(response.Attributes);
+          const savedItem = this.createFromDyItem(response.Attributes);
+          logger.debug('savedItem', savedItem);
+
           savedItem.setConsumedCapacity(response.ConsumedCapacity, 'write', false);
           savedItem.addConsumedCapacity(consumedCapacity, 'read', false);
           return savedItem;

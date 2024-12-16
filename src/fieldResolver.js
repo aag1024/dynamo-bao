@@ -7,6 +7,11 @@ class FieldResolver {
     this.customFieldsPath = customFieldsPath;
     this.fieldDefinitionCache = new Map();
 
+    console.log('FieldResolver constructor:', {
+      builtInFieldsPath,
+      customFieldsPath,
+    });
+
     // Pre-cache all built-in fields
     Object.entries(this.builtInFields).forEach(([name, definition]) => {
       this.fieldDefinitionCache.set(name, definition);
@@ -21,7 +26,7 @@ class FieldResolver {
 
     // Try custom fields if available
     if (this.customFieldsPath) {
-      try {
+    //  try {
         // Convert to kebab case for file name
         const baseName = fieldType.replace(/Field$/, '');
         const kebabName = baseName
@@ -29,8 +34,13 @@ class FieldResolver {
           .toLowerCase();
         const fieldPath = path.join(this.customFieldsPath, `${kebabName}-field.js`);
         
+        console.log('fieldPath', fieldPath);
+
         if (fs.existsSync(fieldPath)) {
+          console.log('fieldPath exists');
           const customField = require(fieldPath);
+
+          console.log('customField', customField);
           // Get the field from the exports using the original field type name
           const fieldDefinition = customField[fieldType];
           if (fieldDefinition) {
@@ -38,9 +48,9 @@ class FieldResolver {
             return fieldDefinition;
           }
         }
-      } catch (err) {
-        console.error('Error loading custom field:', err.message);
-      }
+    //   } catch (err) {
+    //     console.error('Error loading custom field:', err);
+    //   }
     }
 
     throw new Error(`Field type '${fieldType}' not found in built-in or custom fields`);

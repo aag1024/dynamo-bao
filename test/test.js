@@ -59,7 +59,6 @@ describe('User CRUD Operations', () => {
     
     try {
       const user = await User.create(userData);
-      logger.log('Created user:', user);
       
       // Compare only the input fields that we explicitly provided
       expect(user.name).toBe(userData.name);

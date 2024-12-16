@@ -111,7 +111,7 @@ describe('TTL Field Tests', () => {
     const params = {
       TableName: TestTtl.table,
       Key: {
-        _pk: `[${item._data._gsi_test_id}]#${TestTtl.modelPrefix}#${itemId}`,
+        _pk: `[${item._dyData._gsi_test_id}]#${TestTtl.modelPrefix}#${itemId}`,
         _sk: TestTtl.modelPrefix
       }
     };
@@ -149,7 +149,7 @@ describe('TTL Field Tests', () => {
     const command = new GetCommand({
       TableName: TestTtl.table,
       Key: {
-        _pk: `[${item._data._gsi_test_id}]#${TestTtl.modelPrefix}#${itemId}`,
+        _pk: `[${item._dyData._gsi_test_id}]#${TestTtl.modelPrefix}#${itemId}`,
         _sk: TestTtl.modelPrefix
       }
     });

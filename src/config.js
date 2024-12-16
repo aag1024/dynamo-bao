@@ -15,7 +15,6 @@ function findConfig() {
         for (const name of possibleNames) {
             const configPath = path.join(searchPath, name);
             if (fs.existsSync(configPath)) {
-                console.log('DEBUG: Config file found:', configPath);
                 const rawConfig = require(configPath);
                 const configDir = path.dirname(configPath);
                 
@@ -54,5 +53,4 @@ function findConfig() {
 
 // Load config once at module level
 const config = findConfig();
-
 module.exports = config;

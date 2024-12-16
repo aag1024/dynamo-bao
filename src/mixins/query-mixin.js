@@ -247,7 +247,7 @@ const QueryMethods = {
     }
   
     // Create model instances
-    let items = returnWrapped ? response.Items.map(item => new this(item)) : response.Items;
+    let items = returnWrapped ? response.Items.map(item => this.createFromDyItem(item)) : response.Items;
     const loaderContext = options.loaderContext || {};
 
     // Load related data if requested

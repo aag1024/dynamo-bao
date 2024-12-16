@@ -50,7 +50,7 @@ const BatchLoadingMethods = {
     if (loaderContext) {
       primaryIds.forEach(id => {
         if (loaderContext[id]) {
-          const instance = new this(loaderContext[id]._data);
+          const instance = this.createFromDyItem(loaderContext[id]._dyData);
           results[id] = instance;
         } else {
           idsToLoad.push(id);
@@ -98,7 +98,7 @@ const BatchLoadingMethods = {
         // Process successful items
         if (batchResult.Responses?.[this.table]) {
           batchResult.Responses[this.table].forEach(item => {
-            const instance = new this(item);
+            const instance = this.createFromDyItem(item);
             const primaryId = instance.getPrimaryId();
             results[primaryId] = instance;
             
@@ -143,7 +143,7 @@ const BatchLoadingMethods = {
     // Check loader context first
     if (loaderContext && loaderContext[primaryId]) {
       const cachedItem = loaderContext[primaryId];
-      const instance = new this(cachedItem._data);
+      const instance = this.createFromDyItem(cachedItem._dyData);
       const consumedCapacity = cachedItem.getConsumedCapacity().consumedCapacity;
       instance.addConsumedCapacity(consumedCapacity, 'read', true);
       return instance;
@@ -163,7 +163,7 @@ const BatchLoadingMethods = {
       if (!result.Item) {
         instance = new ObjectNotFound(result.ConsumedCapacity);
       } else {
-        instance = new this(result.Item);
+        instance = this.createFromDyItem(result.Item);
         instance.addConsumedCapacity(result.ConsumedCapacity, 'read', false);
       }
       

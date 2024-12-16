@@ -24,11 +24,12 @@ function generateModels(definitionsPath) {
   const config = loadConfig();
   console.log(`Generating models from: ${definitionsPath}`);
   console.log(`Output directory: ${config.paths.modelsDir}`);
+  console.log(`Fields directory: ${config.paths.fieldsDir}`);
   
   try {
     const definitions = loadModelDefinitions(definitionsPath);
     const builtInFieldsPath = path.resolve(__dirname, '../src/fields');
-    const customFieldsPath = path.resolve(path.dirname(definitionsPath), 'custom-fields');
+    const customFieldsPath = config.paths.fieldsDir;
     
     const fieldResolver = new FieldResolver(
       builtInFieldsPath,

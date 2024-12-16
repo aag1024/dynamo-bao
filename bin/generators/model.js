@@ -14,6 +14,8 @@ function generateModelClass(modelName, modelConfig, allModels, fieldResolver) {
   const baseImports = new Set(['BaseModel']);
   const constantImports = new Set();
 
+  console.log('model config', modelConfig);
+
   // Generate fields and track used field types
   const fields = Object.entries(modelConfig.fields)
     .map(([fieldName, fieldConfig]) => {
@@ -94,7 +96,7 @@ function generateModelClass(modelName, modelConfig, allModels, fieldResolver) {
   const baseImportStr = Array.from(baseImports).join(',\n  ');
   const constantImportStr = Array.from(constantImports).join(',\n  ');
   const fieldImports = Array.from(usedFields).join(',\n    ');
-  
+
   // Generate custom field imports
   const customFieldImports = Array.from(customFields)
     .map(fieldType => {
@@ -103,7 +105,7 @@ function generateModelClass(modelName, modelConfig, allModels, fieldResolver) {
       const kebabName = baseName
         .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
         .toLowerCase();
-      return `const { ${fieldType} } = require('../custom-fields/${kebabName}-field');`;
+      return `const { ${fieldType} } = require('../fields/${kebabName}-field');`;
     })
     .join('\n');
 
@@ -173,14 +175,19 @@ function generateModelFiles(models, outputDir, fieldResolver) {
   }
 
   Object.entries(models).forEach(([modelName, modelConfig]) => {
-    const code = generateModelClass(modelName, modelConfig, models, fieldResolver);
-    
     // Convert model name from PascalCase to kebab-case for the file name
     const fileName = modelName
       .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
       .toLowerCase();
     
     const filePath = path.join(outputDir, `${fileName}.js`);
+    // delete the file if it exists
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+    }
+
+    const code = generateModelClass(modelName, modelConfig, models, fieldResolver);
+  
     fs.writeFileSync(filePath, code);
     console.log(`Generated ${filePath}`);
   });

@@ -97,11 +97,11 @@ class BaseModel {
   }
 
   _getPkValue() {
-    return this.constructor._getPkValue(this._data);
+    return this.constructor._getPkValue(this._dyData);
   }
 
   _getSkValue() {
-    return this.constructor._getSkValue(this._data);
+    return this.constructor._getSkValue(this._dyData);
   }
 
   static _formatGsiKey(modelPrefix, indexId, value) {
@@ -142,40 +142,35 @@ class BaseModel {
     }
   }
   
-  constructor(data = {}) {
-    // Initialize data object with all DynamoDB attributes
-    this._data = {};
+  constructor(jsData = {}) {
+    this._dyData = {};
     SYSTEM_FIELDS.forEach(key => {
-      if (data[key] !== undefined) {
-        this._data[key] = data[key];
+      if (jsData[key] !== undefined) {
+        this._dyData[key] = jsData[key];
       }
     });
 
-    this._originalData = {};
+    this._loadedDyData = {};
     this._changes = new Set();
     this._relatedObjects = {};
     this._consumedCapacity = [];
 
     // Initialize fields with data
     Object.entries(this.constructor.fields).forEach(([fieldName, field]) => {
-      let value;
-      if (data[fieldName] === undefined) {
-        value = field.getInitialValue();
-      } 
+      // Convert initial value to DynamoDB format
+      let value = jsData[fieldName] === undefined ? 
+        field.getInitialValue() : 
+        jsData[fieldName];
+      this._dyData[fieldName] = field.toDy(value);
       
-      if (value === undefined) {
-        value = field.fromDy(data[fieldName]);
-      }
-
-      this._data[fieldName] = value;
-      
-      // Define property getter/setter for converted value
+      // Define property getter/setter that always works with _dyData
       Object.defineProperty(this, fieldName, {
-        get: () => value,
+        get: () => field.fromDy(this._dyData[fieldName]),
         set: (newValue) => {
-          if (newValue !== value) {
-            value = newValue;
-            this._data[fieldName] = field.toDy(newValue);  // Update raw value
+          const oldDyValue = this._dyData[fieldName];
+          const newDyValue = field.toDy(newValue);
+          if (newDyValue !== oldDyValue) {
+            this._dyData[fieldName] = newDyValue;
             this._changes.add(fieldName);
             if (field instanceof RelatedFieldClass) {
               delete this._relatedObjects[fieldName];
@@ -184,9 +179,16 @@ class BaseModel {
         }
       });
     });
+  }
 
-    // Store original data for change tracking
-    this._originalData = { ...this._data };
+  static createFromDyItem(dyItem) {
+    const newObj = new this();
+    newObj._dyData = dyItem;
+    newObj._resetChangeTracking();
+
+    logger.debug('createFromDyItem', dyItem, newObj);
+    logger.debug('createFromDyItem.name', newObj.name);
+    return newObj;
   }
 
   clearRelatedCache(fieldName) {
@@ -248,7 +250,7 @@ class BaseModel {
   }
 
   getPrimaryId() {
-    return this.constructor.getPrimaryId(this._data);
+    return this.constructor.getPrimaryId(this._dyData);
   }
 
   static parsePrimaryId(primaryId) {
@@ -280,7 +282,7 @@ class BaseModel {
             type: fieldDef.constructor.name,
             field: fieldDef
         });
-        const dyValue = this._data[field];
+        const dyValue = this._dyData[field];
         logger.debug('Converting value:', {
             field,
             dyValue,
@@ -298,7 +300,7 @@ class BaseModel {
 
   // Reset tracking after successful save
   _resetChangeTracking() {
-    this._originalData = { ...this._data };
+    this._loadedDyData = { ...this._dyData };
     this._changes.clear();
   }
 
@@ -314,20 +316,8 @@ class BaseModel {
       this.getPrimaryId(), 
       changes, 
       { instanceObj: this, ...options });
-    
-    // Update this instance with the new values
-    Object.entries(this.constructor.fields).forEach(([fieldName, field]) => {
-      if (updatedObj[fieldName] !== undefined) {
-        this[fieldName] = updatedObj[fieldName];
-      }
-    });
-    
-    // Copy any system fields
-    SYSTEM_FIELDS.forEach(key => {
-      if (updatedObj._data[key] !== undefined) {
-        this._data[key] = updatedObj._data[key];
-      }
-    });
+
+    this._dyData = updatedObj._dyData;
     
     // Reset change tracking after successful save
     this._resetChangeTracking();

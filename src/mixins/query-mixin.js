@@ -8,6 +8,25 @@ const { retryOperation } = require("../utils/retry-helper");
 const { QueryCommand } = require("@aws-sdk/lib-dynamodb");
 
 const QueryMethods = {
+  /**
+   * Queries items by their primary key value with an optional sort key condition
+   *
+   * For more details, see queryByIndex. In general, it's recommended to use
+   * queryByIndex and give a name to the index. You can do this by adding
+   * an index name in the indexes section of the model definition and setting
+   * it to primaryKey. For example:
+   *
+   * models:
+   *   TaggedPost:
+   *     ...
+   *     indexes:
+   *       postsForTag: this.primaryKey
+   *
+   * @param {*} pkValue - The partition key value to query
+   * @param {Object|null} skCondition - Optional sort key condition in the format: { fieldName: value } or { fieldName: { $operator: value } }
+   * @param {Object} options - Query options (same as queryByIndex options)
+   * @returns {Promise<Object>} Returns an object containing items, count, lastEvaluatedKey, and consumedCapacity
+   */
   async queryByPrimaryKey(pkValue, skCondition = null, options = {}) {
     const params = this._getBaseQueryParams(
       "_pk",
@@ -23,6 +42,13 @@ const QueryMethods = {
     return this._processQueryResponse(response, options);
   },
 
+  /**
+   * Queries related objects via a mapping table.
+   *
+   * This is primary used by the code generator to build helper functions
+   * for querying related objects. For most common operations, should should
+   * not need to use this method directly.
+   */
   async getRelatedObjectsViaMap(
     indexName,
     pkValue,
@@ -43,6 +69,17 @@ const QueryMethods = {
   },
 
   /**
+   * This is the primary method for querying data via a named index or primary key.
+   * If possible, you should always specify a sort key condition using skCondition.
+   * This will use dynamodb's index to query the data without scanning the partition.
+   *
+   * Optionally, you can specify a filter condition to further narrow down the results.
+   * Please note that a filter condition will scan anything in the partition that matches
+   * the skCondition, so if you haven't specified a skCondition, this will scan
+   * the entire partition (and consume more capacity units). However, there may
+   * also be times when this works without issue and is more efficient than adding
+   * another index and paying for the write overhead of the index.
+   *
    * @param {Object|null} skCondition - Optional sort key condition in the format: { fieldName: value } or { fieldName: { $operator: value } }
    *                                   Supported operators: $between, $beginsWith
    *                                   Example: { status: 'active' } or { createdAt: { $between: [date1, date2] } }

@@ -61,7 +61,7 @@ describe("Batch Delay Tests", () => {
 
   afterEach(async () => {
     // Clear batch requests for this test
-    const testBatchRequests = TestBatchModel.getBatchRequests();
+    const testBatchRequests = TestBatchModel._getBatchRequests();
     if (testBatchRequests) {
       testBatchRequests.forEach((batch) => {
         // Clear all timers associated with the batch
@@ -204,7 +204,7 @@ describe("Batch Delay Tests", () => {
     await new Promise((resolve) => setTimeout(resolve, 10));
 
     // Force cleanup of the batch using the test-scoped batch requests
-    const batchRequests = TestBatchModel.getBatchRequests();
+    const batchRequests = TestBatchModel._getBatchRequests();
     const batchKey = `TestBatchModel-50`;
     const batch = batchRequests.get(batchKey);
 

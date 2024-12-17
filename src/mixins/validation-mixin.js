@@ -11,6 +11,22 @@ const {
 } = require("../constants");
 
 const ValidationMethods = {
+  /**
+   * Validates the model configuration. This is called by the code generator
+   * and should not need to be called directly.
+   *
+   * This validates the following:
+   * - modelPrefix is defined
+   * - primaryKey is defined
+   * - fields are defined
+   * - indexes are defined
+   * - unique constraints are defined
+   * - field names do not start with underscore
+   * - index names do not start with underscore
+   * - index referenced fields do not start with underscore
+   * - index IDs are valid
+   * - unique constraint IDs are valid
+   */
   validateConfiguration() {
     if (!this.modelPrefix) {
       throw new Error(`${this.name} must define a modelPrefix`);

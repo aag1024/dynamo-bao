@@ -9,7 +9,7 @@ const DEFAULT_BATCH_DELAY_MS = 5;
 const BATCH_REQUEST_TIMEOUT = 10000; // 10 seconds max lifetime for a batch
 
 const BatchLoadingMethods = {
-  getBatchRequests() {
+  _getBatchRequests() {
     const testId = this._testId || "default";
     if (!BATCH_REQUESTS.has(testId)) {
       BATCH_REQUESTS.set(testId, new Map());
@@ -17,6 +17,10 @@ const BatchLoadingMethods = {
     return BATCH_REQUESTS.get(testId);
   },
 
+  /**
+   * This is the primary way to load multiple objects given an array of primaryIds.
+   * This function should only be used when find or loadRelatedData is not sufficient.
+   */
   async batchFind(primaryIds, loaderContext = null) {
     if (!primaryIds?.length) return { items: {}, ConsumedCapacity: [] };
 
@@ -144,6 +148,21 @@ const BatchLoadingMethods = {
     };
   },
 
+  /**
+   * Find is the primary way to look up an object given a primaryId. This supports
+   * efficient batch loading and caching. In general, this function should be
+   * preferred over batchFind. Find uses batchFind internally, unless batchDelay
+   * is set to 0.
+   *
+   * @param {string} primaryId - The primary ID of the item to find
+   * @param {Object} [options={}] - Optional configuration for the find operation
+   * @param {number} [options.batchDelay=5] - Delay in milliseconds before executing batch request.
+   *                                         Set to 0 for immediate individual requests
+   * @param {Object} [options.loaderContext] - Cache context for storing and retrieving items across requests.
+   *                                          If provided, results will be stored in and retrieved from this context
+   * @returns {Promise<Object>} Returns a promise that resolves to the found item instance or ObjectNotFound
+   * @throws {Error} If the batch request times out or other errors occur during the operation
+   */
   async find(primaryId, options = {}) {
     const batchDelay = options.batchDelay ?? DEFAULT_BATCH_DELAY_MS;
     const loaderContext = options.loaderContext;
@@ -189,7 +208,7 @@ const BatchLoadingMethods = {
     // Batch request logic
     return new Promise((resolve, reject) => {
       const batchKey = `${this.name}-${batchDelay}`;
-      const batchRequests = this.getBatchRequests();
+      const batchRequests = this._getBatchRequests();
       let batchRequest = batchRequests.get(batchKey);
 
       if (!batchRequest) {

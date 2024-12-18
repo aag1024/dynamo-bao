@@ -1,6 +1,6 @@
 const dynamoBao = require("../src");
 const testConfig = require("./config");
-const { BaseModel, PrimaryKeyConfig, IndexConfig } = require("../src/model");
+const { BaoModel, PrimaryKeyConfig, IndexConfig } = require("../src/model");
 const { StringField } = require("../src/fields");
 const { ulid } = require("ulid");
 const { cleanupTestData, verifyCleanup } = require("./utils/test-utils");
@@ -29,7 +29,7 @@ describe("Model Validation Tests", () => {
   });
 
   test("should reject field names starting with underscore", () => {
-    class InvalidFieldModel extends BaseModel {
+    class InvalidFieldModel extends BaoModel {
       static modelPrefix = "test";
       static fields = {
         validField: StringField(),
@@ -47,7 +47,7 @@ describe("Model Validation Tests", () => {
   });
 
   test("should reject index names starting with underscore", () => {
-    class InvalidIndexModel extends BaseModel {
+    class InvalidIndexModel extends BaoModel {
       static modelPrefix = "test";
       static fields = {
         id: StringField(),
@@ -68,7 +68,7 @@ describe("Model Validation Tests", () => {
   });
 
   test("should validate required fields during creation", async () => {
-    class RequiredFieldModel extends BaseModel {
+    class RequiredFieldModel extends BaoModel {
       static modelPrefix = "test";
       static fields = {
         id: StringField({ required: true }),
@@ -113,7 +113,7 @@ describe("Model Validation Tests", () => {
   });
 
   test("should validate required fields during update", async () => {
-    class RequiredFieldModel extends BaseModel {
+    class RequiredFieldModel extends BaoModel {
       static modelPrefix = "test";
       static fields = {
         id: StringField({ required: true }),
@@ -152,7 +152,7 @@ describe("Model Validation Tests", () => {
   });
 
   test("should automatically mark primary key fields as required", async () => {
-    class ImplicitRequiredModel extends BaseModel {
+    class ImplicitRequiredModel extends BaoModel {
       static modelPrefix = "test";
       static fields = {
         id: StringField(), // Not explicitly required
@@ -165,7 +165,7 @@ describe("Model Validation Tests", () => {
     manager.registerModel(ImplicitRequiredModel);
 
     // Should automatically mark fields as required during validation
-    ImplicitRequiredModel.validateConfiguration();
+    ImplicitRequiredModel._validateConfiguration();
 
     // Verify fields are now required by attempting to create without them
     await expect(
@@ -189,7 +189,7 @@ describe("Model Validation Tests", () => {
   });
 
   test("should work with single-field primary keys", async () => {
-    class SingleKeyModel extends BaseModel {
+    class SingleKeyModel extends BaoModel {
       static modelPrefix = "test";
       static fields = {
         id: StringField(), // Not explicitly required
@@ -201,7 +201,7 @@ describe("Model Validation Tests", () => {
     manager.registerModel(SingleKeyModel);
 
     // Should automatically mark field as required during validation
-    SingleKeyModel.validateConfiguration();
+    SingleKeyModel._validateConfiguration();
 
     // Verify field is now required
     await expect(
@@ -218,7 +218,7 @@ describe("Model Validation Tests", () => {
   });
 
   test("should accept explicitly required primary key fields", async () => {
-    class ExplicitRequiredModel extends BaseModel {
+    class ExplicitRequiredModel extends BaoModel {
       static modelPrefix = "test";
       static fields = {
         id: StringField({ required: true }),
@@ -231,7 +231,7 @@ describe("Model Validation Tests", () => {
     manager.registerModel(ExplicitRequiredModel);
 
     // Should validate without any warnings
-    ExplicitRequiredModel.validateConfiguration();
+    ExplicitRequiredModel._validateConfiguration();
 
     // Verify fields are required
     await expect(

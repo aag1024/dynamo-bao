@@ -1,0 +1,25 @@
+{
+  "source": {
+    "include": ["./"],
+    "includePattern": ".+\\.js(doc|x)?$",
+    "excludePattern": "(node_modules/|docs)"
+  },
+  "plugins": ["plugins/markdown"],
+  "opts": {
+    "destination": "./docs",
+    "recurse": true,
+    "template": "node_modules/clean-jsdoc-theme",
+    "theme_opts": {
+      "include_css": ["./jsdoc.css"]
+    }
+  },
+  "templates": {
+    "clean-jsdoc-theme": {
+      "navigationList": ["Classes", "Methods", "Modules", "Namespaces"],
+      "showTableOfContents": true,
+      "tableOfContents": {
+        "collapse": true
+      }
+    }
+  }
+}

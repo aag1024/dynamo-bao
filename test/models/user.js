@@ -1,6 +1,6 @@
 // src/models/user.js
 const {
-  BaseModel,
+  BaoModel,
   PrimaryKeyConfig,
   IndexConfig,
   UniqueConstraintConfig,
@@ -21,7 +21,7 @@ const {
   UlidField,
 } = require("../../src/fields");
 
-class User extends BaseModel {
+class User extends BaoModel {
   static modelPrefix = "u";
 
   static fields = {

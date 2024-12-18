@@ -12,22 +12,36 @@ const {
 
 const ValidationMethods = {
   /**
+   *
+   * @function _validateConfiguration
+   * @memberof BaoModel
+   * @private
+   * @throws {Error} If modelPrefix is not defined
+   * @throws {Error} If primaryKey is not defined
+   * @throws {Error} If TTL field is incorrectly named
+   * @throws {Error} If field names start with underscore
+   * @throws {Error} If index names start with underscore
+   * @throws {Error} If index IDs are invalid
+   * @throws {Error} If constraint IDs are invalid
+   *
+   * @example
+   * const model = new DynamoModel();
+   * model._validateConfiguration();
+   *
+   * @description
    * Validates the model configuration. This is called by the code generator
    * and should not need to be called directly.
    *
-   * This validates the following:
-   * - modelPrefix is defined
-   * - primaryKey is defined
-   * - fields are defined
-   * - indexes are defined
-   * - unique constraints are defined
-   * - field names do not start with underscore
-   * - index names do not start with underscore
-   * - index referenced fields do not start with underscore
-   * - index IDs are valid
-   * - unique constraint IDs are valid
+   * Performs the following validations:
+   * - Ensures modelPrefix is defined
+   * - Ensures primaryKey is defined
+   * - Validates TTL field naming
+   * - Ensures primary key fields are marked as required
+   * - Validates field naming conventions
+   * - Validates index configurations
+   * - Validates unique constraints
    */
-  validateConfiguration() {
+  _validateConfiguration() {
     if (!this.modelPrefix) {
       throw new Error(`${this.name} must define a modelPrefix`);
     }

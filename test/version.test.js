@@ -1,7 +1,7 @@
 const dynamoBao = require("../src");
 const testConfig = require("./config");
 const { ModelManager } = require("../src/model-manager");
-const { BaseModel, PrimaryKeyConfig } = require("../src/model");
+const { BaoModel, PrimaryKeyConfig } = require("../src/model");
 const { StringField, VersionField } = require("../src/fields");
 const { cleanupTestData, verifyCleanup } = require("./utils/test-utils");
 const { ulid } = require("ulid");
@@ -9,7 +9,7 @@ const { defaultLogger: logger } = require("../src/utils/logger");
 
 let testId;
 
-class TestVersion extends BaseModel {
+class TestVersion extends BaoModel {
   static modelPrefix = "tv";
 
   static fields = {

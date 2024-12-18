@@ -1,13 +1,13 @@
 const dynamoBao = require("../src");
 const testConfig = require("./config");
-const { BaseModel, PrimaryKeyConfig } = require("../src/model");
+const { BaoModel, PrimaryKeyConfig } = require("../src/model");
 const { StringField, CounterField } = require("../src/fields");
 const { cleanupTestData, verifyCleanup } = require("./utils/test-utils");
 const { ulid } = require("ulid");
 
 let testId;
 
-class TestCounter extends BaseModel {
+class TestCounter extends BaoModel {
   static modelPrefix = "tc";
 
   static fields = {

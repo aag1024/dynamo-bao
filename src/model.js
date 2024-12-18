@@ -22,7 +22,11 @@ const {
 const GID_SEPARATOR = "##__SK__##";
 const { UNIQUE_CONSTRAINT_KEY, SYSTEM_FIELDS } = require("./constants");
 
-class BaseModel {
+/**
+ * Base DynamoDB model providing data access and validation
+ * @class
+ */
+class BaoModel {
   static _testId = null;
   static table = null;
   static documentClient = null;
@@ -38,11 +42,11 @@ class BaseModel {
 
   static {
     // Initialize methods
-    Object.assign(BaseModel, ValidationMethods);
-    Object.assign(BaseModel, UniqueConstraintMethods);
-    Object.assign(BaseModel, QueryMethods);
-    Object.assign(BaseModel, MutationMethods);
-    Object.assign(BaseModel, BatchLoadingMethods);
+    Object.assign(BaoModel, ValidationMethods);
+    Object.assign(BaoModel, UniqueConstraintMethods);
+    Object.assign(BaoModel, QueryMethods);
+    Object.assign(BaoModel, MutationMethods);
+    Object.assign(BaoModel, BatchLoadingMethods);
   }
 
   static setTestId(testId) {
@@ -182,13 +186,13 @@ class BaseModel {
     });
   }
 
-  static createFromDyItem(dyItem) {
+  static _createFromDyItem(dyItem) {
     const newObj = new this();
     newObj._dyData = dyItem;
     newObj._resetChangeTracking();
 
-    logger.debug("createFromDyItem", dyItem, newObj);
-    logger.debug("createFromDyItem.name", newObj.name);
+    logger.debug("_createFromDyItem", dyItem, newObj);
+    logger.debug("_createFromDyItem.name", newObj.name);
     return newObj;
   }
 
@@ -262,7 +266,7 @@ class BaseModel {
     return this.constructor.getPrimaryId(this._dyData);
   }
 
-  static parsePrimaryId(primaryId) {
+  static _parsePrimaryId(primaryId) {
     if (!primaryId) {
       throw new Error("Primary ID is required to parse");
     }
@@ -441,7 +445,7 @@ class BaseModel {
     const item = await this.find(result.Item.relatedId, { loaderContext });
 
     if (item) {
-      item.addConsumedCapacity(result.ConsumedCapacity);
+      item._addConsumedCapacity(result.ConsumedCapacity);
     }
 
     return item;
@@ -451,12 +455,12 @@ class BaseModel {
     return true;
   }
 
-  setConsumedCapacity(capacity, type = "read", fromContext = false) {
+  _setConsumedCapacity(capacity, type = "read", fromContext = false) {
     this.clearConsumedCapacity();
-    this.addConsumedCapacity(capacity, type, fromContext);
+    this._addConsumedCapacity(capacity, type, fromContext);
   }
 
-  addConsumedCapacity(capacity, type = "read", fromContext = false) {
+  _addConsumedCapacity(capacity, type = "read", fromContext = false) {
     if (type !== "read" && type !== "write" && type !== "total") {
       throw new Error(`Invalid consumed capacity type: ${type}`);
     }
@@ -467,7 +471,7 @@ class BaseModel {
 
     if (Array.isArray(capacity)) {
       capacity.forEach((item) =>
-        this.addConsumedCapacity(item, type, fromContext),
+        this._addConsumedCapacity(item, type, fromContext),
       );
     } else {
       if (capacity.consumedCapacity) {
@@ -486,6 +490,12 @@ class BaseModel {
     }
   }
 
+  /**
+   * Get the numeric consumed capacity for a given type.
+   * @param {string} type - Either "read", "write", or "total".
+   * @param {boolean} [includeRelated=false] - Whether to include capacity from related objects.
+   * @returns {number} The numeric consumed capacity.
+   */
   getNumericConsumedCapacity(type, includeRelated = false) {
     if (type !== "read" && type !== "write" && type !== "total") {
       throw new Error(`Invalid consumed capacitytype: ${type}`);
@@ -532,7 +542,7 @@ class BaseModel {
 }
 
 module.exports = {
-  BaseModel,
+  BaoModel,
   PrimaryKeyConfig: (pk, sk) => new PrimaryKeyConfig(pk, sk),
   IndexConfig: (pk, sk, indexId) => new IndexConfig(pk, sk, indexId),
   UniqueConstraintConfig: (field, constraintId) =>

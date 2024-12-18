@@ -1,11 +1,11 @@
 // src/models/commentLike.js
-const { BaseModel, PrimaryKeyConfig, IndexConfig } = require("../../src/model");
+const { BaoModel, PrimaryKeyConfig, IndexConfig } = require("../../src/model");
 
 const { GSI_INDEX_ID1 } = require("../../src/constants");
 
 const { StringField, RelatedField, UlidField } = require("../../src/fields");
 
-class CommentLike extends BaseModel {
+class CommentLike extends BaoModel {
   static modelPrefix = "cl";
 
   static fields = {

@@ -1,6 +1,6 @@
 const dynamoBao = require("../src");
 const testConfig = require("./config");
-const { BaseModel, PrimaryKeyConfig, IndexConfig } = require("../src/model");
+const { BaoModel, PrimaryKeyConfig, IndexConfig } = require("../src/model");
 
 const { GSI_INDEX_ID1 } = require("../src/constants");
 
@@ -16,7 +16,7 @@ const { defaultLogger: logger } = require("../src/utils/logger");
 
 let testId;
 
-class TestUser extends BaseModel {
+class TestUser extends BaoModel {
   static modelPrefix = "tu";
 
   static fields = {

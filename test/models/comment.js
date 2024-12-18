@@ -1,5 +1,5 @@
 // src/models/comment.js
-const { BaseModel, PrimaryKeyConfig } = require("../../src/model");
+const { BaoModel, PrimaryKeyConfig } = require("../../src/model");
 
 const {
   StringField,
@@ -9,7 +9,7 @@ const {
   UlidField,
 } = require("../../src/fields");
 
-class Comment extends BaseModel {
+class Comment extends BaoModel {
   static modelPrefix = "c";
 
   static fields = {

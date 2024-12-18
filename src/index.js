@@ -8,7 +8,7 @@ const fields = require("./fields");
 const constants = require("./constants");
 
 const {
-  BaseModel,
+  BaoModel,
   PrimaryKeyConfig,
   IndexConfig,
   UniqueConstraintConfig,
@@ -104,7 +104,7 @@ const firstExport = {
   initModels,
 
   // Core classes
-  BaseModel,
+  BaoModel,
   ModelManager,
   fields,
 

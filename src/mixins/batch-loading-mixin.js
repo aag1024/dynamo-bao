@@ -56,7 +56,7 @@ const BatchLoadingMethods = {
     if (loaderContext) {
       primaryIds.forEach((id) => {
         if (loaderContext[id]) {
-          const instance = this.createFromDyItem(loaderContext[id]._dyData);
+          const instance = this._createFromDyItem(loaderContext[id]._dyData);
           results[id] = instance;
         } else {
           idsToLoad.push(id);
@@ -80,7 +80,7 @@ const BatchLoadingMethods = {
     for (let i = 0; i < idsToLoad.length; i += 100) {
       const batchIds = idsToLoad.slice(i, i + 100);
       const Keys = batchIds.map((id) => {
-        const pkSk = this.parsePrimaryId(id);
+        const pkSk = this._parsePrimaryId(id);
         return this._getDyKeyForPkSk(pkSk);
       });
 
@@ -106,7 +106,7 @@ const BatchLoadingMethods = {
         // Process successful items
         if (batchResult.Responses?.[this.table]) {
           batchResult.Responses[this.table].forEach((item) => {
-            const instance = this.createFromDyItem(item);
+            const instance = this._createFromDyItem(item);
             const primaryId = instance.getPrimaryId();
             results[primaryId] = instance;
 
@@ -149,6 +149,9 @@ const BatchLoadingMethods = {
   },
 
   /**
+   * @memberof BaoModel
+   *
+   * @description
    * Find is the primary way to look up an object given a primaryId. This supports
    * efficient batch loading and caching. In general, this function should be
    * preferred over batchFind. Find uses batchFind internally, unless batchDelay
@@ -170,16 +173,16 @@ const BatchLoadingMethods = {
     // Check loader context first
     if (loaderContext && loaderContext[primaryId]) {
       const cachedItem = loaderContext[primaryId];
-      const instance = this.createFromDyItem(cachedItem._dyData);
+      const instance = this._createFromDyItem(cachedItem._dyData);
       const consumedCapacity =
         cachedItem.getConsumedCapacity().consumedCapacity;
-      instance.addConsumedCapacity(consumedCapacity, "read", true);
+      instance._addConsumedCapacity(consumedCapacity, "read", true);
       return instance;
     }
 
     if (batchDelay === 0) {
       // Direct DynamoDB request logic
-      const pkSk = this.parsePrimaryId(primaryId);
+      const pkSk = this._parsePrimaryId(primaryId);
       const dyKey = this._getDyKeyForPkSk(pkSk);
       const result = await this.documentClient.send(
         new GetCommand({
@@ -193,8 +196,8 @@ const BatchLoadingMethods = {
       if (!result.Item) {
         instance = new ObjectNotFound(result.ConsumedCapacity);
       } else {
-        instance = this.createFromDyItem(result.Item);
-        instance.addConsumedCapacity(result.ConsumedCapacity, "read", false);
+        instance = this._createFromDyItem(result.Item);
+        instance._addConsumedCapacity(result.ConsumedCapacity, "read", false);
       }
 
       // Add to loader context if provided
@@ -253,7 +256,7 @@ const BatchLoadingMethods = {
             currentBatch.items.forEach((batchItem) => {
               let item = items[batchItem.id];
               if (item) {
-                item.addConsumedCapacity(consumedCapacity, "read", false);
+                item._addConsumedCapacity(consumedCapacity, "read", false);
               } else {
                 item = new ObjectNotFound(consumedCapacity);
               }

@@ -37,7 +37,7 @@ class ModelManager {
       ModelClass._testId = this._testId;
       ModelClass.documentClient = this._docClient;
       ModelClass.table = this._tableName;
-      ModelClass.validateConfiguration();
+      ModelClass._validateConfiguration();
     }
 
     this._initialized = true;
@@ -78,7 +78,7 @@ class ModelManager {
     if (this._initialized) {
       ModelClass.documentClient = this._docClient;
       ModelClass.table = this._tableName;
-      ModelClass.validateConfiguration();
+      ModelClass._validateConfiguration();
     }
 
     return ModelClass;

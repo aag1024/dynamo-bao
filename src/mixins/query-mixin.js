@@ -9,6 +9,9 @@ const { QueryCommand } = require("@aws-sdk/lib-dynamodb");
 
 const QueryMethods = {
   /**
+   * @memberof BaoModel
+   *
+   * @description
    * Queries items by their primary key value with an optional sort key condition
    *
    * For more details, see queryByIndex. In general, it's recommended to use
@@ -43,6 +46,9 @@ const QueryMethods = {
   },
 
   /**
+   * @memberof BaoModel
+   *
+   * @description
    * Queries related objects via a mapping table.
    *
    * This is primary used by the code generator to build helper functions
@@ -69,6 +75,9 @@ const QueryMethods = {
   },
 
   /**
+   * @memberof BaoModel
+   *
+   * @description
    * This is the primary method for querying data via a named index or primary key.
    * If possible, you should always specify a sort key condition using skCondition.
    * This will use dynamodb's index to query the data without scanning the partition.
@@ -303,7 +312,7 @@ const QueryMethods = {
 
     // Create model instances
     let items = returnWrapped
-      ? response.Items.map((item) => this.createFromDyItem(item))
+      ? response.Items.map((item) => this._createFromDyItem(item))
       : response.Items;
     const loaderContext = options.loaderContext || {};
 

@@ -1,8 +1,8 @@
-const { BaseModel, PrimaryKeyConfig, IndexConfig } = require("../../src/model");
+const { BaoModel, PrimaryKeyConfig, IndexConfig } = require("../../src/model");
 
 const { StringField, CreateDateField, UlidField } = require("../../src/fields");
 
-class Tag extends BaseModel {
+class Tag extends BaoModel {
   static modelPrefix = "t";
 
   static fields = {

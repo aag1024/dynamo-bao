@@ -19,7 +19,7 @@ function generateModelClass(
   // Track which fields, constants, and models are actually used
   const usedFields = new Set();
   const customFields = new Set();
-  const baseImports = new Set(["BaseModel"]);
+  const baseImports = new Set(["BaoModel"]);
   const constantImports = new Set();
 
   console.log("model config", modelConfig);
@@ -173,7 +173,7 @@ ${Array.from(relatedModels)
   })
   .join("\n")}
 
-class ${modelName} extends BaseModel {
+class ${modelName} extends BaoModel {
   static modelPrefix = '${modelConfig.modelPrefix}';
   
   static fields = {

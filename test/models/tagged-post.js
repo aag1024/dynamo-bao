@@ -1,10 +1,10 @@
-const { BaseModel, PrimaryKeyConfig, IndexConfig } = require("../../src/model");
+const { BaoModel, PrimaryKeyConfig, IndexConfig } = require("../../src/model");
 
 const { GSI_INDEX_ID1, GSI_INDEX_ID2 } = require("../../src/constants");
 
 const { CreateDateField, RelatedField } = require("../../src/fields");
 
-class TaggedPost extends BaseModel {
+class TaggedPost extends BaoModel {
   static modelPrefix = "tp";
 
   static fields = {

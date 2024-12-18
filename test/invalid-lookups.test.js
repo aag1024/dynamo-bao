@@ -1,7 +1,7 @@
 const dynamoBao = require("../src");
 const testConfig = require("./config");
 const {
-  BaseModel,
+  BaoModel,
   PrimaryKeyConfig,
   IndexConfig,
   UniqueConstraintConfig,
@@ -15,7 +15,7 @@ const { ulid } = require("ulid");
 
 let testId;
 
-class TestModel extends BaseModel {
+class TestModel extends BaoModel {
   static modelPrefix = "tm";
 
   static fields = {

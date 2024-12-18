@@ -1,6 +1,6 @@
 const dynamoBao = require("../src");
 const testConfig = require("./config");
-const { BaseModel, PrimaryKeyConfig } = require("../src/model");
+const { BaoModel, PrimaryKeyConfig } = require("../src/model");
 const { StringField, TtlField } = require("../src/fields");
 const { cleanupTestData, verifyCleanup } = require("./utils/test-utils");
 const { ulid } = require("ulid");
@@ -8,7 +8,7 @@ const { GetCommand } = require("@aws-sdk/lib-dynamodb");
 
 let testId;
 
-class TestTtl extends BaseModel {
+class TestTtl extends BaoModel {
   static modelPrefix = "tt";
 
   static fields = {

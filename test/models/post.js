@@ -1,5 +1,5 @@
 // src/models/post.js
-const { BaseModel, PrimaryKeyConfig, IndexConfig } = require("../../src/model");
+const { BaoModel, PrimaryKeyConfig, IndexConfig } = require("../../src/model");
 
 const { GSI_INDEX_ID1, GSI_INDEX_ID2 } = require("../../src/constants");
 
@@ -11,7 +11,7 @@ const {
   VersionField,
 } = require("../../src/fields");
 
-class Post extends BaseModel {
+class Post extends BaoModel {
   static modelPrefix = "p";
 
   static fields = {

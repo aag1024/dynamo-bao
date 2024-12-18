@@ -1,12 +1,12 @@
 const dynamoBao = require("../src");
 const testConfig = require("./config");
-const { BaseModel, PrimaryKeyConfig, IndexConfig } = require("../src/model");
+const { BaoModel, PrimaryKeyConfig, IndexConfig } = require("../src/model");
 const { StringField, RelatedField } = require("../src/fields");
 const { cleanupTestData, verifyCleanup } = require("./utils/test-utils");
 const { ulid } = require("ulid");
 
 // Define test models
-class Organization extends BaseModel {
+class Organization extends BaoModel {
   static modelPrefix = "org";
 
   static fields = {
@@ -22,7 +22,7 @@ class Organization extends BaseModel {
   };
 }
 
-class User extends BaseModel {
+class User extends BaoModel {
   static modelPrefix = "usr";
 
   static fields = {
@@ -43,7 +43,7 @@ class User extends BaseModel {
   };
 }
 
-class Post extends BaseModel {
+class Post extends BaoModel {
   static modelPrefix = "pst";
 
   static fields = {

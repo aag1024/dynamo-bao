@@ -1,6 +1,6 @@
 const dynamoBao = require("../src");
 const testConfig = require("./config");
-const { BaseModel, PrimaryKeyConfig } = require("../src/model");
+const { BaoModel, PrimaryKeyConfig } = require("../src/model");
 const { StringField, IntegerField, BooleanField } = require("../src/fields");
 const { cleanupTestData, verifyCleanup } = require("./utils/test-utils");
 const { ulid } = require("ulid");
@@ -15,7 +15,7 @@ const PERF_THRESHOLDS = {
 let testId;
 
 // Simple model with just two fields
-class SimpleModel extends BaseModel {
+class SimpleModel extends BaoModel {
   static modelPrefix = "sm";
 
   static fields = {
@@ -27,7 +27,7 @@ class SimpleModel extends BaseModel {
 }
 
 // Complex model with many fields and different types
-class ComplexModel extends BaseModel {
+class ComplexModel extends BaoModel {
   static modelPrefix = "cm";
 
   static fields = {

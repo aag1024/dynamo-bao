@@ -97,7 +97,7 @@ const MutationMethods = {
     );
 
     // Return deleted item info with capacity information
-    item.setConsumedCapacity(response.ConsumedCapacity, "write", false);
+    item._setConsumedCapacity(response.ConsumedCapacity, "write", false);
     return item;
   },
 
@@ -299,7 +299,7 @@ const MutationMethods = {
       const { updateExpression, names, values } =
         this._buildUpdateExpression(dyUpdatesToSave);
 
-      const dyKey = this._getDyKeyForPkSk(this.parsePrimaryId(primaryId));
+      const dyKey = this._getDyKeyForPkSk(this._parsePrimaryId(primaryId));
       logger.debug("dyKey", dyKey);
 
       // Create the update params
@@ -364,12 +364,12 @@ const MutationMethods = {
           }
 
           // Set the consumed capacity from the transaction
-          savedItem.addConsumedCapacity(
+          savedItem._addConsumedCapacity(
             response.ConsumedCapacity,
             "write",
             false,
           );
-          savedItem.addConsumedCapacity(consumedCapacity, "read", false);
+          savedItem._addConsumedCapacity(consumedCapacity, "read", false);
 
           return savedItem;
         } else {
@@ -390,15 +390,15 @@ const MutationMethods = {
             throw error;
           }
 
-          const savedItem = this.createFromDyItem(response.Attributes);
+          const savedItem = this._createFromDyItem(response.Attributes);
           logger.debug("savedItem", savedItem);
 
-          savedItem.setConsumedCapacity(
+          savedItem._setConsumedCapacity(
             response.ConsumedCapacity,
             "write",
             false,
           );
-          savedItem.addConsumedCapacity(consumedCapacity, "read", false);
+          savedItem._addConsumedCapacity(consumedCapacity, "read", false);
           return savedItem;
         }
       } catch (error) {

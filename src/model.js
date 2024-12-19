@@ -1,4 +1,8 @@
-// src/model.js
+/**
+ * @description
+ * This module contains the core functionality for models in Bao.
+ */
+
 const { RelatedFieldClass, StringField } = require("./fields");
 const { ModelManager } = require("./model-manager");
 const { defaultLogger: logger } = require("./utils/logger");
@@ -23,8 +27,10 @@ const GID_SEPARATOR = "##__SK__##";
 const { UNIQUE_CONSTRAINT_KEY, SYSTEM_FIELDS } = require("./constants");
 
 /**
- * Base DynamoDB model providing data access and validation
- * @class
+ * @description
+ * Base model that implements core functionality for all models. Do not instantiate
+ * this class directly, instead use a subclass, usually that has been generated
+ * by the code generator.
  */
 class BaoModel {
   static _testId = null;
@@ -49,6 +55,14 @@ class BaoModel {
     Object.assign(BaoModel, BatchLoadingMethods);
   }
 
+  /**
+   * @description
+   * ONLY use this for testing. It allows tests to run in isolation and
+   * prevent data from being shared between tests/tests to run in parallel.
+   * However, it should not be used outside of this context. For examples,
+   * showing how to use this, see the tests.
+   * @param {string} testId - The ID of the test.
+   */
   static setTestId(testId) {
     this._testId = testId;
     const manager = ModelManager.getInstance(testId);
@@ -146,6 +160,11 @@ class BaoModel {
     }
   }
 
+  /**
+   * @description
+   * Create a new model instance.
+   * @param {Object} [jsData] - The initial data for the model.
+   */
   constructor(jsData = {}) {
     this._dyData = {};
     SYSTEM_FIELDS.forEach((key) => {
@@ -196,6 +215,11 @@ class BaoModel {
     return newObj;
   }
 
+  /**
+   * @description
+   * Clear the related cache for a given field.
+   * @param {string} fieldName - The name of the field to clear.
+   */
   clearRelatedCache(fieldName) {
     delete this._relatedObjects[fieldName];
   }
@@ -245,6 +269,12 @@ class BaoModel {
     return key;
   }
 
+  /**
+   * @description
+   * Static version of {@link BaoModel#getPrimaryId}.
+   * @param {Object} data - The data object to get the primary ID for.
+   * @returns {string} The primary ID.
+   */
   static getPrimaryId(data) {
     logger.debug("getPrimaryId", data);
     const pkSk = this._getPrimaryKeyValues(data);
@@ -262,6 +292,14 @@ class BaoModel {
     return primaryId;
   }
 
+  /**
+   * @description
+   * Get the primary ID for a given object. This is a string that uniquely
+   * identifies the object in the database. When using {@link BaoModel.find},
+   * this is the id to use. Do not make assumptions about how this id
+   * is formatted since it will depend on the model key structure.
+   * @returns {string} The primary ID.
+   */
   getPrimaryId() {
     return this.constructor.getPrimaryId(this._dyData);
   }
@@ -286,7 +324,7 @@ class BaoModel {
   }
 
   // Get only changed fields - convert from Dynamo to JS format
-  getChanges() {
+  _getChanges() {
     const changes = {};
     logger.debug("_changes Set contains:", Array.from(this._changes));
     for (const field of this._changes) {
@@ -306,7 +344,12 @@ class BaoModel {
     return changes;
   }
 
-  // Check if there are any changes
+  /**
+   * @description
+   * Returns true if any fields have been modified since the object was last
+   * loaded from the database.
+   * @returns {boolean} True if there are changes, false otherwise.
+   */
   hasChanges() {
     return this._changes.size > 0;
   }
@@ -317,13 +360,27 @@ class BaoModel {
     this._changes.clear();
   }
 
-  // Instance method to save only changes
+  /**
+   * @description
+   * Save the current object to the database. This operation will diff the current
+   * state of the object with the state that has been loaded from dynamo to
+   * determine which changes need to be saved.
+   *
+   * @param {Object} [options] - Additional options for the save operation.
+   * @param {Object} [options.constraints={}] - Constraints to validate. Options are:
+   * @param {boolean} [options.constraints.mustExist=false] - Whether the item must exist.
+   * @param {boolean} [options.constraints.mustNotExist=false] - Whether the item must not exist.
+   * @param {string[]} [options.constraints.fieldMatches=[]] - An array of field names that must match
+   * the current item's loaded state. This is often used for optimistic locking in conjunction
+   * with a {@link BaoFields.VersionField} field.
+   * @returns {Promise<Object>} Returns a promise that resolves to the updated item.
+   */
   async save(options = {}) {
     if (!this.hasChanges()) {
       return this; // No changes to save
     }
 
-    const changes = this.getChanges();
+    const changes = this._getChanges();
     logger.debug("save() - changes", changes);
     const updatedObj = await this.constructor.update(
       this.getPrimaryId(),
@@ -339,6 +396,15 @@ class BaoModel {
     return this;
   }
 
+  /**
+   * @description
+   * Get or load a related field. If the field is already loaded, it will be
+   * returned without reloading. Otherwise, it will be loaded from the database
+   * and returned.
+   * @param {string} fieldName - The name of the field to get or load.
+   * @param {Object} [loaderContext] - Cache context for storing and retrieving items across requests.
+   * @returns {Promise<Object>} Returns a promise that resolves to the loaded item.
+   */
   async getOrLoadRelatedField(fieldName, loaderContext = null) {
     if (this._relatedObjects[fieldName]) {
       return this._relatedObjects[fieldName];
@@ -359,6 +425,13 @@ class BaoModel {
     return this._relatedObjects[fieldName];
   }
 
+  /**
+   * @description
+   * Load objects for RelatedField's on the current model instance.
+   * @param {string[]} [fieldNames] - The names of the fields to load. If not provided, all related fields will be loaded.
+   * @param {Object} [loaderContext] - Cache context for storing and retrieving items across requests.
+   * @returns {Promise<Object>} Returns a promise that resolves to the loaded items and their consumed capacity
+   */
   async loadRelatedData(fieldNames = null, loaderContext = null) {
     const promises = [];
 
@@ -398,6 +471,12 @@ class BaoModel {
     return relatedInstance;
   }
 
+  /**
+   * @description
+   * Get a related field. If the field is not loaded, it will return null.
+   * @param {string} fieldName - The name of the field to get.
+   * @returns {Object} The related field.
+   */
   getRelated(fieldName) {
     const field = this.constructor.fields[fieldName];
     if (!(field instanceof RelatedFieldClass)) {
@@ -406,6 +485,15 @@ class BaoModel {
     return this._relatedObjects[fieldName];
   }
 
+  /**
+   * @description
+   * Find an object by a unique constraint. Any unique constraint can also be used
+   * to find an object.
+   * @param {string} constraintName - The name of the unique constraint to use.
+   * @param {string} value - The value of the unique constraint.
+   * @param {Object} [loaderContext] - Cache context for storing and retrieving items across requests.
+   * @returns {Promise<Object>} Returns a promise that resolves to the found item.
+   */
   static async findByUniqueConstraint(
     constraintName,
     value,
@@ -451,6 +539,14 @@ class BaoModel {
     return item;
   }
 
+  /**
+   * @description
+   * Returns true if the object exists. This is particularly useful when checking
+   * if an object has been found, since ObjectNotFound will be returned
+   * rather than null if an object is not found (so capacity information
+   * will also be returned).
+   * @returns {boolean} True if the object exists, false otherwise.
+   */
   exists() {
     return true;
   }
@@ -491,7 +587,10 @@ class BaoModel {
   }
 
   /**
-   * Get the numeric consumed capacity for a given type.
+   * Get the number of RCU/WCU consumed by a model instance. Additional capacity
+   * is added every time a new operation (finding, saving, loading related data)
+   * is performed on the instance. You can reset the consumed capacity by calling
+   * {@link BaoModel#clearConsumedCapacity}.
    * @param {string} type - Either "read", "write", or "total".
    * @param {boolean} [includeRelated=false] - Whether to include capacity from related objects.
    * @returns {number} The numeric consumed capacity.
@@ -532,10 +631,20 @@ class BaoModel {
     return total;
   }
 
+  /**
+   * @description
+   * Get the consumed capacity for the current model instance. Every entry
+   * in this array will represent a separate operation.
+   * @returns {Object[]} The consumed capacity.
+   */
   getConsumedCapacity() {
     return this._consumedCapacity;
   }
 
+  /**
+   * @description
+   * Clear the consumed capacity for the current model instance.
+   */
   clearConsumedCapacity() {
     this._consumedCapacity = [];
   }

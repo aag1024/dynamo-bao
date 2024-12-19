@@ -18,8 +18,14 @@ const BatchLoadingMethods = {
   },
 
   /**
-   * This is the primary way to load multiple objects given an array of primaryIds.
-   * This function should only be used when find or loadRelatedData is not sufficient.
+   * @memberof BaoModel
+   * @description
+   * This is the primary way to load multiple objects given an array of ids.
+   * This function should only be used when {@link BaoModel.find} or {@link BaoModel#loadRelatedData} is not sufficient.
+   *
+   * @param {string[]} primaryIds - The primary IDs of the items to load
+   * @param {Object} [loaderContext] - Cache context for storing and retrieving items across requests.
+   * @returns {Promise<Object>} Returns a promise that resolves to the loaded items and their consumed capacity
    */
   async batchFind(primaryIds, loaderContext = null) {
     if (!primaryIds?.length) return { items: {}, ConsumedCapacity: [] };
@@ -149,12 +155,13 @@ const BatchLoadingMethods = {
   },
 
   /**
-   * @memberof BaoModel
+   *@memberof BaoModel
    *
    * @description
-   * Find is the primary way to look up an object given a primaryId. This supports
+   * Find is the primary way to look up an object given its id. It will return the object
+   * if it exists, or an {@link ObjectNotFound} instance if it does not. Find supports
    * efficient batch loading and caching. In general, this function should be
-   * preferred over batchFind. Find uses batchFind internally, unless batchDelay
+   * preferred over {@link BaoModel.batchFind}. Find uses batchFind internally, unless batchDelay
    * is set to 0.
    *
    * @param {string} primaryId - The primary ID of the item to find

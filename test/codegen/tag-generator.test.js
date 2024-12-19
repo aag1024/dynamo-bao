@@ -81,7 +81,7 @@ describe("Generated Tag Models", () => {
         postId: post2.postId,
       });
 
-      const posts = await tag.cgGetPosts();
+      const posts = await tag.getPosts();
       expect(posts.items.length).toBe(2);
       expect(posts.items[0].postId).toBe(post1.postId);
       expect(posts.items[1].postId).toBe(post2.postId);
@@ -120,7 +120,7 @@ describe("Generated Tag Models", () => {
         postId: post2.postId,
       });
 
-      const posts = await tag.cgGetRecentPosts(null, 10, "DESC");
+      const posts = await tag.getRecentPosts(null, 10, "DESC");
       expect(posts.items.length).toBe(2);
       // Should be in reverse chronological order due to DESC
       expect(posts.items[0].postId).toBe(post2.postId);

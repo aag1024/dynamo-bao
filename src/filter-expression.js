@@ -1,4 +1,13 @@
+/**
+ * Supporting class for building DynamoDB filter expressions.
+ * @class
+ */
 class FilterExpressionBuilder {
+  /**
+   * @constructor
+   * @description
+   * Do not instantiate this class directly. This is used by {@link BaoModel.queryByIndex}.
+   */
   constructor() {
     this.names = {};
     this.values = {};
@@ -124,7 +133,42 @@ class FilterExpressionBuilder {
     return expressions.join(" AND ");
   }
 
-  // Build the complete filter expression with names and values
+  /**
+   * Build a filter expression for a given filter and model.
+   * @param {Object} filter - The filter object to build the expression for. The filter can contain:
+   *   - Simple field comparisons: { fieldName: value } for exact matches
+   *   - Comparison operators: { fieldName: { $eq: value, $ne: value, $gt: value, $gte: value, $lt: value, $lte: value } }
+   *   - String operators: { fieldName: { $beginsWith: value, $contains: value } }
+   *   - Logical operators:
+   *     - $and: [{condition1}, {condition2}] - All conditions must match
+   *     - $or: [{condition1}, {condition2}] - At least one condition must match
+   *     - $not: {condition} - Condition must not match
+   * @param {BaoModel} model - The model to build the expression for. Used to validate field names.
+   * @example
+   * filterExp1 = {
+   *     status: 'active',  // Exact match
+   * }
+   *
+   * filterExp2 = {
+   *     age: { $gt: 21 },  // Greater than comparison
+   * }
+   *
+   * filterExp3 = {
+   *     roles: { $contains: 'admin' }, // String contains
+   * }
+   *
+   * filterExp4 = {
+   *     // OR condition
+   *     $or: [
+   *       { type: 'user' },
+   *       { type: 'admin' }
+   *     ]
+   *   }
+   * @returns {Object|null} Returns null if no filter provided, otherwise returns an object containing:
+   *   - FilterExpression: String DynamoDB filter expression
+   *   - ExpressionAttributeNames: Map of attribute name placeholders
+   *   - ExpressionAttributeValues: Map of attribute value placeholders
+   */
   build(filter, model) {
     // Validate field names against model
     this.validateFields(filter, model);

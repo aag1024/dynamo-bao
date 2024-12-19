@@ -38,24 +38,24 @@ describe("Unique Constraint Lookups", () => {
         email: "findme@example.com",
       });
 
-      const foundUser = await User.cgFindByEmail("findme@example.com");
+      const foundUser = await User.findByEmail("findme@example.com");
       expect(foundUser).toBeTruthy();
       expect(foundUser.userId).toBe(createdUser.userId);
       expect(foundUser.name).toBe("Test User");
       expect(foundUser.email).toBe("findme@example.com");
 
       // Test non-existent email
-      const notFound = await User.cgFindByEmail("doesnotexist@example.com");
+      const notFound = await User.findByEmail("doesnotexist@example.com");
       expect(notFound.exists()).toBe(false);
     });
 
     test("should handle null/undefined email lookup", async () => {
       await expect(async () => {
-        await User.cgFindByEmail(null);
+        await User.findByEmail(null);
       }).rejects.toThrow("email value is required");
 
       await expect(async () => {
-        await User.cgFindByEmail(undefined);
+        await User.findByEmail(undefined);
       }).rejects.toThrow("email value is required");
     });
   });

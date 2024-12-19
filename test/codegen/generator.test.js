@@ -81,7 +81,7 @@ describe("Generated Models", () => {
         content: "Content 2",
       });
 
-      const posts = await user.cgQueryPosts();
+      const posts = await user.queryPosts();
       expect(posts.items.length).toBe(2);
       expect(posts.items[0].title).toBe("Post 1");
       expect(posts.items[1].title).toBe("Post 2");
@@ -125,7 +125,7 @@ describe("Generated Models", () => {
         userId: user.userId,
       });
 
-      const posts = await Post.cgQueryAllPosts();
+      const posts = await Post.queryAllPosts();
       expect(posts.items.length).toBe(2);
     });
 
@@ -148,7 +148,7 @@ describe("Generated Models", () => {
         text: "Comment 2",
       });
 
-      const comments = await post.cgQueryComments();
+      const comments = await post.queryComments();
       expect(comments.items.length).toBe(2);
       expect(comments.items[0].text).toBe("Comment 1");
       expect(comments.items[1].text).toBe("Comment 2");

@@ -8,6 +8,13 @@ const { retryOperation } = require("../utils/retry-helper");
 const assert = require("assert");
 
 const MutationMethods = {
+  /**
+   *@memberof BaoModel
+   * @description
+   * Create a new item in the database.
+   * @param {Object} jsUpdates - The data to create the item with.
+   * @returns {Promise<Object>} Returns a promise that resolves to the created item.
+   */
   async create(jsUpdates) {
     await pluginManager.executeHooks(this.name, "beforeSave", jsUpdates, {
       isNew: true,
@@ -19,6 +26,15 @@ const MutationMethods = {
     return result;
   },
 
+  /**
+   *@memberof BaoModel
+   * @description
+   * Update an existing item in the database.
+   * @param {string} primaryId - The primary ID of the item to update.
+   * @param {Object} jsUpdates - The data to update the item with.
+   * @param {Object} [options] - Additional options for the update operation.
+   * @returns {Promise<Object>} Returns a promise that resolves to the updated item.
+   */
   async update(primaryId, jsUpdates, options = {}) {
     await pluginManager.executeHooks(this.name, "beforeSave", jsUpdates, {
       ...options,
@@ -38,6 +54,14 @@ const MutationMethods = {
     return result;
   },
 
+  /**
+   *@memberof BaoModel
+   * @description
+   * Delete an existing item in the database.
+   * @param {string} primaryId - The primary ID of the item to delete.
+   * @param {Object} [options] - Additional options for the delete operation.
+   * @returns {Promise<Object>} Returns a promise that resolves to the deleted item.
+   */
   async delete(primaryId, options = {}) {
     await pluginManager.executeHooks(
       this.name,
@@ -117,6 +141,24 @@ const MutationMethods = {
     return primaryId;
   },
 
+  /**
+   *@memberof BaoModel
+   * @private
+   * @description
+   * Save an item to the database.
+   * @param {string} primaryId - The primary ID of the item to save.
+   * @param {Object} jsUpdates - The data to save the item with.
+   * @param {Object} [options] - Additional options for the save operation.
+   * @param {boolean} [options.isNew=false] - Whether this is a new item being created. Internal use only.
+   * @param {Object} [options.instanceObj=null] - Existing model instance, if any. Internal use only.
+   * @param {Object} [options.constraints={}] - Constraints to validate. Options are:
+   * @param {boolean} [options.constraints.mustExist=false] - Whether the item must exist.
+   * @param {boolean} [options.constraints.mustNotExist=false] - Whether the item must not exist.
+   * @param {string[]} [options.constraints.fieldMatches=[]] - An array of field names that must match
+   * the current item's loaded state. This is often used for optimistic locking in conjunction
+   * with a {@link BaoFields.VersionField} field.
+   * @returns {Promise<Object>} Returns a promise that resolves to the saved item.
+   */
   async _saveItem(primaryId, jsUpdates, options = {}) {
     try {
       const { isNew = false, instanceObj = null, constraints = {} } = options;

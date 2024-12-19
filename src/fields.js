@@ -1,14 +1,31 @@
+/**
+ * @namespace BaoFields
+ * @description
+ * This module contains the built-in fields for Bao.
+ */
 require("dotenv").config();
 const { ulid, decodeTime } = require("ulid");
 const { defaultLogger: logger } = require("./utils/logger");
 
-class BaseField {
+/**
+ * @class BaoBaseField
+ * @memberof BaoFields
+ * @description
+ * Base class for all fields. Do not instantiate this class directly.
+ */
+class BaoBaseField {
   constructor(options = {}) {
     this.options = options;
     this.required = options.required || false;
     this.defaultValue = options.defaultValue;
   }
 
+  /**
+   * @memberof BaoFields.BaoBaseField
+   * @description
+   * Get the initial JS value for the field.
+   * @returns {any} The initial value for the field.
+   */
   getInitialValue() {
     if (this.defaultValue) {
       return typeof this.defaultValue === "function"
@@ -18,6 +35,13 @@ class BaseField {
     return undefined;
   }
 
+  /**
+   * @memberof BaoFields.BaoBaseField
+   * @description
+   * Validate the JS field value.
+   * @param {any} value - The value to validate.
+   * @returns {boolean} True if the value is valid, otherwise false.
+   */
   validate(value) {
     if (this.required && (value === null || value === undefined)) {
       throw new Error("Field is required");
@@ -25,22 +49,63 @@ class BaseField {
     return true;
   }
 
+  /**
+   * @memberof BaoFields.BaoBaseField
+   * @description
+   * Convert the field value from the JS representation to DynamoDB representation.
+   * @param {any} value - The value to convert.
+   * @returns {any} The converted value.
+   */
   toDy(value) {
     return value;
   }
 
+  /**
+   * @memberof BaoFields.BaoBaseField
+   * @description
+   * Convert the field value from the DynamoDB representation to the JS representation.
+   * @param {any} value - The value to convert.
+   * @returns {any} The converted value.
+   */
   fromDy(value) {
     return value;
   }
 
+  /**
+   * @memberof BaoFields.BaoBaseField
+   * @description
+   * Convert the field value from the JS representation the index format used by DynamoDB.
+   * This must be a string representation of the value. Pay special attention to
+   * how this value sorts since it will be used for sort keys.
+   * @param {any} value - The value to convert.
+   * @returns {any} The converted value.
+   */
   toGsi(value) {
     return String(value);
   }
 
+  /**
+   * @memberof BaoFields.BaoBaseField
+   * @description
+   * Convert the field value from the index format used by DynamoDB to the JS representation.
+   * @param {any} value - The value to convert.
+   * @returns {any} The converted value.
+   */
   fromGsi(value) {
     return this.fromDy(value);
   }
 
+  /**
+   * @memberof BaoFields.BaoBaseField
+   * @description
+   * Get the DynamoDB update expression for the field. You usually don't need to override this.
+   * By default, it will return a SET expression, unless the value is null. If the value is null,
+   * it will remove the attribute from the item .
+   *
+   * @param {string} fieldName - The name of the field.
+   * @param {any} value - The value to update.
+   * @returns {Object} The update expression.
+   */
   getUpdateExpression(fieldName, value) {
     if (value === undefined) return null;
 
@@ -68,17 +133,39 @@ class BaseField {
     };
   }
 
+  /**
+   * @memberof BaoFields.BaoBaseField
+   * @description
+   * Update the field value before saving. An example of where you might override this
+   * is a modified date field that you want to update to the current date/time before
+   * saving.
+   * @param {any} value - The value to update.
+   * @param {BaoModel} currentObject - The current model instance.
+   * @returns {any} The updated value.
+   */
   updateBeforeSave(value, currentObject) {
     // Default implementation does nothing
     return value;
   }
 }
 
-class StringField extends BaseField {
+/**
+ * @class StringField
+ * @memberof BaoFields
+ * @description
+ * A field that stores a string value.
+ */
+class StringField extends BaoBaseField {
   // String fields are pass-through since DynamoDB handles them natively
 }
 
-class DateTimeField extends BaseField {
+/**
+ * @class DateTimeField
+ * @memberof BaoFields
+ * @description
+ * A field that stores a date/time value.
+ */
+class DateTimeField extends BaoBaseField {
   validate(value) {
     if (this.required && value === undefined) {
       throw new Error("Field is required");
@@ -142,7 +229,13 @@ class DateTimeField extends BaseField {
   }
 }
 
-class IntegerField extends BaseField {
+/**
+ * @class IntegerField
+ * @memberof BaoFields
+ * @description
+ * A field that stores an integer value.
+ */
+class IntegerField extends BaoBaseField {
   getInitialValue() {
     return this.options.defaultValue !== undefined
       ? this.options.defaultValue
@@ -169,7 +262,13 @@ class IntegerField extends BaseField {
   }
 }
 
-class FloatField extends BaseField {
+/**
+ * @class FloatField
+ * @memberof BaoFields
+ * @description
+ * A field that stores a floating point number value.
+ */
+class FloatField extends BaoBaseField {
   getInitialValue() {
     return this.options.defaultValue !== undefined
       ? this.options.defaultValue
@@ -200,6 +299,12 @@ class FloatField extends BaseField {
   }
 }
 
+/**
+ * @class CreateDateField
+ * @memberof BaoFields
+ * @description
+ * A field that stores a date/time value based on when the object was created.
+ */
 class CreateDateField extends DateTimeField {
   constructor(options = {}) {
     super({
@@ -220,6 +325,12 @@ class CreateDateField extends DateTimeField {
   }
 }
 
+/**
+ * @class ModifiedDateField
+ * @memberof BaoFields
+ * @description
+ * A field that stores a date/time value based on when the object was last modified.
+ */
 class ModifiedDateField extends DateTimeField {
   constructor(options = {}) {
     super({
@@ -242,7 +353,13 @@ class ModifiedDateField extends DateTimeField {
   }
 }
 
-class UlidField extends BaseField {
+/**
+ * @class UlidField
+ * @memberof BaoFields
+ * @description
+ * A field that stores a {@link https://github.com/ulid/spec ULID} value.
+ */
+class UlidField extends BaoBaseField {
   constructor(options = {}) {
     super({
       ...options,
@@ -290,7 +407,14 @@ class UlidField extends BaseField {
   }
 }
 
-class RelatedField extends BaseField {
+/**
+ * @class RelatedField
+ * @memberof BaoFields
+ * @description
+ * A field that points to another object in the database. This field makes
+ * it easy to load related objects.
+ */
+class RelatedField extends BaoBaseField {
   constructor(modelName, options = {}) {
     super(options);
     this.modelName = modelName;
@@ -331,7 +455,13 @@ class RelatedField extends BaseField {
   }
 }
 
-class CounterField extends BaseField {
+/**
+ * @class CounterField
+ * @memberof BaoFields
+ * @description
+ * A field that stores an integer value that can be incremented or decremented atomically.
+ */
+class CounterField extends BaoBaseField {
   constructor(options = {}) {
     super(options);
     this.defaultValue = options.defaultValue || 0;
@@ -423,7 +553,13 @@ class CounterField extends BaseField {
   }
 }
 
-class BinaryField extends BaseField {
+/**
+ * @class BinaryField
+ * @memberof BaoFields
+ * @description
+ * A field that stores a binary value.
+ */
+class BinaryField extends BaoBaseField {
   getInitialValue() {
     if (this.defaultValue) {
       return typeof this.defaultValue === "function"
@@ -462,7 +598,15 @@ class BinaryField extends BaseField {
   }
 }
 
-class VersionField extends BaseField {
+/**
+ * @class VersionField
+ * @memberof BaoFields
+ * @description
+ * A field that stores a ULID value that is used to track the version of the object.
+ * You can use this field to implement optimistic locking by using the version field
+ * as a condition in your update operation.
+ */
+class VersionField extends BaoBaseField {
   constructor(options = {}) {
     super({
       ...options,
@@ -501,7 +645,13 @@ class VersionField extends BaseField {
   }
 }
 
-class BooleanField extends BaseField {
+/**
+ * @class BooleanField
+ * @memberof BaoFields
+ * @description
+ * A field that stores a boolean value.
+ */
+class BooleanField extends BaoBaseField {
   validate(value) {
     super.validate(value);
     if (value !== undefined && value !== null && typeof value !== "boolean") {
@@ -537,6 +687,14 @@ class BooleanField extends BaseField {
   }
 }
 
+/**
+ * @class TtlField
+ * @memberof BaoFields
+ * @description
+ * A field that stores a Unix timestamp in seconds that indicates when the object should be deleted.
+ * DynamoDB will automatically delete the item at the specified time. This
+ * field must be named "ttl" for DynamoDB to automatically delete the item.
+ */
 class TtlField extends DateTimeField {
   validate(value) {
     if (value === null || value === undefined) {

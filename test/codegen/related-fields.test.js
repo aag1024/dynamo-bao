@@ -57,7 +57,7 @@ describe("Related Field Getters", () => {
 
   describe("Post Model", () => {
     test("should get related user via cgGetUser", async () => {
-      const relatedUser = await post.cgGetUser();
+      const relatedUser = await post.getUser();
       expect(relatedUser).toBeTruthy();
       expect(relatedUser.userId).toBe(user.userId);
       expect(relatedUser.name).toBe("Test User");
@@ -66,11 +66,11 @@ describe("Related Field Getters", () => {
 
     test("should cache related user after first fetch", async () => {
       // First fetch
-      const relatedUser1 = await post.cgGetUser();
+      const relatedUser1 = await post.getUser();
       expect(relatedUser1.userId).toBe(user.userId);
 
       // Should return cached version
-      const relatedUser2 = await post.cgGetUser();
+      const relatedUser2 = await post.getUser();
       expect(relatedUser2).toBe(relatedUser1);
     });
 
@@ -81,14 +81,14 @@ describe("Related Field Getters", () => {
         userId: "non-existent-id",
       });
 
-      const relatedUser = await postWithInvalidUser.cgGetUser();
+      const relatedUser = await postWithInvalidUser.getUser();
       expect(relatedUser.exists()).toBe(false);
     });
   });
 
   describe("Comment Model", () => {
     test("should get related post via cgGetPost", async () => {
-      const relatedPost = await comment.cgGetPost();
+      const relatedPost = await comment.getPost();
       expect(relatedPost).toBeTruthy();
       expect(relatedPost.postId).toBe(post.postId);
       expect(relatedPost.title).toBe("Test Post");
@@ -96,15 +96,15 @@ describe("Related Field Getters", () => {
     });
 
     test("should get related author via cgGetAuthor", async () => {
-      const relatedAuthor = await comment.cgGetAuthor();
+      const relatedAuthor = await comment.getAuthor();
       expect(relatedAuthor).toBeTruthy();
       expect(relatedAuthor.userId).toBe(user.userId);
       expect(relatedAuthor.name).toBe("Test User");
     });
 
     test("should handle multiple related fields independently", async () => {
-      const relatedPost = await comment.cgGetPost();
-      const relatedAuthor = await comment.cgGetAuthor();
+      const relatedPost = await comment.getPost();
+      const relatedAuthor = await comment.getAuthor();
 
       expect(relatedPost.postId).toBe(post.postId);
       expect(relatedAuthor.userId).toBe(user.userId);
@@ -112,7 +112,7 @@ describe("Related Field Getters", () => {
 
     test("should clear cache when relation is updated", async () => {
       // First fetch
-      const originalAuthor = await comment.cgGetAuthor();
+      const originalAuthor = await comment.getAuthor();
       expect(originalAuthor.userId).toBe(user.userId);
 
       // Create new user
@@ -126,7 +126,7 @@ describe("Related Field Getters", () => {
       await comment.save();
 
       // Should fetch new author
-      const newAuthor = await comment.cgGetAuthor();
+      const newAuthor = await comment.getAuthor();
       expect(newAuthor.userId).toBe(newUser.userId);
       expect(newAuthor.name).toBe("New User");
     });

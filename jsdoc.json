@@ -11,7 +11,8 @@
     "template": "node_modules/clean-jsdoc-theme",
     "theme_opts": {
       "include_css": ["./jsdoc.css"]
-    }
+    },
+    "readme": "./README.md"
   },
   "templates": {
     "clean-jsdoc-theme": {

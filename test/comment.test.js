@@ -164,7 +164,7 @@ describe("Comment Model", () => {
       comment.numLikes = 1;
 
       expect(comment.hasChanges()).toBeTruthy();
-      expect(comment.getChanges()).toEqual({
+      expect(comment._getChanges()).toEqual({
         text: "Updated Text",
         numLikes: 1,
       });

@@ -9,7 +9,7 @@ const { QueryCommand } = require("@aws-sdk/lib-dynamodb");
 
 const QueryMethods = {
   /**
-   * @memberof BaoModel
+   *@memberof BaoModel
    *
    * @description
    * Queries items by their primary key value with an optional sort key condition
@@ -46,13 +46,13 @@ const QueryMethods = {
   },
 
   /**
-   * @memberof BaoModel
+   *@memberof BaoModel
    *
    * @description
    * Queries related objects via a mapping table.
    *
    * This is primary used by the code generator to build helper functions
-   * for querying related objects. For most common operations, should should
+   * for querying related objects. For most common operations, you should
    * not need to use this method directly.
    */
   async getRelatedObjectsViaMap(
@@ -75,7 +75,7 @@ const QueryMethods = {
   },
 
   /**
-   * @memberof BaoModel
+   *@memberof BaoModel
    *
    * @description
    * This is the primary method for querying data via a named index or primary key.
@@ -89,6 +89,8 @@ const QueryMethods = {
    * also be times when this works without issue and is more efficient than adding
    * another index and paying for the write overhead of the index.
    *
+   * @param {string} indexName - The name of the index to query based on the model definition
+   * @param {string|Object} pkValue - The partition key value to query.
    * @param {Object|null} skCondition - Optional sort key condition in the format: { fieldName: value } or { fieldName: { $operator: value } }
    *                                   Supported operators: $between, $beginsWith
    *                                   Example: { status: 'active' } or { createdAt: { $between: [date1, date2] } }
@@ -97,7 +99,7 @@ const QueryMethods = {
    * @param {string} options.direction - Sort direction, 'ASC' or 'DESC' (default: 'ASC')
    * @param {Object} options.startKey - Exclusive start key for pagination
    * @param {boolean} options.countOnly - If true, returns only the count of matching items
-   * @param {Object} options.filter - Additional filter conditions for the query
+   * @param {Object} options.filter - Additional filter conditions for the query. For full filter syntax, see {@link FilterExpressionBuilder#build}
    * @param {boolean} options.returnWrapped - If false, returns raw DynamoDB items instead of model instances
    * @param {boolean} options.loadRelated - If true, loads related models for RelatedFields
    * @param {string[]} options.relatedFields - Array of field names to load related data for (used with loadRelated)
@@ -106,7 +108,7 @@ const QueryMethods = {
    *
    * @returns {Promise<Object>} Returns an object containing:
    *   - items: Array of model instances or raw items
-   *   - count: Number of items returned
+   *   - count: Number of items scanned
    *   - lastEvaluatedKey: Key for pagination (if more items exist)
    *   - consumedCapacity: DynamoDB response metadata including ConsumedCapacity
    *

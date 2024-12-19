@@ -3,6 +3,8 @@ const fs = require("fs");
 const { createLogger } = require("../utils/scriptLogger");
 const logger = createLogger("ModelGen");
 
+const codeGenPrefix = ""; // "cg";
+
 function generateModelClass(
   modelName,
   modelConfig,
@@ -197,7 +199,7 @@ function generateUniqueConstraintMethods(modelConfig) {
 
   return Object.entries(modelConfig.uniqueConstraints)
     .map(([name, constraint]) => {
-      const methodName = `cgFindBy${name.replace(/^unique/, "")}`;
+      const methodName = `${codeGenPrefix}findBy${name.replace(/^unique/, "")}`;
       return `
   static async ${methodName}(value) {
     return await this.findByUniqueConstraint('${name}', value);
@@ -248,9 +250,9 @@ function generateQueryMethods(modelName, modelConfig, allModels) {
         let methodName;
         if (indexName.includes("For")) {
           const [prefix] = indexName.split("For");
-          methodName = `cgQuery${prefix.charAt(0).toUpperCase()}${prefix.slice(1)}`;
+          methodName = `${codeGenPrefix}query${prefix.charAt(0).toUpperCase()}${prefix.slice(1)}`;
         } else {
-          methodName = `cgQuery${indexName.charAt(0).toUpperCase()}${indexName.slice(1)}`;
+          methodName = `${codeGenPrefix}query${indexName.charAt(0).toUpperCase()}${indexName.slice(1)}`;
         }
 
         methods += `
@@ -290,7 +292,7 @@ function generateQueryMethods(modelName, modelConfig, allModels) {
           )?.[0] || "primaryKey";
 
         methods += `
-  async cgQuery${otherModelName}s(skCondition = null, options = {}) {
+  async ${codeGenPrefix}query${otherModelName}s(skCondition = null, options = {}) {
     const results = await ${otherModelName}.queryByIndex(
       '${primaryKeyIndexName}',
       this._getPkValue(),
@@ -320,9 +322,9 @@ function generateQueryMethods(modelName, modelConfig, allModels) {
           let methodName;
           if (indexName.includes("For")) {
             const [prefix] = indexName.split("For");
-            methodName = `cgQuery${prefix.charAt(0).toUpperCase()}${prefix.slice(1)}`;
+            methodName = `${codeGenPrefix}query${prefix.charAt(0).toUpperCase()}${prefix.slice(1)}`;
           } else {
-            methodName = `cgQuery${indexName.charAt(0).toUpperCase()}${indexName.slice(1)}`;
+            methodName = `${codeGenPrefix}query${indexName.charAt(0).toUpperCase()}${indexName.slice(1)}`;
           }
 
           methods += `
@@ -364,9 +366,9 @@ function generateQueryMethods(modelName, modelConfig, allModels) {
           let methodName;
           if (indexName.includes("For")) {
             const [prefix] = indexName.split("For");
-            methodName = `cgGet${prefix.charAt(0).toUpperCase()}${prefix.slice(1)}`;
+            methodName = `${codeGenPrefix}get${prefix.charAt(0).toUpperCase()}${prefix.slice(1)}`;
           } else {
-            methodName = `cgGet${indexName.charAt(0).toUpperCase()}${indexName.slice(1)}`;
+            methodName = `${codeGenPrefix}get${indexName.charAt(0).toUpperCase()}${indexName.slice(1)}`;
           }
 
           // Find the "other" relation field that isn't the one we're querying with
@@ -414,7 +416,7 @@ function generateRelatedFieldMethods(fields) {
         baseName.charAt(0).toUpperCase() + baseName.slice(1);
 
       methods.push(`
-  async cgGet${capitalizedName}() {
+  async ${codeGenPrefix}get${capitalizedName}() {
     return await this.getOrLoadRelatedField('${fieldName}');
   }`);
     }

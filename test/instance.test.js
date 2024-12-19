@@ -40,11 +40,11 @@ describe("Instance Methods", () => {
   test("should track changes correctly", async () => {
     const user = await User.find(testUser.userId);
     expect(user.hasChanges()).toBeFalsy();
-    expect(user.getChanges()).toEqual({});
+    expect(user._getChanges()).toEqual({});
 
     user.name = "Updated Name";
     expect(user.hasChanges()).toBeTruthy();
-    expect(user.getChanges()).toEqual({ name: "Updated Name" });
+    expect(user._getChanges()).toEqual({ name: "Updated Name" });
   });
 
   test("should only save changed fields", async () => {
@@ -78,7 +78,7 @@ describe("Instance Methods", () => {
 
     await user.save();
     expect(user.hasChanges()).toBeFalsy();
-    expect(user.getChanges()).toEqual({});
+    expect(user._getChanges()).toEqual({});
   });
 
   test("should handle multiple changes and saves correctly", async () => {

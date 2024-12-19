@@ -14,7 +14,7 @@ const ValidationMethods = {
   /**
    *
    * @function _validateConfiguration
-   * @memberof BaoModel
+   *@memberof BaoModel
    * @private
    * @throws {Error} If modelPrefix is not defined
    * @throws {Error} If primaryKey is not defined

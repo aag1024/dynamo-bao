@@ -1,4 +1,6 @@
-require("dotenv").config();
+// require("dotenv").config();
+
+const userConfig = require("../config");
 
 const LOG_LEVELS = {
   OFF: -1,
@@ -11,7 +13,7 @@ const LOG_LEVELS = {
 class Logger {
   constructor(context) {
     this.context = context;
-    this.currentLevel = (process.env.LOG_LEVEL || "ERROR").toUpperCase();
+    this.currentLevel = userConfig.logging.level.toUpperCase();
   }
 
   log(level, ...args) {

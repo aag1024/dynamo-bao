@@ -323,6 +323,15 @@ class BaoModel {
     }
   }
 
+  // Get all data - convert from Dynamo to JS format
+  _getAllData() {
+    const allData = {};
+    for (const [fieldName, field] of Object.entries(this.constructor.fields)) {
+      allData[fieldName] = field.fromDy(this._dyData[fieldName]);
+    }
+    return allData;
+  }
+
   // Get only changed fields - convert from Dynamo to JS format
   _getChanges() {
     const changes = {};
@@ -354,6 +363,15 @@ class BaoModel {
     return this._changes.size > 0;
   }
 
+  /**
+   * @description
+   * Returns true if the object has been loaded from the database.
+   * @returns {boolean} True if the object has been loaded, false otherwise.
+   */
+  isLoaded() {
+    return Object.keys(this._loadedDyData).length > 0;
+  }
+
   // Reset tracking after successful save
   _resetChangeTracking() {
     this._loadedDyData = { ...this._dyData };
@@ -376,11 +394,19 @@ class BaoModel {
    * @returns {Promise<Object>} Returns a promise that resolves to the updated item.
    */
   async save(options = {}) {
-    if (!this.hasChanges()) {
+    if (!this.hasChanges() && this.isLoaded()) {
+      logger.debug("save() - no changes to save");
       return this; // No changes to save
     }
 
-    const changes = this._getChanges();
+    let changes = null;
+    if (!this.isLoaded()) {
+      options.isNew = true;
+      changes = this._getAllData();
+    } else {
+      changes = this._getChanges();
+    }
+
     logger.debug("save() - changes", changes);
     const updatedObj = await this.constructor.update(
       this.getPrimaryId(),
@@ -388,7 +414,9 @@ class BaoModel {
       { instanceObj: this, ...options },
     );
 
+    logger.debug("save() - updatedObj", updatedObj);
     this._dyData = updatedObj._dyData;
+    logger.debug("save() - this", this);
 
     // Reset change tracking after successful save
     this._resetChangeTracking();

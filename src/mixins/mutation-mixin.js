@@ -20,6 +20,8 @@ const MutationMethods = {
       isNew: true,
     });
     const result = await this._saveItem(null, jsUpdates, { isNew: true });
+
+    logger.debug("create() - result", result);
     await pluginManager.executeHooks(this.name, "afterSave", result, {
       isNew: true,
     });
@@ -36,20 +38,27 @@ const MutationMethods = {
    * @returns {Promise<Object>} Returns a promise that resolves to the updated item.
    */
   async update(primaryId, jsUpdates, options = {}) {
-    await pluginManager.executeHooks(this.name, "beforeSave", jsUpdates, {
-      ...options,
+    const updateOptions = {
       isNew: false,
-    });
+      ...options,
+    };
+    await pluginManager.executeHooks(
+      this.name,
+      "beforeSave",
+      jsUpdates,
+      updateOptions,
+    );
 
-    const result = await this._saveItem(primaryId, jsUpdates, {
-      ...options,
-      isNew: false,
-    });
+    const result = await this._saveItem(primaryId, jsUpdates, updateOptions);
 
-    await pluginManager.executeHooks(this.name, "afterSave", result, {
-      ...options,
-      isNew: false,
-    });
+    logger.debug("update() - result", result);
+
+    await pluginManager.executeHooks(
+      this.name,
+      "afterSave",
+      result,
+      updateOptions,
+    );
 
     return result;
   },
@@ -168,10 +177,6 @@ const MutationMethods = {
 
       let currentItem = instanceObj;
       if (isNew) {
-        assert(
-          primaryId === null || primaryId === undefined,
-          "primaryId should be null for new items",
-        );
         currentItem = null;
       } else if (!currentItem) {
         currentItem = await this.find(primaryId, { batchDelay: 0 });
@@ -399,7 +404,7 @@ const MutationMethods = {
           const savedItem = await this.find(primaryId, { batchDelay: 0 });
 
           logger.debug("savedItem", savedItem);
-          logger.debug("savedItem.name", savedItem.name);
+          logger.debug("savedItem.getPrimaryId()", savedItem.getPrimaryId());
 
           if (!savedItem.exists()) {
             throw new Error("Failed to fetch saved item");
@@ -444,6 +449,7 @@ const MutationMethods = {
           return savedItem;
         }
       } catch (error) {
+        logger.error("Error in _saveItem", error);
         if (error.name === "ConditionalCheckFailedException") {
           if (constraints.mustExist) {
             throw new Error("Item must exist");

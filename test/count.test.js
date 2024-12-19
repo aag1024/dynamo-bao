@@ -5,7 +5,6 @@ const { GSI_INDEX_ID1 } = require("../src/constants");
 const { StringField, IntegerField, BooleanField } = require("../src/fields");
 const { cleanupTestData, verifyCleanup } = require("./utils/test-utils");
 const { ulid } = require("ulid");
-require("dotenv").config();
 
 let testId;
 

@@ -128,8 +128,8 @@ async function testUserModel() {
     console.log("User posts:", userPosts.items.length);
 
     // Or add a filter condition to the query
-    const userPosts = await user.queryPosts(null, {filter: {content: {$contains: "another"}}});
-    console.log("User posts matching filter:", userPosts.items.length);
+    const filteredPosts = await user.queryPosts(null, {filter: {content: {$contains: "another"}}});
+    console.log("User posts matching filter:", filteredPosts.items.length);
 
   }
 }

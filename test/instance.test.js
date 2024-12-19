@@ -184,4 +184,23 @@ describe("Instance Methods", () => {
     expect(finalUser.name).toBe("Name from instance 1");
     expect(finalUser.status).toBe("inactive");
   });
+
+  test("creating and saving a user", async () => {
+    const newUser = new User({
+      name: "New User",
+      email: "new@example.com",
+      externalId: "ext_new",
+      externalPlatform: "platform1",
+      status: "active",
+    });
+
+    await newUser.save();
+
+    const savedUser = await User.find(newUser.userId);
+    expect(savedUser.name).toBe("New User");
+    expect(savedUser.email).toBe("new@example.com");
+    expect(savedUser.externalId).toBe("ext_new");
+    expect(savedUser.externalPlatform).toBe("platform1");
+    expect(savedUser.status).toBe("active");
+  });
 });

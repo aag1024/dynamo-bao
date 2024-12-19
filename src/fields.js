@@ -3,7 +3,6 @@
  * @description
  * This module contains the built-in fields for Bao.
  */
-require("dotenv").config();
 const { ulid, decodeTime } = require("ulid");
 const { defaultLogger: logger } = require("./utils/logger");
 

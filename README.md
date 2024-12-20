@@ -179,10 +179,10 @@ const config = {
     level: "ERROR",
   },
   paths: {
-    # Default paths:
-    # models/ => generated models
-    # models.yaml => model definitions
-    # fields/ => custom fields
+    // Default paths:
+    // models/ => generated models
+    // models.yaml => model definitions
+    // fields/ => custom fields
     modelsDir: path.resolve(__dirname, "./models"),
     modelsDefinitionPath: path.resolve(__dirname, "./models.yaml"),
     fieldsDir: path.resolve(__dirname, "./fields"), // optional for custom fields

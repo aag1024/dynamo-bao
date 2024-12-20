@@ -186,6 +186,14 @@ describe("Instance Methods", () => {
   });
 
   test("creating and saving a user", async () => {
+    const existingUser = await User.findByUniqueConstraint(
+      "uniqueEmail",
+      "test@example.com",
+    );
+    if (existingUser.exists()) {
+      await User.delete(existingUser.getPrimaryId());
+    }
+
     const newUser = new User({
       name: "New User",
       email: "new@example.com",
@@ -202,5 +210,27 @@ describe("Instance Methods", () => {
     expect(savedUser.externalId).toBe("ext_new");
     expect(savedUser.externalPlatform).toBe("platform1");
     expect(savedUser.status).toBe("active");
+
+    const newUser2 = new User({
+      name: "New User 2",
+      email: "new@example.com",
+      externalId: "ext_new",
+      externalPlatform: "platform1",
+      status: "active",
+    });
+
+    await expect(newUser2.save()).rejects.toThrow("email must be unique");
+
+    // This is creating a new user with an existing userId, which should fail
+    const newUser3 = new User({
+      userId: newUser.userId,
+      name: "New User 3",
+      email: "new3@example.com",
+      externalId: "ext_new3",
+      externalPlatform: "platform1",
+      status: "active",
+    });
+
+    await expect(newUser3.save()).rejects.toThrow("Transaction cancelled");
   });
 });

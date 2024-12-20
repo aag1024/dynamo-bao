@@ -47,8 +47,8 @@
     "serverless": "^3.38.0"
   },
   "bin": {
-    "dynamo-bao-create-table": "./bin/dynamo-bao-create-table.js",
-    "model-codegen": "./bin/codegen.js",
-    "dynamo-bao-watch": "./bin/watch.js"
+    "bao-create-table": "./bin/dynamo-bao-create-table.js",
+    "bao-codegen": "./bin/codegen.js",
+    "bao-watch": "./bin/watch.js"
   }
 }

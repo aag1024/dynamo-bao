@@ -1,24 +1,26 @@
 # DynamoBao
 
-DynamoBao is a simple lightweight library for building DynamoDB models in JavaScript.
+DynamoBao is a simple lightweight library for building DynamoDB models in JavaScript. I've used
+DynamoDB for years and generally love it, but find getting started difficult and repetitive.
+DynamoBao is the tool I wish I had when I started.
 
-### Principles
+## Principles
 
-- Don't break DynamoDB's superpower of infinite scale with consistent fast performance.
 - Expose just enough of Dynamo's features to make it easy to model many common types of data.
+- Don't break DynamoDB's superpower of infinite scale with consistent fast performance.
 - Use single table design to minimize ops overhead, without adding complexity for the developer.
 
-### Key features
+## Key features
 
 - Model 1:1, 1:N, N:M relationships between objects
-- Efficiently load data: load related objects in parallel, cache data within a loading context
-- Minimize race conditions: optimistic locking, version checks, atomic counters, saving diffs
-- Enforce and look up by unique constraints
+- Efficiently load data: load related objects in parallel, cache data using a loading context
+- Minimize race conditions: save diffs, optimistic locking, version checks, atomic counters
+- Enforce unique constraints and use them for lookups
 - Return total read/write consumed capacity (even when multiple operations were performed)
 
-### Simple Example
+## Example 1: Simple model
 
-Let's take a look at a simple YAML model definition.
+Step 1 is to define your models in a yaml file. Here's a simple example.
 
 ```
 models:
@@ -58,7 +60,7 @@ async function testUserModel() {
 testUserModel();
 ```
 
-### A more interesting example: relationships and unique constraints
+## Example 2: Relationships and unique constraints
 
 ```
 models:
@@ -128,7 +130,13 @@ async function testUserModel() {
     console.log("User posts:", userPosts.items.length);
 
     // Or add a filter condition to the query
-    const filteredPosts = await user.queryPosts(null, {filter: {content: {$contains: "another"}}});
+    const filteredPosts = await user.queryPosts(null, {
+      filter: {
+        content: {
+          $contains: "another"
+        }
+      }
+    });
     console.log("User posts matching filter:", filteredPosts.items.length);
 
   }
@@ -137,8 +145,189 @@ async function testUserModel() {
 testUserModel();
 ```
 
-### model-codegen
+## Installation / Quick Start
+
+Make sure you have [AWS credentials setup in your environment](https://medium.com/@simonazhangzy/installing-and-configuring-the-aws-cli-7d33796e4a7c). You'll also need [node and npm](https://docs.npmjs.com/downloading-and-installing-node-js-and-npm) installed.
+
+Install DynamoBao globally:
 
 ```
-model-codegen test/codegen/definitions test/codegen/generated
+npm install -g dynamo-bao
 ```
+
+Create a new Dynamo table for your project. You should have one table per project.
+
+```
+bao-create-table
+```
+
+Create a project and setup some models.
+
+```
+mkdir your-project
+cd your-project
+```
+
+Create a simple `config.js` file:
+
+```
+const path = require("path");
+
+const config = {
+  aws: {
+    region: "us-west-2",
+  },
+  db: {
+    tableName: "dynamo-bao-dev",  // make sure this matches what you created with bao-create-table
+  },
+  logging: {
+    level: "ERROR",
+  },
+  paths: {
+    modelsDir: path.resolve(__dirname, "./models"),
+    modelsDefinitionPath: path.resolve(__dirname, "./models.yaml"),
+    fieldsDir: path.resolve(__dirname, "./fields"), // optional for custom fields
+  },
+};
+
+module.exports = config;
+```
+
+Edit your `models.yaml` file to define your models.
+
+```
+models:
+  User:
+    modelPrefix: u
+    fields: {
+      userId: {type: UlidField, autoAssign: true, required: true},
+      name: {type: StringField, required: true},
+      email: {type: StringField, required: true},
+      profilePictureUrl: {type: StringField},
+      createdAt: {type: CreateDateField},
+      modifiedAt: {type: ModifiedDateField},
+      role: {type: StringField}
+    },
+    primaryKey: {partitionKey: userId},
+    uniqueConstraints: {
+      uniqueEmail: {field: email, uniqueConstraintId: uc1}
+    }
+  Post:
+    modelPrefix: p
+    fields: {
+      postId: {type: UlidField, autoAssign: true},
+      userId: {type: RelatedField, model: User, required: true},
+      title: {type: StringField, required: true},
+      content: {type: StringField, required: true},
+      createdAt: {type: CreateDateField},
+      version: {type: VersionField}
+    },
+    primaryKey: {partitionKey: postId},
+    indexes: {
+      allPosts: {partitionKey: modelPrefix, sortKey: postId, indexId: gsi1},
+      postsForUser: {partitionKey: userId, sortKey: createdAt, indexId: gsi2}
+    }
+```
+
+Run the code generator to create the models. You can also run `bao-watch` to automatically regenerate the models when you make changes.
+
+```
+bao-codegen
+```
+
+You should now have a `models` directory with the generated models.
+
+Let's try using the models. Add the following code to a file called `example.js`.
+
+```
+# example.js
+const { User } = require("./models/user");
+const { Post } = require("./models/post");
+const userConfig = require("./config");
+const dynamoBao = require("dynamo-bao");
+async function testUserModel() {
+  try {
+    dynamoBao.initModels(userConfig);
+
+    // Find user by email
+    const existingUser = await User.findByEmail("test@example.com");
+    console.log("Found user by email:", existingUser.getPrimaryId());
+    if (existingUser.exists()) {
+      await User.delete(existingUser.getPrimaryId());
+      console.log("Deleted existing user");
+      await new Promise((resolve) => setTimeout(resolve, 100)); // 100ms
+    }
+
+    // Create a new user
+    const user = new User({
+      name: "Test User",
+      email: "test@example.com",
+      role: "user",
+      profilePictureUrl: "https://example.com/profile.jpg",
+    });
+
+    await user.save();
+    console.log("Created user:", user.getPrimaryId());
+
+    // Find user by email
+    const foundUser = await User.findByEmail("test@example.com");
+    console.log("Found user by email:", foundUser.getPrimaryId());
+
+    // Create some test posts for the user
+    const post1 = new Post({
+      userId: user.userId,
+      title: "Test Post 1",
+      content: "This is a test post",
+    });
+
+    const post2 = new Post({
+      userId: user.userId,
+      title: "Test Post 2",
+      content: "This is another test post",
+    });
+
+    await Promise.all([post1.save(), post2.save()]);
+
+    // Query user posts
+    const userPosts = await user.queryPosts();
+    console.log("User posts:", userPosts.items.length);
+
+    // Or add a filter condition to the query
+    const filteredPosts = await user.queryPosts(null, {
+      filter: { content: { $contains: "another" } },
+    });
+    console.log("User posts matching filter:", filteredPosts.items.length);
+  } catch (error) {
+    console.error("Error:", error);
+  }
+}
+
+// Run the test
+testUserModel();
+```
+
+Run the example.
+
+```
+node example.js
+```
+
+You should see something similar to this:
+
+```
+% node example.js
+Found user by email: false
+Created user: 01JFGMRH7XACZ8GKB81DZ5YWNH
+Found user by email: 01JFGMRH7XACZ8GKB81DZ5YWNH
+User posts: 2
+User posts matching filter: 1
+```
+
+Congratulations! You're now harnessing the power of DynamoDB.
+
+It's worth noting that you didn't have to:
+
+- Configure or create a new table when adding a new model
+- Install a database (either locally or on a server)
+- Understand how to generate keys and indexes using single table design princples
+- Manually configure transactions and items to support unique constraints

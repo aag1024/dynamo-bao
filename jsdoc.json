@@ -10,17 +10,15 @@
     "recurse": true,
     "template": "node_modules/clean-jsdoc-theme",
     "theme_opts": {
-      "include_css": ["./jsdoc.css"]
+      "include_css": ["./jsdoc.css"],
+      "homepageTitle": "DynamoBao",
+      "title": "DynamoBao",
+      "sections": ["Namespaces", "Classes"]
     },
     "readme": "./README.md"
   },
-  "templates": {
-    "clean-jsdoc-theme": {
-      "navigationList": ["Classes", "Methods", "Modules", "Namespaces"],
-      "showTableOfContents": true,
-      "tableOfContents": {
-        "collapse": true
-      }
-    }
+  "markdown": {
+    "hardwrap": false,
+    "idInHeadings": true
   }
 }

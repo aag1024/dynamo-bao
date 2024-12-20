@@ -5,6 +5,7 @@
 }
 
 .main-wrapper {
+  max-width: 55em !important;
   padding: 0 1rem 1rem 1rem !important;
 }
 

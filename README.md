@@ -13,8 +13,8 @@ DynamoBao is the tool I wish I had when I started.
 ## Key features
 
 - Model 1:1, 1:N, N:M relationships between objects
-- Efficiently load data: load related objects in parallel, cache data using a loading context
-- Minimize race conditions: save diffs, optimistic locking, version checks, atomic counters
+- Efficiently load data: load related objects in parallel, cache data using loading contexts
+- Minimize race conditions: save diffs, version checks on save, atomic counters
 - Enforce unique constraints and use them for lookups
 - Return total read/write consumed capacity (even when multiple operations were performed)
 
@@ -64,22 +64,26 @@ testUserModel();
 ```
 models:
   User:
-    modelPrefix: u,
+    modelPrefix: u    # required short string to identify the model
     fields:
       userId: {type: UlidField, autoAssign: true, required: true}
       name: {type: StringField, required: true}
       email: {type: EmailField, required: true}
-    primaryKey: {partitionKey: userId}
+    primaryKey: {partitionKey: userId}  # required
+    # Add up to 3 unique constraints each with a unique id: uc1, uc2, uc3
     uniqueConstraints: {uniqueEmail: {field: email, uniqueConstraintId: uc1}}
   Post:
     modelPrefix: p
     fields:
       postId: {type: UlidField, autoAssign: true}
+      # Enables getUser on a Post object / load related data
       userId: {type: RelatedField, model: User, required: true}
       title: {type: StringField, required: true}
       content: {type: StringField, required: true}
     primaryKey: {partitionKey: postId}
     indexes:
+      # Add up to 3 indexes; make sure each index has a unique id: gsi1, gsi2, gsi3
+      # Enables user.queryPosts() to query posts for a user
       postsForUser: {partitionKey: userId, sortKey: postId, indexId: gsi2}
 ```
 
@@ -145,24 +149,18 @@ testUserModel();
 
 Make sure you have [AWS credentials setup in your environment](https://medium.com/@simonazhangzy/installing-and-configuring-the-aws-cli-7d33796e4a7c). You'll also need [node and npm](https://docs.npmjs.com/downloading-and-installing-node-js-and-npm) installed.
 
-Install DynamoBao globally (this makes the `bao-create-table`, `bao-codegen`, and `bao-watch` commands available to you):
-
-```
-npm install -g dynamo-bao
-```
-
-Create a new Dynamo table for your project. You should have one table per project.
-
-```
-bao-create-table
-```
-
 Create a project and setup some models. You'll also need to install DynamoBao locally in your project.
 
 ```
 mkdir your-project
 cd your-project
 npm install dynamo-bao
+```
+
+Create a new Dynamo table for your project. You should have one table per project.
+
+```
+npx bao-create-table
 ```
 
 Create a simple `config.js` file:
@@ -181,6 +179,10 @@ const config = {
     level: "ERROR",
   },
   paths: {
+    # Default paths:
+    # models/ => generated models
+    # models.yaml => model definitions
+    # fields/ => custom fields
     modelsDir: path.resolve(__dirname, "./models"),
     modelsDefinitionPath: path.resolve(__dirname, "./models.yaml"),
     fieldsDir: path.resolve(__dirname, "./fields"), // optional for custom fields
@@ -195,7 +197,7 @@ Edit your `models.yaml` file to define your models.
 ```
 models:
   User:
-    modelPrefix: u
+    modelPrefix: u   # required short string to identify the model
     fields:
       userId: { type: UlidField, autoAssign: true, required: true }
       name: { type: StringField, required: true }
@@ -207,10 +209,11 @@ models:
     primaryKey:
       partitionKey: userId
     uniqueConstraints:
+      # Enforces unique constraint on email field and enables User.findByEmail()
       uniqueEmail: { field: email, uniqueConstraintId: uc1 }
 
   Post:
-    modelPrefix: p
+    modelPrefix: p   # required short string to identify the model
     fields:
       postId: { type: UlidField, autoAssign: true }
       userId: { type: RelatedField, model: User, required: true }
@@ -221,14 +224,16 @@ models:
     primaryKey:
       partitionKey: postId
     indexes:
+      # Enables Post.queryAllPosts() to query all posts
       allPosts: { partitionKey: modelPrefix, sortKey: postId, indexId: gsi1 }
+      # Enables user.queryPosts() to query posts for a user
       postsForUser: { partitionKey: userId, sortKey: createdAt, indexId: gsi2 }
 ```
 
-Run the code generator to create the models. You can also run `bao-watch` to automatically regenerate the models when you make changes.
+Run the code generator to create the models. You can also run `npx bao-watch` to automatically regenerate the models when you make changes.
 
 ```
-bao-codegen
+npx bao-codegen
 ```
 
 You should now have a `models` directory with the generated models.

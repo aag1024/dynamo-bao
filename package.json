@@ -11,9 +11,9 @@
     "docs": "jsdoc -c jsdoc.json --verbose"
   },
   "files": [
+    "bin/",
     "src/",
-    "README.md",
-    "LICENSE"
+    "README.md"
   ],
   "keywords": [
     "dynamodb",
@@ -47,8 +47,8 @@
     "serverless": "^3.38.0"
   },
   "bin": {
-    "bao-create-table": "./bin/dynamo-bao-create-table.js",
-    "bao-codegen": "./bin/codegen.js",
-    "bao-watch": "./bin/watch.js"
+    "bao-create-table": "bin/dynamo-bao-create-table.js",
+    "bao-codegen": "bin/codegen.js",
+    "bao-watch": "bin/watch.js"
   }
 }

@@ -25,12 +25,11 @@ Step 1 is to define your models in a yaml file. Here's a simple example.
 ```
 models:
   User: {
-    modelPrefix: u,
-    fields: {
-      userId: {type: UlidField, autoAssign: true, required: true},
-      name: {type: StringField, required: true},
+    modelPrefix: u
+    fields:
+      userId: {type: UlidField, autoAssign: true, required: true}
+      name: {type: StringField, required: true}
       email: {type: EmailField, required: true}
-    },
     primaryKey: {partitionKey: userId}
   }
 ```
@@ -64,27 +63,24 @@ testUserModel();
 
 ```
 models:
-  User: {
+  User:
     modelPrefix: u,
-    fields: {
-      userId: {type: UlidField, autoAssign: true, required: true},
-      name: {type: StringField, required: true},
+    fields:
+      userId: {type: UlidField, autoAssign: true, required: true}
+      name: {type: StringField, required: true}
       email: {type: EmailField, required: true}
-    },
-    primaryKey: {partitionKey: userId},
+    primaryKey: {partitionKey: userId}
     uniqueConstraints: {uniqueEmail: {field: email, uniqueConstraintId: uc1}}
-  }
-  Post: {
-    modelPrefix: p,
-    fields: {
-      postId: {type: UlidField, autoAssign: true},
-      userId: {type: RelatedField, model: User, required: true},
-      title: {type: StringField, required: true},
+  Post:
+    modelPrefix: p
+    fields:
+      postId: {type: UlidField, autoAssign: true}
+      userId: {type: RelatedField, model: User, required: true}
+      title: {type: StringField, required: true}
       content: {type: StringField, required: true}
-    },
-    primaryKey: {partitionKey: postId},
-    indexes: {postsForUser: {partitionKey: userId, sortKey: postId, indexId: gsi2}}
-  }
+    primaryKey: {partitionKey: postId}
+    indexes:
+      postsForUser: {partitionKey: userId, sortKey: postId, indexId: gsi2}
 ```
 
 ```
@@ -149,7 +145,7 @@ testUserModel();
 
 Make sure you have [AWS credentials setup in your environment](https://medium.com/@simonazhangzy/installing-and-configuring-the-aws-cli-7d33796e4a7c). You'll also need [node and npm](https://docs.npmjs.com/downloading-and-installing-node-js-and-npm) installed.
 
-Install DynamoBao globally:
+Install DynamoBao globally (this makes the `bao-create-table`, `bao-codegen`, and `bao-watch` commands available to you):
 
 ```
 npm install -g dynamo-bao
@@ -161,11 +157,12 @@ Create a new Dynamo table for your project. You should have one table per projec
 bao-create-table
 ```
 
-Create a project and setup some models.
+Create a project and setup some models. You'll also need to install DynamoBao locally in your project.
 
 ```
 mkdir your-project
 cd your-project
+npm install dynamo-bao
 ```
 
 Create a simple `config.js` file:
@@ -199,34 +196,33 @@ Edit your `models.yaml` file to define your models.
 models:
   User:
     modelPrefix: u
-    fields: {
-      userId: {type: UlidField, autoAssign: true, required: true},
-      name: {type: StringField, required: true},
-      email: {type: StringField, required: true},
-      profilePictureUrl: {type: StringField},
-      createdAt: {type: CreateDateField},
-      modifiedAt: {type: ModifiedDateField},
-      role: {type: StringField}
-    },
-    primaryKey: {partitionKey: userId},
-    uniqueConstraints: {
-      uniqueEmail: {field: email, uniqueConstraintId: uc1}
-    }
+    fields:
+      userId: { type: UlidField, autoAssign: true, required: true }
+      name: { type: StringField, required: true }
+      email: { type: StringField, required: true }
+      profilePictureUrl: { type: StringField }
+      createdAt: { type: CreateDateField }
+      modifiedAt: { type: ModifiedDateField }
+      role: { type: StringField }
+    primaryKey:
+      partitionKey: userId
+    uniqueConstraints:
+      uniqueEmail: { field: email, uniqueConstraintId: uc1 }
+
   Post:
     modelPrefix: p
-    fields: {
-      postId: {type: UlidField, autoAssign: true},
-      userId: {type: RelatedField, model: User, required: true},
-      title: {type: StringField, required: true},
-      content: {type: StringField, required: true},
-      createdAt: {type: CreateDateField},
-      version: {type: VersionField}
-    },
-    primaryKey: {partitionKey: postId},
-    indexes: {
-      allPosts: {partitionKey: modelPrefix, sortKey: postId, indexId: gsi1},
-      postsForUser: {partitionKey: userId, sortKey: createdAt, indexId: gsi2}
-    }
+    fields:
+      postId: { type: UlidField, autoAssign: true }
+      userId: { type: RelatedField, model: User, required: true }
+      title: { type: StringField, required: true }
+      content: { type: StringField, required: true }
+      createdAt: { type: CreateDateField }
+      version: { type: VersionField }
+    primaryKey:
+      partitionKey: postId
+    indexes:
+      allPosts: { partitionKey: modelPrefix, sortKey: postId, indexId: gsi1 }
+      postsForUser: { partitionKey: userId, sortKey: createdAt, indexId: gsi2 }
 ```
 
 Run the code generator to create the models. You can also run `bao-watch` to automatically regenerate the models when you make changes.
@@ -240,7 +236,7 @@ You should now have a `models` directory with the generated models.
 Let's try using the models. Add the following code to a file called `example.js`.
 
 ```
-# example.js
+// example.js
 const { User } = require("./models/user");
 const { Post } = require("./models/post");
 const userConfig = require("./config");
@@ -251,7 +247,7 @@ async function testUserModel() {
 
     // Find user by email
     const existingUser = await User.findByEmail("test@example.com");
-    console.log("Found user by email:", existingUser.getPrimaryId());
+    console.log("Found user by email:", existingUser.exists());
     if (existingUser.exists()) {
       await User.delete(existingUser.getPrimaryId());
       console.log("Deleted existing user");

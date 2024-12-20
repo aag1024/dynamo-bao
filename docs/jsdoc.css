@@ -1,0 +1,52 @@
+.sidebar-container {
+  width: 15rem;
+  min-width: 15rem;
+  max-width: 15rem;
+}
+
+.main-wrapper {
+  padding: 0 1rem 1rem 1rem !important;
+}
+
+.main-content {
+  padding: 7rem 0 0 0 !important;
+}
+
+@media screen and (max-width: 87em) {
+  .toc-container {
+    display: none;
+  }
+}
+
+/* Override to explicitly show between 80em and 100em */
+@media screen and (min-width: 87em) and (max-width: 100em) {
+  .toc-container {
+    display: block !important;
+  }
+}
+
+@media screen and (max-width: 82em) {
+  .sidebar-container {
+    display: none !important;
+  }
+}
+
+@media screen and (max-width: 82em) {
+  .navbar-container {
+    display: none !important;
+  }
+}
+
+@media screen and (max-width: 82em) {
+  .mobile-menu-icon-container {
+    display: block !important;
+  }
+}
+
+.navbar-container {
+  left: 15rem !important;
+}
+
+.toc-container {
+  right: 2rem !important;
+}

@@ -34,26 +34,24 @@ models:
   }
 ```
 
-Based on this definition, the code generator will create a `User` model (in models/user) that you can use like this:
+Based on this definition, the code generator will create a `User` model in the models directory that you can use like this:
 
 ```
 const { User } = require("./models/user");
 const userConfig = require("./config");
 const dynamoBao = require("dynamo-bao");
 async function testUserModel() {
-  try {
-    dynamoBao.initModels(userConfig);
+  dynamoBao.initModels(userConfig);
 
-    // Create a new user
-    const user = new User({
-      name: "Test User",
-      email: "test@example.com",
-    });
+  // Create a new user
+  const user = new User({
+    name: "Test User",
+    email: "test@example.com",
+  });
 
-    await user.save();
-    console.log("Created user:", user);
-    console.log("Consumed capacity:", user.getNumericConsumedCapacity());
-  }
+  await user.save();
+  console.log("Created user:", user);
+  console.log("Consumed capacity:", user.getNumericConsumedCapacity());
 }
 
 testUserModel();
@@ -93,53 +91,50 @@ const { Post } = require("./models/post");
 const userConfig = require("./config");
 const dynamoBao = require("dynamo-bao");
 async function testUserModel() {
-  try {
-    dynamoBao.initModels(userConfig);
+  dynamoBao.initModels(userConfig);
 
-    // Create a new user
-    const user = new User({
-      name: "Test User",
-      email: "test@example.com",
-    });
+  // Create a new user
+  const user = new User({
+    name: "Test User",
+    email: "test@example.com",
+  });
 
-    await user.save();
-    console.log("Created user:", user.userId);
+  await user.save();
+  console.log("Created user:", user.userId);
 
-    // Find user by unique constraint
-    const foundUser = await User.findByEmail("test@example.com");
-    console.log("Found user by email:", foundUser);
+  // Find user by unique constraint
+  const foundUser = await User.findByEmail("test@example.com");
+  console.log("Found user by email:", foundUser);
 
 
-    // Create some test posts for the user
-    const post1 = new Post({
-      userId: user.userId,
-      title: "Test Post 1",
-      content: "This is a test post",
-    });
+  // Create some test posts for the user
+  const post1 = new Post({
+    userId: user.userId,
+    title: "Test Post 1",
+    content: "This is a test post",
+  });
 
-    const post2 = new Post({
-      userId: user.userId,
-      title: "Test Post 2",
-      content: "This is another test post",
-    });
+  const post2 = new Post({
+    userId: user.userId,
+    title: "Test Post 2",
+    content: "This is another test post",
+  });
 
-    await Promise.all([post1.save(), post2.save()]);
+  await Promise.all([post1.save(), post2.save()]);
 
-    // User now has a queryPosts method (via the postsForUser index)
-    const userPosts = await user.queryPosts();
-    console.log("User posts:", userPosts.items.length);
+  // User now has a queryPosts method (via the postsForUser index)
+  const userPosts = await user.queryPosts();
+  console.log("User posts:", userPosts.items.length);
 
-    // Or add a filter condition to the query
-    const filteredPosts = await user.queryPosts(null, {
-      filter: {
-        content: {
-          $contains: "another"
-        }
+  // Or add a filter condition to the query
+  const filteredPosts = await user.queryPosts(null, {
+    filter: {
+      content: {
+        $contains: "another"
       }
-    });
-    console.log("User posts matching filter:", filteredPosts.items.length);
-
-  }
+    }
+  });
+  console.log("User posts matching filter:", filteredPosts.items.length);
 }
 
 testUserModel();
@@ -163,36 +158,12 @@ Create a new Dynamo table for your project. You should have one table per projec
 npx bao-create-table
 ```
 
-Create a simple `config.js` file:
+This creates a `config.js` which contains settings for your project like AWS region and the table name.
 
-```
-const path = require("path");
+It also creates a `models.yaml` file with a simple example model, and a `models` directory where
+the generated models will be stored.
 
-const config = {
-  aws: {
-    region: "us-west-2",
-  },
-  db: {
-    tableName: "dynamo-bao-dev",  // make sure this matches what you created with bao-create-table
-  },
-  logging: {
-    level: "ERROR",
-  },
-  paths: {
-    // Default paths:
-    // models/ => generated models
-    // models.yaml => model definitions
-    // fields/ => custom fields
-    modelsDir: path.resolve(__dirname, "./models"),
-    modelsDefinitionPath: path.resolve(__dirname, "./models.yaml"),
-    fieldsDir: path.resolve(__dirname, "./fields"), // optional for custom fields
-  },
-};
-
-module.exports = config;
-```
-
-Edit your `models.yaml` file to define your models.
+Edit your `models.yaml` file to define these models.
 
 ```
 models:
@@ -236,7 +207,7 @@ Run the code generator to create the models. You can also run `npx bao-watch` to
 npx bao-codegen
 ```
 
-You should now have a `models` directory with the generated models.
+You should now have generated models in the `models` directory.
 
 Let's try using the models. Add the following code to a file called `example.js`.
 

@@ -1,7 +1,7 @@
 {
   "name": "dynamo-bao",
-  "version": "0.1.1",
-  "description": "Simple powerful data modeleling primatives for DynamoDB in JavaScript",
+  "version": "0.1.2",
+  "description": "Simple powerful data modeling primitives for DynamoDB in JavaScript.",
   "main": "src/index.js",
   "scripts": {
     "test": "LOG_LEVEL=OFF jest",
@@ -48,8 +48,9 @@
     "serverless": "^3.38.0"
   },
   "bin": {
-    "bao-create-table": "bin/dynamo-bao-create-table.js",
+    "bao-init": "bin/dynamo-bao-create-table.js",
     "bao-codegen": "bin/codegen.js",
-    "bao-watch": "bin/watch.js"
+    "bao-watch": "bin/watch.js",
+    "bao-delete": "bin/dynamo-bao-delete-table.js"
   }
 }

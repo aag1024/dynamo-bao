@@ -6,6 +6,8 @@ const {
   ListTablesCommand,
 } = require("@aws-sdk/client-dynamodb");
 const readline = require("readline");
+const fs = require("fs");
+const path = require("path");
 
 // Create DynamoDB client at the top level
 const client = new DynamoDBClient();
@@ -47,6 +49,39 @@ const prompt = (query) => {
     }),
   );
 };
+
+async function writeConfigFile(tableName) {
+  const region = await client.config.region();
+  const configContent = `const path = require("path");
+
+const config = {
+  aws: {
+    region: "${region}",
+  },
+  db: {
+    tableName: "${tableName}",
+  },
+  logging: {
+    level: "ERROR",
+  },
+  paths: {
+    // Default paths:
+    // models/ => generated models
+    // models.yaml => model definitions
+    // fields/ => custom fields
+    modelsDir: path.resolve(__dirname, "./models"),
+    modelsDefinitionPath: path.resolve(__dirname, "./models.yaml"),
+    fieldsDir: path.resolve(__dirname, "./fields"), // optional for custom fields
+  },
+};
+
+module.exports = config;
+`;
+
+  const configPath = path.resolve(process.cwd(), "config.js");
+  fs.writeFileSync(configPath, configContent);
+  console.log(`Config file written to: ${configPath}`);
+}
 
 async function createTable() {
   // Prompt user for table name
@@ -119,14 +154,50 @@ async function createTable() {
       "Table created successfully:",
       response.TableDescription.TableName,
     );
+
+    // Add this line to write the config file after table creation
+    await writeConfigFile(tableName);
   } catch (error) {
     console.error("Error creating table:", error);
+  }
+}
+
+async function createDirectoriesAndFiles() {
+  // Create models directory
+  const modelsDir = path.resolve(process.cwd(), "models");
+  if (!fs.existsSync(modelsDir)) {
+    fs.mkdirSync(modelsDir);
+    console.log(`Created models directory at: ${modelsDir}`);
+  }
+
+  // Create models.yaml with default content
+  const modelsYamlPath = path.resolve(process.cwd(), "models.yaml");
+  const yamlContent = `# Edit this file to create your models. For more information see: adriangraham.github.io/dynamo-bao/
+#
+# Here's a simple example:
+# models:
+#   User: {
+#   
+#     modelPrefix: u
+#     fields:
+#       userId: {type: UlidField, autoAssign: true, required: true}
+#       name: {type: StringField, required: true}
+#       email: {type: EmailField, required: true}
+#     primaryKey: {partitionKey: userId}
+#   }
+`;
+
+  if (!fs.existsSync(modelsYamlPath)) {
+    fs.writeFileSync(modelsYamlPath, yamlContent);
+    console.log(`Created models.yaml at: ${modelsYamlPath}`);
   }
 }
 
 async function main() {
   await checkAwsCredentials();
   await createTable();
+  // Add this line after table creation
+  await createDirectoriesAndFiles();
 }
 
 // Run the main function

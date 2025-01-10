@@ -13,9 +13,10 @@
       "include_css": ["./jsdoc.css"],
       "homepageTitle": "DynamoBao",
       "title": "DynamoBao",
-      "sections": ["Namespaces", "Classes"]
+      "sections": ["Tutorials", "Namespaces", "Classes"]
     },
-    "readme": "./README.md"
+    "readme": "./README.md",
+    "tutorials": "./tutorials"
   },
   "markdown": {
     "hardwrap": false,

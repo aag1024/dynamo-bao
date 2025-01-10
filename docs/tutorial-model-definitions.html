@@ -1,0 +1,181 @@
+<!DOCTYPE html><html lang="en" style="font-size:16px"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link type="text/css" rel="stylesheet" href="jsdoc.css"><title>Tutorial: Model Definitions</title><!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]--><script src="scripts/third-party/hljs.js" defer="defer"></script><script src="scripts/third-party/hljs-line-num.js" defer="defer"></script><script src="scripts/third-party/popper.js" defer="defer"></script><script src="scripts/third-party/tippy.js" defer="defer"></script><script src="scripts/third-party/tocbot.min.js"></script><script>var baseURL="/",locationPathname="";baseURL=(locationPathname=document.location.pathname).substr(0,locationPathname.lastIndexOf("/")+1)</script><link rel="stylesheet" href="styles/clean-jsdoc-theme.min.css"><svg aria-hidden="true" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" style="display:none"><defs><symbol id="copy-icon" viewbox="0 0 488.3 488.3"><g><path d="M314.25,85.4h-227c-21.3,0-38.6,17.3-38.6,38.6v325.7c0,21.3,17.3,38.6,38.6,38.6h227c21.3,0,38.6-17.3,38.6-38.6V124    C352.75,102.7,335.45,85.4,314.25,85.4z M325.75,449.6c0,6.4-5.2,11.6-11.6,11.6h-227c-6.4,0-11.6-5.2-11.6-11.6V124    c0-6.4,5.2-11.6,11.6-11.6h227c6.4,0,11.6,5.2,11.6,11.6V449.6z"/><path d="M401.05,0h-227c-21.3,0-38.6,17.3-38.6,38.6c0,7.5,6,13.5,13.5,13.5s13.5-6,13.5-13.5c0-6.4,5.2-11.6,11.6-11.6h227    c6.4,0,11.6,5.2,11.6,11.6v325.7c0,6.4-5.2,11.6-11.6,11.6c-7.5,0-13.5,6-13.5,13.5s6,13.5,13.5,13.5c21.3,0,38.6-17.3,38.6-38.6    V38.6C439.65,17.3,422.35,0,401.05,0z"/></g></symbol><symbol id="search-icon" viewBox="0 0 512 512"><g><g><path d="M225.474,0C101.151,0,0,101.151,0,225.474c0,124.33,101.151,225.474,225.474,225.474    c124.33,0,225.474-101.144,225.474-225.474C450.948,101.151,349.804,0,225.474,0z M225.474,409.323    c-101.373,0-183.848-82.475-183.848-183.848S124.101,41.626,225.474,41.626s183.848,82.475,183.848,183.848    S326.847,409.323,225.474,409.323z"/></g></g><g><g><path d="M505.902,476.472L386.574,357.144c-8.131-8.131-21.299-8.131-29.43,0c-8.131,8.124-8.131,21.306,0,29.43l119.328,119.328    c4.065,4.065,9.387,6.098,14.715,6.098c5.321,0,10.649-2.033,14.715-6.098C514.033,497.778,514.033,484.596,505.902,476.472z"/></g></g></symbol><symbol id="font-size-icon" viewBox="0 0 24 24"><path fill="none" d="M0 0h24v24H0z"/><path d="M11.246 15H4.754l-2 5H.6L7 4h2l6.4 16h-2.154l-2-5zm-.8-2L8 6.885 5.554 13h4.892zM21 12.535V12h2v8h-2v-.535a4 4 0 1 1 0-6.93zM19 18a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"/></symbol><symbol id="add-icon" viewBox="0 0 24 24"><path fill="none" d="M0 0h24v24H0z"/><path d="M11 11V5h2v6h6v2h-6v6h-2v-6H5v-2z"/></symbol><symbol id="minus-icon" viewBox="0 0 24 24"><path fill="none" d="M0 0h24v24H0z"/><path d="M5 11h14v2H5z"/></symbol><symbol id="dark-theme-icon" viewBox="0 0 24 24"><path fill="none" d="M0 0h24v24H0z"/><path d="M10 7a7 7 0 0 0 12 4.9v.1c0 5.523-4.477 10-10 10S2 17.523 2 12 6.477 2 12 2h.1A6.979 6.979 0 0 0 10 7zm-6 5a8 8 0 0 0 15.062 3.762A9 9 0 0 1 8.238 4.938 7.999 7.999 0 0 0 4 12z"/></symbol><symbol id="light-theme-icon" viewBox="0 0 24 24"><path fill="none" d="M0 0h24v24H0z"/><path d="M12 18a6 6 0 1 1 0-12 6 6 0 0 1 0 12zm0-2a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM11 1h2v3h-2V1zm0 19h2v3h-2v-3zM3.515 4.929l1.414-1.414L7.05 5.636 5.636 7.05 3.515 4.93zM16.95 18.364l1.414-1.414 2.121 2.121-1.414 1.414-2.121-2.121zm2.121-14.85l1.414 1.415-2.121 2.121-1.414-1.414 2.121-2.121zM5.636 16.95l1.414 1.414-2.121 2.121-1.414-1.414 2.121-2.121zM23 11v2h-3v-2h3zM4 11v2H1v-2h3z"/></symbol><symbol id="reset-icon" viewBox="0 0 24 24"><path fill="none" d="M0 0h24v24H0z"/><path d="M18.537 19.567A9.961 9.961 0 0 1 12 22C6.477 22 2 17.523 2 12S6.477 2 12 2s10 4.477 10 10c0 2.136-.67 4.116-1.81 5.74L17 12h3a8 8 0 1 0-2.46 5.772l.997 1.795z"/></symbol><symbol id="down-icon" viewBox="0 0 16 16"><path fill-rule="evenodd" clip-rule="evenodd" d="M12.7803 6.21967C13.0732 6.51256 13.0732 6.98744 12.7803 7.28033L8.53033 11.5303C8.23744 11.8232 7.76256 11.8232 7.46967 11.5303L3.21967 7.28033C2.92678 6.98744 2.92678 6.51256 3.21967 6.21967C3.51256 5.92678 3.98744 5.92678 4.28033 6.21967L8 9.93934L11.7197 6.21967C12.0126 5.92678 12.4874 5.92678 12.7803 6.21967Z"></path></symbol><symbol id="codepen-icon" viewBox="0 0 24 24"><path fill="none" d="M0 0h24v24H0z"/><path d="M16.5 13.202L13 15.535v3.596L19.197 15 16.5 13.202zM14.697 12L12 10.202 9.303 12 12 13.798 14.697 12zM20 10.869L18.303 12 20 13.131V10.87zM19.197 9L13 4.869v3.596l3.5 2.333L19.197 9zM7.5 10.798L11 8.465V4.869L4.803 9 7.5 10.798zM4.803 15L11 19.131v-3.596l-3.5-2.333L4.803 15zM4 13.131L5.697 12 4 10.869v2.262zM2 9a1 1 0 0 1 .445-.832l9-6a1 1 0 0 1 1.11 0l9 6A1 1 0 0 1 22 9v6a1 1 0 0 1-.445.832l-9 6a1 1 0 0 1-1.11 0l-9-6A1 1 0 0 1 2 15V9z"/></symbol><symbol id="close-icon" viewBox="0 0 24 24"><path fill="none" d="M0 0h24v24H0z"/><path d="M12 10.586l4.95-4.95 1.414 1.414-4.95 4.95 4.95 4.95-1.414 1.414-4.95-4.95-4.95 4.95-1.414-1.414 4.95-4.95-4.95-4.95L7.05 5.636z"/></symbol><symbol id="menu-icon" viewBox="0 0 24 24"><path fill="none" d="M0 0h24v24H0z"/><path d="M3 4h18v2H3V4zm0 7h18v2H3v-2zm0 7h18v2H3v-2z"/></symbol></defs></svg></head><body data-theme="dark"><div class="sidebar-container"><div class="sidebar" id="sidebar"><a href="/" class="sidebar-title sidebar-title-anchor">DynamoBao</a><div class="sidebar-items-container"><div class="sidebar-section-title with-arrow" data-isopen="false" id="sidebar-tutorials"><div>Tutorials</div><svg><use xlink:href="#down-icon"></use></svg></div><div class="sidebar-section-children-container"><div class="sidebar-section-children"><a href="tutorial-changing-models.html">Modifying Models</a></div><div class="sidebar-section-children"><a href="tutorial-command-line-tools.html">Command Line Tools</a></div><div class="sidebar-section-children"><a href="tutorial-custom-fields.html">Model Definitions</a></div><div class="sidebar-section-children"><a href="tutorial-minimizing-race-conditions.html">Minimizing Race Conditions</a></div><div class="sidebar-section-children"><a href="tutorial-model-definitions.html">Model Definitions</a></div><div class="sidebar-section-children"><a href="tutorial-query-and-filter.html">Querying and Filtering</a></div><div class="sidebar-section-children"><a href="tutorial-ttl.html">Time-to-live (TTL) Fields</a></div></div><div class="sidebar-section-title with-arrow" data-isopen="false" id="sidebar-namespaces"><div>Namespaces</div><svg><use xlink:href="#down-icon"></use></svg></div><div class="sidebar-section-children-container"><div class="sidebar-section-children"><a href="BaoFields.html">BaoFields</a></div></div><div class="sidebar-section-title with-arrow" data-isopen="false" id="sidebar-classes"><div>Classes</div><svg><use xlink:href="#down-icon"></use></svg></div><div class="sidebar-section-children-container"><div class="sidebar-section-children"><a href="BaoFields.BaoBaseField.html">BaoBaseField</a></div><div class="sidebar-section-children"><a href="BaoFields.BinaryField.html">BinaryField</a></div><div class="sidebar-section-children"><a href="BaoFields.BooleanField.html">BooleanField</a></div><div class="sidebar-section-children"><a href="BaoFields.CounterField.html">CounterField</a></div><div class="sidebar-section-children"><a href="BaoFields.CreateDateField.html">CreateDateField</a></div><div class="sidebar-section-children"><a href="BaoFields.DateTimeField.html">DateTimeField</a></div><div class="sidebar-section-children"><a href="BaoFields.FloatField.html">FloatField</a></div><div class="sidebar-section-children"><a href="BaoFields.IntegerField.html">IntegerField</a></div><div class="sidebar-section-children"><a href="BaoFields.ModifiedDateField.html">ModifiedDateField</a></div><div class="sidebar-section-children"><a href="BaoFields.RelatedField.html">RelatedField</a></div><div class="sidebar-section-children"><a href="BaoFields.StringField.html">StringField</a></div><div class="sidebar-section-children"><a href="BaoFields.TtlField.html">TtlField</a></div><div class="sidebar-section-children"><a href="BaoFields.UlidField.html">UlidField</a></div><div class="sidebar-section-children"><a href="BaoFields.VersionField.html">VersionField</a></div><div class="sidebar-section-children"><a href="BaoModel.html">BaoModel</a></div><div class="sidebar-section-children"><a href="FilterExpressionBuilder.html">FilterExpressionBuilder</a></div><div class="sidebar-section-children"><a href="ObjectNotFound.html">ObjectNotFound</a></div></div></div></div></div><div class="navbar-container" id="VuAckcnZhf"><nav class="navbar"><div class="navbar-left-items"></div><div class="navbar-right-items"><div class="navbar-right-item"><button class="icon-button search-button" aria-label="open-search"><svg><use xlink:href="#search-icon"></use></svg></button></div><div class="navbar-right-item"><button class="icon-button theme-toggle" aria-label="toggle-theme"><svg><use class="theme-svg-use" xlink:href="#light-theme-icon"></use></svg></button></div><div class="navbar-right-item"><button class="icon-button font-size" aria-label="change-font-size"><svg><use xlink:href="#font-size-icon"></use></svg></button></div></div><nav></nav></nav></div><div class="toc-container"><div class="toc-content"><span class="bold">On this page</span><div id="eed4d2a0bfd64539bb9df78095dec881"></div></div></div><div class="body-wrapper"><div class="main-content"><div class="main-wrapper"><section><header><h2>Model Definitions</h2></header><article><p>Models in DynamoBao are defined using YAML configuration files. These definitions are used to generate the corresponding model classes with all necessary fields, indexes, and relationships.</p><h2 id="basic-structure">Basic Structure</h2><pre class="prettyprint source lang-yaml"><code>models:
+  ModelName:
+    modelPrefix: &quot;x&quot; # Required: short (1-4 unique character prefix) for the model. This must be unique and cannot change later. It is not user visible.
+    tableType: &quot;standard&quot; # Optional: &quot;standard&quot; (default) or &quot;mapping&quot;
+    fields: {} # Required: field definitions
+    primaryKey: {} # Required: primary key configuration
+    indexes: {} # Optional: secondary indexes
+    uniqueConstraints: {} # Optional: unique constraints
+</code></pre><h2 id="field-types">Field Types</h2><p>Fields can be defined with various types and options:</p><h3 id="basic-fields">Basic Fields</h3><pre class="prettyprint source lang-yaml"><code>fields:
+  stringField:
+    type: StringField
+    required: true # Optional: makes the field required
+
+  integerField:
+    type: IntegerField
+    defaultValue: 0 # Optional: default value
+
+  floatField:
+    type: FloatField
+
+  booleanField:
+    type: BooleanField
+    defaultValue: false
+
+  binaryField:
+    type: BinaryField # Stores Buffer or Uint8Array data
+</code></pre><h3 id="date-and-time-fields">Date and Time Fields</h3><pre class="prettyprint source lang-yaml"><code>fields:
+  dateTime:
+    type: DateTimeField # Stores any date/time value
+
+  createdAt:
+    type: CreateDateField # Automatically sets creation timestamp
+
+  modifiedAt:
+    type: ModifiedDateField # Automatically updates on modification
+
+  ttl:
+    type: TtlField # Time-to-live field for automatic deletion
+</code></pre><h3 id="ulidfield">UlidField</h3><p>The <code>UlidField</code> is a special field that automatically generates ULID values. It is recommended to use this field for the primary key of your model.</p><pre class="prettyprint source lang-yaml"><code>fields:
+  postId:
+    type: UlidField
+    autoAssign: true
+</code></pre><p>ULIDs are 128-bit values that are lexicographically sortable and can be generated in parallel. They are designed to be collision resistant and are compatible with the UUID format.</p><p>They are especially useful for dynamo since they can be used as sort keys and sort by the date they were created. This makes the default sort order when an id is used feel more natural than being purely random or requiring a secondary index to sort by creation date.</p><h3 id="versionfield">VersionField</h3><p>The <code>VersionField</code> is a special field that automatically generates a new larger version every time the object is saved. It is recommended to use this field for the version of your model. Note that this is a string, not a number.</p><pre class="prettyprint source lang-yaml"><code>fields:
+  version:
+    type: VersionField
+</code></pre><h3 id="counterfield">CounterField</h3><p>The <code>CounterField</code> is a special field that allows you to increment and decrement a counter atomically. This is useful for creating counters that can be incremented/decremented across users without having to worry about race conditions.</p><pre class="prettyprint source lang-yaml"><code>fields:
+  counter:
+    type: CounterField
+</code></pre><h3 id="ttlfield">TtlField</h3><p>The <code>TtlField</code> is a special field that allows you to automatically delete an object after a certain amount of time. This is useful for creating time-based TTLs for objects. The field must be named <code>ttl</code>.</p><pre class="prettyprint source lang-yaml"><code>fields:
+  ttl:
+    type: TtlField
+</code></pre><h3 id="relatedfield">RelatedField</h3><p>The <code>RelatedField</code> is a special field that allows you to reference another model. This is useful for creating relationships between models.</p><pre class="prettyprint source lang-yaml"><code>fields:
+  userId:
+    type: RelatedField
+    model: User
+    required: true
+</code></pre><p>This field will automatically generate a getter method on the model that allows you to query for the related model. Two of these fields can be used to create a many-to-many relationship. See the <a href="#mapping-tables">Mapping Tables</a> section for more information.</p><h3 id="complete-field-type-reference">Complete Field Type Reference</h3><ul><li><code>StringField</code>: Text data</li><li><code>IntegerField</code>: Whole numbers</li><li><code>FloatField</code>: Decimal numbers</li><li><code>BooleanField</code>: True/false values</li><li><code>BinaryField</code>: Binary data (Buffer or Uint8Array)</li><li><code>DateTimeField</code>: Date and time values</li><li><code>CreateDateField</code>: Automatic creation timestamp</li><li><code>ModifiedDateField</code>: Automatic modification timestamp</li><li><code>UlidField</code>: Unique identifiers (often used for IDs)</li><li><code>VersionField</code>: Automatic version tracking for optimistic locking</li><li><code>CounterField</code>: Atomic counters that can be incremented/decremented</li><li><code>RelatedField</code>: References to other models</li><li><code>TtlField</code>: Time-to-live field for automatic item deletion (field must be named <code>ttl</code>)</li></ul><h3 id="field-options">Field Options</h3><p>Common options that can be applied to fields:</p><pre class="prettyprint source lang-yaml"><code>fields:
+  exampleField:
+    type: StringField
+    required: true # Field must have a value
+    defaultValue: &quot;test&quot; # Default value if none provided
+</code></pre><h2 id="primary-key-configuration">Primary Key Configuration</h2><p>Every model requires a primary key configuration:</p><pre class="prettyprint source lang-yaml"><code>primaryKey:
+  partitionKey: &quot;userId&quot; # Required: field to use as partition key
+  sortKey: &quot;createdAt&quot; # Optional: field to use as sort key
+</code></pre><p>The primary key's <code>partitionKey</code> and <code>sortKey</code> can never change once the model is created. If you need to change them, you will need to delete the object and create a new object with the new <code>partitionKey</code> and <code>sortKey</code>. With this in mind, it is recommended to choose a <code>partitionKey</code> and <code>sortKey</code> that will not change.</p><p>In addition to specifying a field as a <code>partitionKey</code> or <code>sortKey</code>, you can also specify the <code>modelPrefix</code> for either the <code>partitionKey</code> or <code>sortKey</code>. This is useful if you want to <a href="#iterating-over-all-objects-for-a-model">query all the objects of a particular model</a> . However, if you expect this particular model to grow large, you should not use the modelPrefix as the partitionKey since all objects of this model will be stored in the same partition.</p><p>If the sortKey is not specified, it will use the modelPrefix as the sortKey. This is handled automatically and not something you need to specify.</p><h2 id="indexes">Indexes</h2><p>You can add up to 3 secondary indexes (<code>gsi1</code>, <code>gsi2</code>, <code>gsi3</code>) to a model. Much like a primary key, each index has a <code>partitionKey</code> and <code>sortKey</code>. However, unlike a primary key, you can change the <code>partitionKey</code> and <code>sortKey</code> at any time.</p><p>Indexes incur additional costs, so you should only add them if you need them. In particular, if you are creating an index to support an infrequent query, it would be good to test the query with a filter rather than an index to see if the index necessary before adding it.</p><p>Secondary indexes enable additional query patterns:</p><pre class="prettyprint source lang-yaml"><code>indexes:
+  tagsForPost:
+    partitionKey: &quot;postId&quot; # Field to use as partition key
+    sortKey: &quot;tagId&quot; # Field to use as sort key
+    indexId: &quot;gsi1&quot; # GSI identifier (gsi1, gsi2, etc.)
+
+  # Reference to primary key
+  postsForTag: primaryKey
+</code></pre><p>Adding the <code>primaryKey</code> to the index is a shorthand that allows you to give the primary key a name and let you query by it. It does not create a new index. If you plan to query by the primary key, it is recommended to name it this way.</p><h3 id="iterating-over-all-objects-for-a-model">Iterating Over All Objects for a Model</h3><p>If you want to iterate over all the objects for a model, you can set the <code>modelPrefix</code> as the <code>partitionKey</code> for the model. This will allow you to query the model by the <code>modelPrefix</code> and iterate over all the objects of that model.</p><p>Here's an example:</p><pre class="prettyprint source lang-yaml"><code>models:
+  User:
+    modelPrefix: &quot;u&quot;
+    fields:
+      userId:
+        type: UlidField
+        autoAssign: true
+    primaryKey:
+      partitionKey: &quot;userId&quot;
+    indexes:
+      allUsers:
+        partitionKey: &quot;modelPrefix&quot;
+        sortKey: &quot;userId&quot;
+</code></pre><p>If you don't set this up, there is no efficient way to iterate over all the objects for a given model. However, if you expect this model to grow large, you should not use the modelPrefix as the <code>partitionKey</code> since all objects of this model will be stored in the same partition. This is a fundamental tension present in Dynamo single table design.</p><p>One way of addressing this is to choose a root model and enable iteration on it. This allows you to iterate over all the objects for the root model and use that to access all the other data in the system.</p><p>For instance, a <code>User</code> model could have an <code>allUsers</code> index that allows you to iterate over all the users in the system. If all other data in the system is owned by a user, you can iterate over all the users to get all the data in the system.</p><p>A good root model isn't too large and doesn't get written to frequently. For instance, a <code>User</code> model may be a good candidate, since you typically have many fewer users than posts, messages, or other objects in the system. Users also don't get written to as frequently as other objects, so it's a good fit for iteration. However, you should be aware that if you ever try to write lots of users to dynamo quickly (e.g. bulk importing users without rate limiting), you may hit write capacity limits since it's all on a single partition.</p><p>It is not recommended to use the <code>modelPrefix</code> as the primaryKey's partitionKey, since it cannot be changed later. If you do enable iteration, I recommend using an <em>index</em> with the <code>modelPrefix</code> as the partitionKey since you can always stop using the index if you run into capacity issues with no issues to the rest of the system.</p><p>If you anticipate having a root model that is very large (1M+ objects), you will probably want to use a <code>partitionKey</code> that is the modelPrefix and a short hash of the object id. This will allow you to iterate over all the objects while also splitting the data across multiple partitions. If you need this, please <a href="https://github.com/adriangraham/dynamo-bao/issues">open an issue</a> and we can discuss further.</p><h2 id="unique-constraints">Unique Constraints</h2><p>You can specify up to 3 unique constraints (<code>uc1</code>, <code>uc2</code>, <code>uc3</code>) for a model.</p><pre class="prettyprint source lang-yaml"><code>uniqueConstraints:
+  uniqueEmail:
+    field: &quot;email&quot;
+    uniqueConstraintId: &quot;uc1&quot; # Unique constraint identifier
+</code></pre><p>Unique constraints are implemented using Dynamo transactions, so they incur significant costs. Only use them where you really need them (e.g. to prevent duplicate emails, or map to a globally unique external id). Primary keys are already unique, so you may be able to use them instead, though keep in mind that they can't be changed later.</p><p>Creating a unique constraint will also enable fast lookups for that field. Before creating an index on a field that has a unique constraint, consider whether you can use the unique constraint instead.</p><h2 id="mapping-tables">Mapping Tables</h2><p>Mapping tables are used to create many-to-many relationships between models. They are defined using <code>tableType: &quot;mapping&quot;</code> and typically contain RelatedFields to the models being connected.</p><h3 id="basic-structure-1">Basic Structure</h3><pre class="prettyprint source lang-yaml"><code>ModelName:
+  tableType: &quot;mapping&quot; # Identifies this as a mapping table
+  modelPrefix: &quot;xx&quot; # Required: 2-character prefix
+  fields:
+    firstModelId: # Related field to first model
+      type: RelatedField
+      model: FirstModel
+      required: true
+    secondModelId: # Related field to second model
+      type: RelatedField
+      model: SecondModel
+      required: true
+    createdAt: # Optional: tracking fields
+      type: CreateDateField
+  primaryKey: # Define how records are stored
+    partitionKey: firstModelId
+    sortKey: secondModelId
+</code></pre><h3 id="real-example%3A-taggedpost">Real Example: TaggedPost</h3><p>Here's a complete example of a mapping table that connects Tags to Posts:</p><pre class="prettyprint source lang-yaml"><code>TaggedPost:
+  tableType: &quot;mapping&quot;
+  modelPrefix: &quot;tp&quot;
+  fields:
+    tagId:
+      type: RelatedField
+      model: Tag
+      required: true
+    postId:
+      type: RelatedField
+      model: Post
+      required: true
+    createdAt:
+      type: CreateDateField
+  primaryKey:
+    partitionKey: tagId
+    sortKey: postId
+  indexes:
+    postsForTag: primaryKey # Query posts for a tag
+    tagsForPost: # Query tags for a post
+      partitionKey: postId
+      sortKey: tagId
+      indexId: gsi1
+    recentPostsForTag: # Query posts for a tag by date
+      partitionKey: tagId
+      sortKey: createdAt
+      indexId: gsi2
+</code></pre><h3 id="generated-methods">Generated Methods</h3><p>When you create a mapping table, the following methods are automatically generated on the related models:</p><p>For the Tag model:</p><pre class="prettyprint source lang-javascript"><code>// Get all posts for a tag
+async getPosts(mapSkCondition=null, limit=null, direction='ASC', startKey=null)
+
+// Get posts for a tag ordered by creation date
+async getRecentPosts(mapSkCondition=null, limit=null, direction='ASC', startKey=null)
+</code></pre><p>For the Post model:</p><pre class="prettyprint source lang-javascript"><code>// Get all tags for a post
+async getTags(mapSkCondition=null, limit=null, direction='ASC', startKey=null)
+</code></pre><p>For many-to-many relationships, the methods are called <code>get</code> rather than <code>query</code> because it's only possible to query on the mapping table, not the tags/posts themselves. In practice, you end up paging through these objects in the order of the mapping table rather than filtering them, so it's more like a get than a query. For one-to-many relationships, we add <code>query</code> methods to the related model since it's possible to query the related model objects.</p><h3 id="best-practices">Best Practices</h3><ol><li><strong>Naming Convention</strong>: Name mapping tables by combining the two model names (e.g., <code>TaggedPost</code>, <code>UserGroup</code>)</li><li><strong>Required Fields</strong>: Make the relationship fields required to ensure data integrity</li><li><strong>Tracking Fields</strong>: Include <code>createdAt</code> if you need to track when relationships were created</li><li><strong>Indexes</strong>: Create indexes for querying from both directions</li><li><strong>Sort Keys</strong>: Consider using <code>createdAt</code> as a sort key in secondary indexes for time-based queries</li></ol><h3 id="common-index-patterns">Common Index Patterns</h3><p>For a mapping table connecting ModelA and ModelB, you will want to use the primaryKey to relate one model to the other. Then you will also want to create an index to query the reverse (assuming you want to be able to query the reverse side of the relationship).</p><pre class="prettyprint source lang-yaml"><code>indexes:
+  # Primary access pattern
+  bsForA: primaryKey # Query Bs for an A
+
+  # Reverse lookup
+  asForB: # Query As for a B
+    partitionKey: modelBId
+    sortKey: modelAId
+    indexId: gsi1
+</code></pre><h2 id="complete-example">Complete Example</h2><pre class="prettyprint source lang-yaml"><code>models:
+  Post:
+    modelPrefix: &quot;p&quot;
+    fields:
+      postId:
+        type: UlidField
+        autoAssign: true
+      userId:
+        type: RelatedField
+        model: User
+        required: true
+      title:
+        type: StringField
+        required: true
+      content:
+        type: StringField
+      createdAt:
+        type: CreateDateField
+    primaryKey:
+      partitionKey: postId
+    indexes:
+      postsForUser:
+        partitionKey: userId
+        sortKey: createdAt
+        indexId: gsi1
+      allPosts:
+        partitionKey: modelPrefix
+        sortKey: postId
+        indexId: gsi2
+</code></pre><h2 id="generated-features">Generated Features</h2><p>The model generator will automatically create:</p><ol><li>Field definitions with validation</li><li>Primary key configuration</li><li>Secondary index queries</li><li>Related field getters (e.g., <code>getUser()</code> for a <code>userId</code> field)</li><li>Unique constraint validators</li><li>Query methods for indexes</li><li>Mapping table relationship helpers</li></ol><h2 id="best-practices-1">Best Practices</h2><ol><li>Use clear, descriptive names for models and fields</li><li>Always include a <code>createdAt</code> field for tracking</li><li>Use <code>UlidField</code> for ID fields with <code>autoAssign: true</code></li><li>Define indexes based on your query patterns</li><li>Use mapping tables for many-to-many relationships</li><li>Keep model prefixes unique and short (1-4 characters)</li></ol></article></section></div></div></div><div class="search-container" id="PkfLWpAbet" style="display:none"><div class="wrapper" id="iCxFxjkHbP"><button class="icon-button search-close-button" id="VjLlGakifb" aria-label="close search"><svg><use xlink:href="#close-icon"></use></svg></button><div class="search-box-c"><svg><use xlink:href="#search-icon"></use></svg> <input type="text" id="vpcKVYIppa" class="search-input" placeholder="Search..." autofocus></div><div class="search-result-c" id="fWwVHRuDuN"><span class="search-result-c-text">Type anything to view search result</span></div></div></div><div class="mobile-menu-icon-container"><button class="icon-button" id="mobile-menu" data-isopen="false" aria-label="menu"><svg><use xlink:href="#menu-icon"></use></svg></button></div><div id="mobile-sidebar" class="mobile-sidebar-container"><div class="mobile-sidebar-wrapper"><a href="/" class="sidebar-title sidebar-title-anchor">DynamoBao</a><div class="mobile-nav-links"></div><div class="mobile-sidebar-items-c"><div class="sidebar-section-title with-arrow" data-isopen="false" id="sidebar-tutorials"><div>Tutorials</div><svg><use xlink:href="#down-icon"></use></svg></div><div class="sidebar-section-children-container"><div class="sidebar-section-children"><a href="tutorial-changing-models.html">Modifying Models</a></div><div class="sidebar-section-children"><a href="tutorial-command-line-tools.html">Command Line Tools</a></div><div class="sidebar-section-children"><a href="tutorial-custom-fields.html">Model Definitions</a></div><div class="sidebar-section-children"><a href="tutorial-minimizing-race-conditions.html">Minimizing Race Conditions</a></div><div class="sidebar-section-children"><a href="tutorial-model-definitions.html">Model Definitions</a></div><div class="sidebar-section-children"><a href="tutorial-query-and-filter.html">Querying and Filtering</a></div><div class="sidebar-section-children"><a href="tutorial-ttl.html">Time-to-live (TTL) Fields</a></div></div><div class="sidebar-section-title with-arrow" data-isopen="false" id="sidebar-namespaces"><div>Namespaces</div><svg><use xlink:href="#down-icon"></use></svg></div><div class="sidebar-section-children-container"><div class="sidebar-section-children"><a href="BaoFields.html">BaoFields</a></div></div><div class="sidebar-section-title with-arrow" data-isopen="false" id="sidebar-classes"><div>Classes</div><svg><use xlink:href="#down-icon"></use></svg></div><div class="sidebar-section-children-container"><div class="sidebar-section-children"><a href="BaoFields.BaoBaseField.html">BaoBaseField</a></div><div class="sidebar-section-children"><a href="BaoFields.BinaryField.html">BinaryField</a></div><div class="sidebar-section-children"><a href="BaoFields.BooleanField.html">BooleanField</a></div><div class="sidebar-section-children"><a href="BaoFields.CounterField.html">CounterField</a></div><div class="sidebar-section-children"><a href="BaoFields.CreateDateField.html">CreateDateField</a></div><div class="sidebar-section-children"><a href="BaoFields.DateTimeField.html">DateTimeField</a></div><div class="sidebar-section-children"><a href="BaoFields.FloatField.html">FloatField</a></div><div class="sidebar-section-children"><a href="BaoFields.IntegerField.html">IntegerField</a></div><div class="sidebar-section-children"><a href="BaoFields.ModifiedDateField.html">ModifiedDateField</a></div><div class="sidebar-section-children"><a href="BaoFields.RelatedField.html">RelatedField</a></div><div class="sidebar-section-children"><a href="BaoFields.StringField.html">StringField</a></div><div class="sidebar-section-children"><a href="BaoFields.TtlField.html">TtlField</a></div><div class="sidebar-section-children"><a href="BaoFields.UlidField.html">UlidField</a></div><div class="sidebar-section-children"><a href="BaoFields.VersionField.html">VersionField</a></div><div class="sidebar-section-children"><a href="BaoModel.html">BaoModel</a></div><div class="sidebar-section-children"><a href="FilterExpressionBuilder.html">FilterExpressionBuilder</a></div><div class="sidebar-section-children"><a href="ObjectNotFound.html">ObjectNotFound</a></div></div></div><div class="mobile-navbar-actions"><div class="navbar-right-item"><button class="icon-button search-button" aria-label="open-search"><svg><use xlink:href="#search-icon"></use></svg></button></div><div class="navbar-right-item"><button class="icon-button theme-toggle" aria-label="toggle-theme"><svg><use class="theme-svg-use" xlink:href="#light-theme-icon"></use></svg></button></div><div class="navbar-right-item"><button class="icon-button font-size" aria-label="change-font-size"><svg><use xlink:href="#font-size-icon"></use></svg></button></div></div></div></div><script type="text/javascript" src="scripts/core.min.js"></script><script src="scripts/search.min.js" defer="defer"></script><script src="scripts/third-party/fuse.js" defer="defer"></script><script type="text/javascript">var tocbotInstance=tocbot.init({tocSelector:"#eed4d2a0bfd64539bb9df78095dec881",contentSelector:".main-content",headingSelector:"h1, h2, h3",hasInnerContainers:!0,scrollContainer:".main-content",headingsOffset:130,onClick:bringLinkToView})</script></body></html>

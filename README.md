@@ -155,7 +155,7 @@ npm install dynamo-bao
 Create a new Dynamo table for your project. You should have one table per project.
 
 ```
-npx bao-create-table
+npx bao-init
 ```
 
 This creates a `config.js` which contains settings for your project like AWS region and the table name.
@@ -218,60 +218,56 @@ const { Post } = require("./models/post");
 const userConfig = require("./config");
 const dynamoBao = require("dynamo-bao");
 async function testUserModel() {
-  try {
-    dynamoBao.initModels(userConfig);
+  dynamoBao.initModels(userConfig);
 
-    // Find user by email
-    const existingUser = await User.findByEmail("test@example.com");
-    console.log("Found user by email:", existingUser.exists());
-    if (existingUser.exists()) {
-      await User.delete(existingUser.getPrimaryId());
-      console.log("Deleted existing user");
-      await new Promise((resolve) => setTimeout(resolve, 100)); // 100ms
-    }
-
-    // Create a new user
-    const user = new User({
-      name: "Test User",
-      email: "test@example.com",
-      role: "user",
-      profilePictureUrl: "https://example.com/profile.jpg",
-    });
-
-    await user.save();
-    console.log("Created user:", user.getPrimaryId());
-
-    // Find user by email
-    const foundUser = await User.findByEmail("test@example.com");
-    console.log("Found user by email:", foundUser.getPrimaryId());
-
-    // Create some test posts for the user
-    const post1 = new Post({
-      userId: user.userId,
-      title: "Test Post 1",
-      content: "This is a test post",
-    });
-
-    const post2 = new Post({
-      userId: user.userId,
-      title: "Test Post 2",
-      content: "This is another test post",
-    });
-
-    await Promise.all([post1.save(), post2.save()]);
-
-    // Query user posts
-    const userPosts = await user.queryPosts();
-    console.log("User posts:", userPosts.items.length);
-
-    // Or add a filter condition to the query
-    const filteredPosts = await user.queryPosts(null, {
-      filter: { content: { $contains: "another" } },
-    });
-    console.log("User posts matching filter:", filteredPosts.items.length);
-  } catch (error) {
-    console.error("Error:", error);
+  // Find user by email
+  const existingUser = await User.findByEmail("test@example.com");
+  console.log("Found user by email:", existingUser.exists());
+  if (existingUser.exists()) {
+    await User.delete(existingUser.getPrimaryId());
+    console.log("Deleted existing user");
+    await new Promise((resolve) => setTimeout(resolve, 100)); // 100ms
   }
+
+  // Create a new user
+  const user = new User({
+    name: "Test User",
+    email: "test@example.com",
+    role: "user",
+    profilePictureUrl: "https://example.com/profile.jpg",
+  });
+
+  await user.save();
+  console.log("Created user:", user.getPrimaryId());
+
+  // Find user by email
+  const foundUser = await User.findByEmail("test@example.com");
+  console.log("Found user by email:", foundUser.getPrimaryId());
+
+  // Create some test posts for the user
+  const post1 = new Post({
+    userId: user.userId,
+    title: "Test Post 1",
+    content: "This is a test post",
+  });
+
+  const post2 = new Post({
+    userId: user.userId,
+    title: "Test Post 2",
+    content: "This is another test post",
+  });
+
+  await Promise.all([post1.save(), post2.save()]);
+
+  // Query user posts
+  const userPosts = await user.queryPosts();
+  console.log("User posts:", userPosts.items.length);
+
+  // Or add a filter condition to the query
+  const filteredPosts = await user.queryPosts(null, {
+    filter: { content: { $contains: "another" } },
+  });
+  console.log("User posts matching filter:", filteredPosts.items.length);
 }
 
 // Run the test

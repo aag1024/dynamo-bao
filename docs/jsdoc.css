@@ -51,3 +51,13 @@
 .toc-container {
   right: 2rem !important;
 }
+
+article ul li,
+article ol li {
+  padding: 0.25rem 0 !important;
+}
+
+html,
+body {
+  line-height: 1.5 !important;
+}

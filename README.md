@@ -1,5 +1,9 @@
 # DynamoBao
 
+[![GitHub stars](https://img.shields.io/github/stars/adriangraham/dynamo-bao.svg?style=social&label=Star)](https://github.com/adriangraham/dynamo-bao)
+[![npm version](https://badge.fury.io/js/dynamo-bao.svg)](https://badge.fury.io/js/dynamo-bao)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 DynamoBao is a simple lightweight library for building DynamoDB models in JavaScript. I've used
 DynamoDB for years and generally love it, but find getting started difficult and repetitive.
 DynamoBao is the tool I wish I had when I started.

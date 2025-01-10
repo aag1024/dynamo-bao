@@ -27,7 +27,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/adriangraham/dynamo-bao.git"
+    "url": "https://github.com/adriangraham/dynamo-bao"
   },
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.521.0",

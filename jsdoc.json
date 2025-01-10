@@ -13,7 +13,20 @@
       "include_css": ["./jsdoc.css"],
       "homepageTitle": "DynamoBao",
       "title": "DynamoBao",
-      "sections": ["Tutorials", "Namespaces", "Classes"]
+      "sections": ["Tutorials", "Namespaces", "Classes"],
+      "create_style": ".gh-button-container { position: fixed; top: 20px; right: 200px; z-index: 100; }",
+      "menu": [
+        {
+          "title": "🔗 Github",
+          "link": "https://github.com/adriangraham/dynamo-bao",
+          "target": "_blank"
+        },
+        {
+          "title": "📦 NPM",
+          "link": "https://www.npmjs.com/package/dynamo-bao",
+          "target": "_blank"
+        }
+      ]
     },
     "readme": "./README.md",
     "tutorials": "./tutorials"

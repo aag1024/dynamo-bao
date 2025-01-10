@@ -172,7 +172,7 @@ async function createDirectoriesAndFiles() {
 
   // Create models.yaml with default content
   const modelsYamlPath = path.resolve(process.cwd(), "models.yaml");
-  const yamlContent = `# Edit this file to create your models. For more information see: adriangraham.github.io/dynamo-bao/
+  const yamlContent = `# Edit this file to create your models. For more information see: aag1024.github.io/dynamo-bao/
 #
 # Here's a simple example:
 # models:

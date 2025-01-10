@@ -1,6 +1,6 @@
 {
   "name": "dynamo-bao",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Simple powerful data modeling primitives for DynamoDB in JavaScript.",
   "main": "src/index.js",
   "scripts": {
@@ -27,7 +27,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/adriangraham/dynamo-bao"
+    "url": "https://github.com/aag1024/dynamo-bao"
   },
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.521.0",

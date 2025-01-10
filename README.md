@@ -1,6 +1,6 @@
 # DynamoBao
 
-[![GitHub stars](https://img.shields.io/github/stars/adriangraham/dynamo-bao.svg?style=social&label=Star)](https://github.com/adriangraham/dynamo-bao)
+[![GitHub stars](https://img.shields.io/github/stars/aag1024/dynamo-bao.svg?style=social&label=Star)](https://github.com/aag1024/dynamo-bao)
 [![npm version](https://badge.fury.io/js/dynamo-bao.svg)](https://badge.fury.io/js/dynamo-bao)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 

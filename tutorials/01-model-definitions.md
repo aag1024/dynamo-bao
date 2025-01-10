@@ -213,7 +213,7 @@ A good root model isn't too large and doesn't get written to frequently. For ins
 
 It is not recommended to use the `modelPrefix` as the primaryKey's partitionKey, since it cannot be changed later. If you do enable iteration, I recommend using an _index_ with the `modelPrefix` as the partitionKey since you can always stop using the index if you run into capacity issues with no issues to the rest of the system.
 
-If you anticipate having a root model that is very large (1M+ objects), you will probably want to use a `partitionKey` that is the modelPrefix and a short hash of the object id. This will allow you to iterate over all the objects while also splitting the data across multiple partitions. If you need this, please [open an issue](https://github.com/adriangraham/dynamo-bao/issues) and we can discuss further.
+If you anticipate having a root model that is very large (1M+ objects), you will probably want to use a `partitionKey` that is the modelPrefix and a short hash of the object id. This will allow you to iterate over all the objects while also splitting the data across multiple partitions. If you need this, please [open an issue](https://github.com/aag1024/dynamo-bao/issues) and we can discuss further.
 
 ## Unique Constraints
 

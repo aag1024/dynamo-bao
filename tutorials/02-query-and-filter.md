@@ -2,15 +2,30 @@ DynamoBao provides powerful querying capabilities through indexes, key condition
 
 ### Basic Querying
 
-To query data, use the `queryByIndex` method:
+To query data, use the `queryByIndex` method (see {@link BaoModel.queryByIndex}):
 
 ```javascript
 const results = await MyModel.queryByIndex(
-  indexName, // The named index (or primary key) from the model definition
-  partitionKeyValue, // The partition key value
-  sortKeyCondition, // The sort key condition
-  options, // Additional query options including filters
+  indexName,     // String: The named index (or primary key) from the model definition
+  partitionKey,  // Any: The partition key value to query
+  sortKeyCondition?, // Object?: Optional conditions for the sort key
+  options?: {    // Object?: Optional query parameters
+    limit?: number,        // Maximum number of items to return
+    startKey?: any,        // Key to start from (for pagination)
+    direction?: 'ASC' | 'DESC', // Sort direction, defaults to ASC
+    filter?: Object,       // Additional filter expressions
+    loadRelated?: boolean, // Whether to load related models
+    relatedFields?: string[], // Specific related fields to load
+  }
 );
+
+// Return type:
+{
+  items: MyModel[],           // Array of model instances
+  count: number,              // Number of items returned
+  lastEvaluatedKey?: any,     // Key for pagination (if more results exist)
+  scannedCount: number        // Total number of items evaluated
+}
 ```
 
 Querying involves two steps:

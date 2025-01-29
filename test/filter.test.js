@@ -231,4 +231,71 @@ describe("Filter Expression Tests", () => {
     expect(result.items).toHaveLength(1);
     expect(result.items[0].name).toBe("John Doe");
   });
+
+  test("should filter with $exists operator", async () => {
+    // Create a user without optional fields
+    await TestUser.create({
+      name: "Alice Brown",
+      status: "active",
+    });
+
+    // Test attribute_exists
+    const hasAgeResult = await TestUser.queryByIndex(
+      "byStatus",
+      "active",
+      null,
+      {
+        filter: {
+          age: { $exists: true },
+        },
+      },
+    );
+    expect(hasAgeResult.items).toHaveLength(2);
+    expect(hasAgeResult.items.map((u) => u.name).sort()).toEqual([
+      "Jane Smith",
+      "John Doe",
+    ]);
+
+    // Test attribute_not_exists
+    const noAgeResult = await TestUser.queryByIndex(
+      "byStatus",
+      "active",
+      null,
+      {
+        filter: {
+          age: { $exists: false },
+        },
+      },
+    );
+    expect(noAgeResult.items).toHaveLength(1);
+    expect(noAgeResult.items[0].name).toBe("Alice Brown");
+  });
+
+  test("should reject non-boolean values for $exists operator", async () => {
+    await expect(
+      TestUser.queryByIndex("byStatus", "active", null, {
+        filter: { age: { $exists: "true" } },
+      }),
+    ).rejects.toThrow("$exists operator requires a boolean value");
+  });
+
+  test("should work with $exists in complex conditions", async () => {
+    // Create a user without optional fields
+    await TestUser.create({
+      name: "Alice Brown",
+      status: "active",
+    });
+
+    const result = await TestUser.queryByIndex("byStatus", "active", null, {
+      filter: {
+        $and: [{ age: { $exists: true } }, { score: { $gt: 75 } }],
+      },
+    });
+
+    expect(result.items).toHaveLength(2);
+    expect(result.items.map((u) => u.name).sort()).toEqual([
+      "Jane Smith",
+      "John Doe",
+    ]);
+  });
 });

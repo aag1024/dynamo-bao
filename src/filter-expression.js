@@ -64,6 +64,13 @@ class FilterExpressionBuilder {
         }
         const valueKeys = convertedValue.map((v) => this.generateValue(v));
         return `${nameKey} IN (${valueKeys.join(", ")})`;
+      case "$exists":
+        if (typeof value !== "boolean") {
+          throw new Error("$exists operator requires a boolean value");
+        }
+        return value
+          ? `attribute_exists(${nameKey})`
+          : `attribute_not_exists(${nameKey})`;
       default:
         throw new Error(`Unsupported operator: ${operator}`);
     }
@@ -225,6 +232,7 @@ class FilterExpressionBuilder {
                 "$in",
                 "$contains",
                 "$beginsWith",
+                "$exists",
               ].includes(op)
             ) {
               throw new Error(`Invalid operator ${op} for field ${key}`);

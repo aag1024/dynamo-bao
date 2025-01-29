@@ -62,16 +62,40 @@ function loadModelDefinitions(definitionsPath, fieldResolver) {
     }
   }
 
+  // Process models to ensure mapping tables get both regular and mapping functions
+  for (const [modelName, modelDef] of Object.entries(models)) {
+    if (modelDef.mapping) {
+      // For mapping tables, merge mapping properties with regular model properties
+      models[modelName] = {
+        ...modelDef,
+        // Keep mapping specific properties
+        mapping: modelDef.mapping,
+        // Ensure other standard model properties are present
+        fields: modelDef.fields || {},
+        indexes: modelDef.indexes || {},
+        methods: modelDef.methods || {},
+        // Any other standard model properties you want to include
+      };
+    }
+  }
+
   logger.debug("Final merged models:", models);
   return { models, fieldResolver };
 }
 
 function main() {
   const args = process.argv.slice(2);
+  const config = loadConfig(args[0] || "./models.yaml");
+  console.log("codegen config", config);
 
-  // Set default paths
-  let definitionsPath = path.resolve(process.cwd(), "./models.yaml");
-  let outputDir = path.resolve(process.cwd(), "./models");
+  // Set default paths, but prefer config paths if available
+  let definitionsPath = config?.paths?.modelsDefinitionPath
+    ? path.resolve(process.cwd(), config.paths.modelsDefinitionPath)
+    : path.resolve(process.cwd(), "./models.yaml");
+
+  let outputDir = config?.paths?.modelsDir
+    ? path.resolve(process.cwd(), config.paths.modelsDir)
+    : path.resolve(process.cwd(), "./models");
 
   // Override with command line arguments if provided
   if (args.length >= 1) {
@@ -83,9 +107,6 @@ function main() {
 
   console.log("codegen definitionsPath", definitionsPath);
   try {
-    const config = loadConfig(definitionsPath);
-    console.log("codegen config", config);
-
     // Built-in fields are in fields.js
     const builtInFieldsPath = path.resolve(__dirname, "../src/fields.js");
 

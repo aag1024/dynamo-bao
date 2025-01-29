@@ -31,6 +31,26 @@ class Tag extends BaoModel {
 
 
 
+  async queryTaggedPosts(skCondition = null, options = {}) {
+    const results = await TaggedPost.queryByIndex(
+      'postsForTag',
+      this._getPkValue(),
+      skCondition,
+      options
+    );
+
+    return results;
+  }
+  async queryRecentPosts(skCondition = null, options = {}) {
+    const results = await TaggedPost.queryByIndex(
+      'recentPostsForTag',
+      this._getPkValue(),
+      skCondition,
+      options
+    );
+
+    return results;
+  }
   async getPosts(mapSkCondition=null, limit=null, direction='ASC', startKey=null) {
     return await TaggedPost.getRelatedObjectsViaMap(
       "postsForTag",
@@ -53,6 +73,15 @@ class Tag extends BaoModel {
       startKey
     );
   }
+
+  static async findAll(options = {}) {
+    return await this.scan(options);
+  }
+
+  static async findById(id) {
+    return await this.get(id);
+  }
+
 
 
 }

@@ -54,6 +54,15 @@ class User extends BaoModel {
     return results;
   }
 
+  static async findAll(options = {}) {
+    return await this.scan(options);
+  }
+
+  static async findById(id) {
+    return await this.get(id);
+  }
+
+
   static async findByEmail(value) {
     return await this.findByUniqueConstraint('uniqueEmail', value);
   }

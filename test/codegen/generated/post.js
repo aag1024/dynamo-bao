@@ -67,6 +67,16 @@ class Post extends BaoModel {
 
     return results;
   }
+  async queryTags(skCondition = null, options = {}) {
+    const results = await TaggedPost.queryByIndex(
+      'tagsForPost',
+      this._getPkValue(),
+      skCondition,
+      options
+    );
+
+    return results;
+  }
   async getTags(mapSkCondition=null, limit=null, direction='ASC', startKey=null) {
     return await TaggedPost.getRelatedObjectsViaMap(
       "tagsForPost",
@@ -78,6 +88,15 @@ class Post extends BaoModel {
       startKey
     );
   }
+
+  static async findAll(options = {}) {
+    return await this.scan(options);
+  }
+
+  static async findById(id) {
+    return await this.get(id);
+  }
+
 
 
   async getUser() {

@@ -78,7 +78,7 @@ const config = {
 module.exports = config;
 `;
 
-  const configPath = path.resolve(process.cwd(), "config.js");
+  const configPath = path.resolve(process.cwd(), "dynamo-bao.config.js");
   fs.writeFileSync(configPath, configContent);
   console.log(`Config file written to: ${configPath}`);
 }

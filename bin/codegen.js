@@ -7,24 +7,7 @@ const { generateModelFiles } = require("./generators/model");
 const { createLogger } = require("./utils/scriptLogger");
 const FieldResolver = require("../src/fieldResolver");
 const logger = createLogger("CodeGen");
-
-function loadConfig(definitionsPath) {
-  try {
-    // First try environment variable
-    if (process.env.DYNAMO_BAO_CONFIG) {
-      return require(
-        path.resolve(process.cwd(), process.env.DYNAMO_BAO_CONFIG),
-      );
-    }
-
-    // Then try config.js in the same directory as definitions
-    const configPath = path.resolve(path.dirname(definitionsPath), "config.js");
-    return require(configPath);
-  } catch (err) {
-    logger.debug("No config file found, using defaults");
-    return {};
-  }
-}
+const config = require("../src/config");
 
 function loadModelDefinitions(definitionsPath, fieldResolver) {
   const models = {};
@@ -85,8 +68,6 @@ function loadModelDefinitions(definitionsPath, fieldResolver) {
 
 function main() {
   const args = process.argv.slice(2);
-  const config = loadConfig(args[0] || "./models.yaml");
-  console.log("codegen config", config);
 
   // Set default paths, but prefer config paths if available
   let definitionsPath = config?.paths?.modelsDefinitionPath

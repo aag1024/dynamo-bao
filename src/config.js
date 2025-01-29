@@ -3,15 +3,26 @@ const path = require("path");
 const dotenv = require("dotenv");
 
 function findConfig() {
+  // First check environment variable
+  if (process.env.DYNAMO_BAO_CONFIG) {
+    const configPath = path.resolve(
+      process.cwd(),
+      process.env.DYNAMO_BAO_CONFIG,
+    );
+    if (fs.existsSync(configPath)) {
+      const rawConfig = require(configPath);
+      const configDir = path.dirname(configPath);
+      return normalizeConfig(rawConfig, configDir);
+    }
+  }
+
   const possibleNames = [
-    "config.js",
     "dynamo-bao.config.js",
     ".dynamo-bao/config.js",
+    "config.js",
   ];
   const searchPaths = [
     process.cwd(), // Project root
-    // path.join(__dirname, '..'),       // Library root
-    // path.join(__dirname, '../test'),  // Library test directory
   ];
 
   // Search each directory for config files
@@ -21,16 +32,7 @@ function findConfig() {
       if (fs.existsSync(configPath)) {
         const rawConfig = require(configPath);
         const configDir = path.dirname(configPath);
-
-        return {
-          ...rawConfig,
-          paths: {
-            ...rawConfig.paths,
-            modelsDir: rawConfig.paths.modelsDir
-              ? path.resolve(configDir, rawConfig.paths.modelsDir)
-              : null,
-          },
-        };
+        return normalizeConfig(rawConfig, configDir);
       }
     }
   }
@@ -50,6 +52,24 @@ function findConfig() {
     paths: {
       modelsDir: process.env.MODELS_DIR
         ? path.resolve(process.cwd(), process.env.MODELS_DIR)
+        : null,
+    },
+  };
+}
+
+function normalizeConfig(rawConfig, configDir) {
+  return {
+    ...rawConfig,
+    paths: {
+      ...rawConfig.paths,
+      modelsDir: rawConfig.paths.modelsDir
+        ? path.resolve(configDir, rawConfig.paths.modelsDir)
+        : null,
+      modelsDefinitionPath: rawConfig.paths.modelsDefinitionPath
+        ? path.resolve(configDir, rawConfig.paths.modelsDefinitionPath)
+        : null,
+      fieldsDir: rawConfig.paths.fieldsDir
+        ? path.resolve(configDir, rawConfig.paths.fieldsDir)
         : null,
     },
   };

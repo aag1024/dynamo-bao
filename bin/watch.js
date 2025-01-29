@@ -7,24 +7,23 @@ const { loadModelDefinitions } = require("./codegen");
 const { generateModelFiles } = require("./generators/model");
 const FieldResolver = require("../src/fieldResolver");
 const { createLogger } = require("./utils/scriptLogger");
+const config = require("../src/config");
 
 const logger = createLogger("Watch");
 
-function loadConfig() {
-  const configPath = path.resolve(process.cwd(), "./config.js");
-  try {
-    return require(configPath);
-  } catch (error) {
-    console.error(
-      "Error loading config.js from current directory:",
-      error.message,
+function getDefinitionsPath(config) {
+  if (config.paths.modelsDefinitionPath) {
+    const definitionPath = path.resolve(
+      process.cwd(),
+      config.paths.modelsDefinitionPath,
     );
-    process.exit(1);
+    return definitionPath;
   }
+  // Fall back to models.yaml in current directory
+  return path.resolve(process.cwd(), "./models.yaml");
 }
 
 function generateModels(definitionsPath) {
-  const config = loadConfig();
   console.log(`Generating models from: ${definitionsPath}`);
   console.log(`Output directory: ${config.paths.modelsDir}`);
   console.log(`Fields directory: ${config.paths.fieldsDir}`);
@@ -50,21 +49,10 @@ function generateModels(definitionsPath) {
   }
 }
 
-function getDefinitionsPath(config) {
-  if (config.paths.modelsDefinitionPath) {
-    const definitionPath = path.resolve(
-      process.cwd(),
-      config.paths.modelsDefinitionPath,
-    );
-    return definitionPath;
-  }
-  // Fall back to models.yaml in current directory
-  return path.resolve(process.cwd(), "./models.yaml");
-}
-
 function main() {
-  const config = loadConfig();
-  const definitionsPath = getDefinitionsPath(config);
+  const definitionsPath = config.paths.modelsDefinitionPath
+    ? path.resolve(process.cwd(), config.paths.modelsDefinitionPath)
+    : path.resolve(process.cwd(), "./models.yaml");
 
   // Initial generation
   generateModels(definitionsPath);

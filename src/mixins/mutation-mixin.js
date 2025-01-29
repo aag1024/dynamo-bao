@@ -6,6 +6,7 @@ const { defaultLogger: logger } = require("../utils/logger");
 const { pluginManager } = require("../plugin-manager");
 const { retryOperation } = require("../utils/retry-helper");
 const assert = require("assert");
+const { FilterExpressionBuilder } = require("../filter-expression");
 
 const MutationMethods = {
   /**
@@ -69,6 +70,30 @@ const MutationMethods = {
    * Delete an existing item in the database.
    * @param {string} primaryId - The primary ID of the item to delete.
    * @param {Object} [options] - Additional options for the delete operation.
+   * @param {Object} [options.condition] - Condition that must be met for the delete to succeed.
+   *   The condition supports the same operators as filter expressions:
+   *   - Simple field comparisons: { fieldName: value } for exact matches
+   *   - Comparison operators: { fieldName: { $eq: value, $ne: value, $gt: value, $gte: value, $lt: value, $lte: value } }
+   *   - String operators: { fieldName: { $beginsWith: value, $contains: value } }
+   *   - Existence check: { fieldName: { $exists: true|false } }
+   *   - Logical operators: $and, $or, $not
+   * @example
+   * // Delete with simple condition
+   * await Model.delete(id, {
+   *   condition: { status: 'active' }
+   * });
+   *
+   * // Delete with complex condition
+   * await Model.delete(id, {
+   *   condition: {
+   *     $and: [
+   *       { status: { $exists: true } },
+   *       { age: { $gt: 21 } }
+   *     ]
+   *   }
+   * });
+   * @throws {Error} "Item not found" if the item doesn't exist
+   * @throws {Error} "Delete condition not met" if the condition isn't satisfied
    * @returns {Promise<Object>} Returns a promise that resolves to the deleted item.
    */
   async delete(primaryId, options = {}) {
@@ -96,6 +121,21 @@ const MutationMethods = {
       },
     ];
 
+    // Add condition if specified
+    if (options.condition) {
+      const builder = new FilterExpressionBuilder();
+      const filterExpression = builder.build(options.condition, this);
+
+      if (filterExpression) {
+        transactItems[0].Delete = {
+          ...transactItems[0].Delete,
+          ConditionExpression: filterExpression.FilterExpression,
+          ExpressionAttributeNames: filterExpression.ExpressionAttributeNames,
+          ExpressionAttributeValues: filterExpression.ExpressionAttributeValues,
+        };
+      }
+    }
+
     // Add unique constraint cleanup
     const uniqueConstraints = Object.values(this.uniqueConstraints || {});
     if (uniqueConstraints.length > 0) {
@@ -113,25 +153,35 @@ const MutationMethods = {
       }
     }
 
-    const response = await retryOperation(() =>
-      this.documentClient.send(
-        new TransactWriteCommand({
-          TransactItems: transactItems,
-          ReturnConsumedCapacity: "TOTAL",
-        }),
-      ),
-    );
+    try {
+      const response = await retryOperation(() =>
+        this.documentClient.send(
+          new TransactWriteCommand({
+            TransactItems: transactItems,
+            ReturnConsumedCapacity: "TOTAL",
+          }),
+        ),
+      );
 
-    await pluginManager.executeHooks(
-      this.name,
-      "afterDelete",
-      primaryId,
-      options,
-    );
+      await pluginManager.executeHooks(
+        this.name,
+        "afterDelete",
+        primaryId,
+        options,
+      );
 
-    // Return deleted item info with capacity information
-    item._setConsumedCapacity(response.ConsumedCapacity, "write", false);
-    return item;
+      item._setConsumedCapacity(response.ConsumedCapacity, "write", false);
+      return item;
+    } catch (error) {
+      if (
+        error.name === "ConditionalCheckFailedException" ||
+        (error.name === "TransactionCanceledException" &&
+          error.CancellationReasons?.[0]?.Code === "ConditionalCheckFailed")
+      ) {
+        throw new Error("Delete condition not met");
+      }
+      throw error;
+    }
   },
 
   _createNewPrimaryId(jsUpdates) {

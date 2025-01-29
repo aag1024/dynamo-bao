@@ -42,15 +42,6 @@ class TaggedPost extends BaoModel {
 
 
 
-  static async findAll(options = {}) {
-    return await this.scan(options);
-  }
-
-  static async findById(id) {
-    return await this.get(id);
-  }
-
-
 
   async getTag() {
     return await this.getOrLoadRelatedField('tagId');

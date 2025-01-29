@@ -89,15 +89,6 @@ class Post extends BaoModel {
     );
   }
 
-  static async findAll(options = {}) {
-    return await this.scan(options);
-  }
-
-  static async findById(id) {
-    return await this.get(id);
-  }
-
-
 
   async getUser() {
     return await this.getOrLoadRelatedField('userId');

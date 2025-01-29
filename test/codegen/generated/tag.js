@@ -74,15 +74,6 @@ class Tag extends BaoModel {
     );
   }
 
-  static async findAll(options = {}) {
-    return await this.scan(options);
-  }
-
-  static async findById(id) {
-    return await this.get(id);
-  }
-
-
 
 }
 

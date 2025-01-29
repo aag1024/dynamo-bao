@@ -41,15 +41,6 @@ class Comment extends BaoModel {
 
 
 
-  static async findAll(options = {}) {
-    return await this.scan(options);
-  }
-
-  static async findById(id) {
-    return await this.get(id);
-  }
-
-
 
   async getAuthor() {
     return await this.getOrLoadRelatedField('authorId');

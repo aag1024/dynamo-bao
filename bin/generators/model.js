@@ -294,15 +294,27 @@ function generateQueryMethods(modelName, modelConfig, allModels) {
         relatedModels.add(otherModelName);
 
         // Use the primary key index name if it exists in indexes
-        const primaryKeyIndexName =
-          Object.entries(otherModel.indexes).find(
-            ([_, index]) => index === "primaryKey",
-          )?.[0] || "primaryKey";
+        const primaryKeyIndexEntry = Object.entries(otherModel.indexes).find(
+          ([_, index]) => index === "primaryKey",
+        );
+
+        let methodName;
+        if (primaryKeyIndexEntry) {
+          const [indexName] = primaryKeyIndexEntry;
+          if (indexName.includes("For")) {
+            const [prefix] = indexName.split("For");
+            methodName = `${codeGenPrefix}query${prefix.charAt(0).toUpperCase()}${prefix.slice(1)}`;
+          } else {
+            methodName = `${codeGenPrefix}query${indexName.charAt(0).toUpperCase()}${indexName.slice(1)}`;
+          }
+        } else {
+          methodName = `${codeGenPrefix}query${otherModelName}s`;
+        }
 
         methods += `
-  async ${codeGenPrefix}query${otherModelName}s(skCondition = null, options = {}) {
+  async ${methodName}(skCondition = null, options = {}) {
     const results = await ${otherModelName}.queryByIndex(
-      '${primaryKeyIndexName}',
+      '${primaryKeyIndexEntry?.[0] || "primaryKey"}',
       this._getPkValue(),
       skCondition,
       options

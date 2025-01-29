@@ -31,7 +31,7 @@ class Tag extends BaoModel {
 
 
 
-  async queryTaggedPosts(skCondition = null, options = {}) {
+  async queryPosts(skCondition = null, options = {}) {
     const results = await TaggedPost.queryByIndex(
       'postsForTag',
       this._getPkValue(),

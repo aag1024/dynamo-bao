@@ -44,7 +44,7 @@ module.exports = {
 };
 ```
 
-By default, put any custom field definition files in the `fields` directory in your project. You can also configure this using the `paths.fieldsDir` option in your `config.js` file.
+By default, put any custom field definition files in the `fields` directory in your project. You can also configure this using the `paths.fieldsDir` option in your `dynamo-bao.config.js` file.
 
 ```yaml
 const path = require("path");

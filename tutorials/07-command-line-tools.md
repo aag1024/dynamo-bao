@@ -16,7 +16,7 @@ Creates a new DynamoDB table with the recommended single-table design schema and
   - 3 Global Secondary Indexes (GSI1, GSI2, GSI3)
   - A test GSI
   - TTL attribute support
-- Generates a `config.js` file with AWS and table configurations
+- Generates a `dynamo-bao.config.js` file with AWS and table configurations
 - Creates initial project structure:
   - `models/` directory for generated models
   - `models.yaml` template file for model definitions
@@ -47,7 +47,7 @@ Generates model files from YAML definitions.
 
 - Supports single YAML file or directory of YAML files
 - Loads custom field types from configured fields directory
-- Uses configuration from `config.js` or environment variable `DYNAMO_BAO_CONFIG`
+- Uses configuration from `dynamo-bao.config.js` or environment variable `DYNAMO_BAO_CONFIG`
 
 ## bao-watch
 
@@ -62,20 +62,20 @@ Watches for changes in your model definitions and automatically regenerates mode
   - Changes to existing YAML files
   - New YAML files added to the watched directory
 - Supports both single file and directory watching
-- Uses configuration from `config.js`
+- Uses configuration from `dynamo-bao.config.js`
 - Real-time model regeneration on file changes
 
 ### Configuration
 
 The watch command uses the following configuration hierarchy:
 
-1. `config.js` in your project root
+1. `dynamo-bao.config.js` in your project root
 2. Default paths:
    - Models definition: `./models.yaml`
    - Output directory: `./models`
    - Custom fields: `./fields`
 
-## Configuration File (config.js)
+## Configuration File (dynamo-bao.config.js)
 
 The CLI tools use a common configuration file. Here's an example structure:
 

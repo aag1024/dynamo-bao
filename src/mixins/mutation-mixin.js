@@ -36,13 +36,83 @@ const MutationMethods = {
    * @param {string} primaryId - The primary ID of the item to update.
    * @param {Object} jsUpdates - The data to update the item with.
    * @param {Object} [options] - Additional options for the update operation.
+   * @param {Object} [options.condition] - Condition that must be met for the update to succeed.
+   *   The condition supports the same operators as filter expressions:
+   *   - Simple field comparisons: { fieldName: value } for exact matches
+   *   - Comparison operators: { fieldName: { $eq: value, $ne: value, $gt: value, $gte: value, $lt: value, $lte: value } }
+   *   - String operators: { fieldName: { $beginsWith: value, $contains: value } }
+   *   - Existence check: { fieldName: { $exists: true|false } }
+   *   - Logical operators: $and, $or, $not
+   * @param {Object} [options.constraints] - Constraints to validate. Cannot be used with condition option.
+   * @param {boolean} [options.constraints.mustExist=false] - Whether the item must exist.
+   * @param {boolean} [options.constraints.mustNotExist=false] - Whether the item must not exist.
+   * @param {string[]} [options.constraints.fieldMatches=[]] - An array of field names that must match
+   * @example
+   * // Update with simple condition
+   * await Model.update(id, { status: 'inactive' }, {
+   *   condition: { status: 'active' }
+   * });
+   *
+   * // Update with complex condition
+   * await Model.update(id, { role: 'admin' }, {
+   *   condition: {
+   *     $and: [
+   *       { status: 'active' },
+   *       { role: { $exists: true } }
+   *     ]
+   *   }
+   * });
+   *
+   * // Update with existence check
+   * await Model.update(id, { status: 'active' }, {
+   *   condition: {
+   *     lastUpdated: { $exists: false }
+   *   }
+   * });
+   *
+   * // Update with date comparison
+   * await Model.update(id, { status: 'inactive' }, {
+   *   condition: {
+   *     createdAt: { $gt: someDate }
+   *   }
+   * });
+   *
+   * // Update with multiple conditions
+   * await Model.update(id, { count: 10 }, {
+   *   condition: {
+   *     count: { $gt: 3, $lt: 7 }
+   *   }
+   * });
+   *
+   * // Update with string operations
+   * await Model.update(id, { name: 'New Name' }, {
+   *   condition: {
+   *     name: { $beginsWith: 'Test' }
+   *   }
+   * });
    * @returns {Promise<Object>} Returns a promise that resolves to the updated item.
+   * @throws {Error} If both condition and constraints options are provided
+   * @throws {Error} "Item not found" if the item doesn't exist
+   * @throws {Error} "Condition check failed" if the condition isn't satisfied
    */
   async update(primaryId, jsUpdates, options = {}) {
     const updateOptions = {
       isNew: false,
       ...options,
     };
+
+    // Validate mutually exclusive options
+    if (
+      updateOptions.condition &&
+      (updateOptions.constraints?.mustExist ||
+        updateOptions.constraints?.mustNotExist ||
+        updateOptions.constraints?.fieldMatches)
+    ) {
+      throw new Error(
+        "Cannot use both condition and constraints options together",
+      );
+    }
+
     await pluginManager.executeHooks(
       this.name,
       "beforeSave",
@@ -230,10 +300,14 @@ const MutationMethods = {
         currentItem = null;
       } else if (!currentItem) {
         currentItem = await this.find(primaryId, { batchDelay: 0 });
-        consumedCapacity = [
-          ...consumedCapacity,
-          ...currentItem.getConsumedCapacity(),
-        ];
+        if (currentItem && currentItem.exists()) {
+          consumedCapacity = [
+            ...consumedCapacity,
+            ...currentItem.getConsumedCapacity(),
+          ];
+        } else {
+          throw new Error("Item not found");
+        }
       }
 
       if (!isNew && !currentItem) {
@@ -347,66 +421,17 @@ const MutationMethods = {
       logger.debug("indexKeys", indexKeys);
       Object.assign(dyUpdatesToSave, indexKeys);
 
-      // Build the condition expression for the update/put
-      const conditionExpressions = [];
-      const conditionNames = {};
-      const conditionValues = {};
-
-      // Handle existence constraints
-      if (constraints.mustExist) {
-        conditionExpressions.push("attribute_exists(#pk)");
-        conditionNames["#pk"] = "_pk";
-      }
-      if (constraints.mustNotExist) {
-        conditionExpressions.push("attribute_not_exists(#pk)");
-        conditionNames["#pk"] = "_pk";
-      }
-
-      logger.debug("field matchconstraints", constraints);
-
-      // Handle field match constraints
-      if (constraints.fieldMatches) {
-        if (instanceObj === null) {
-          throw new Error("Instance object is required to check field matches");
-        }
-
-        const matchFields = Array.isArray(constraints.fieldMatches)
-          ? constraints.fieldMatches
-          : [constraints.fieldMatches];
-
-        matchFields.forEach((fieldName, index) => {
-          if (!this._getField(fieldName)) {
-            throw new Error(
-              `Unknown field in fieldMatches constraint: ${fieldName}`,
-            );
-          }
-
-          const nameKey = `#match${index}`;
-          const valueKey = `:match${index}`;
-
-          conditionExpressions.push(`${nameKey} = ${valueKey}`);
-          conditionNames[nameKey] = fieldName;
-          conditionValues[valueKey] = currentItem
-            ? currentItem._loadedDyData[fieldName]
-            : undefined;
-        });
-      }
-
-      // When building update expression, pass both old and new data
+      // Build the update expression first
       const { updateExpression, names, values } =
         this._buildUpdateExpression(dyUpdatesToSave);
 
-      const dyKey = this._getDyKeyForPkSk(this._parsePrimaryId(primaryId));
-      logger.debug("dyKey", dyKey);
-
-      // Create the update params
+      // Create the base update params
       const updateParams = {
         TableName: this.table,
-        Key: dyKey,
+        Key: this._getDyKeyForPkSk(this._parsePrimaryId(primaryId)),
         UpdateExpression: updateExpression,
         ExpressionAttributeNames: {
           ...names,
-          ...conditionNames,
         },
         ReturnValues: "ALL_NEW",
       };
@@ -414,18 +439,95 @@ const MutationMethods = {
       if (Object.keys(values).length > 0) {
         updateParams.ExpressionAttributeValues = {
           ...values,
-          ...conditionValues,
         };
       }
 
-      // Add condition expression if we have any conditions
-      if (conditionExpressions.length > 0) {
-        updateParams.ConditionExpression = conditionExpressions.join(" AND ");
-      } else if (isNew) {
-        // Default condition for new items if no other conditions specified
-        updateParams.ConditionExpression = "attribute_not_exists(#pk)";
-        updateParams.ExpressionAttributeNames["#pk"] = "_pk";
+      // Build the condition expression for the update/put
+      const conditionExpressions = [];
+      const conditionNames = {};
+      const conditionValues = {};
+
+      if (options.condition) {
+        const builder = new FilterExpressionBuilder();
+        const filterExpression = builder.build(options.condition, this);
+
+        if (filterExpression) {
+          updateParams.ConditionExpression = filterExpression.FilterExpression;
+          updateParams.ExpressionAttributeNames = {
+            ...updateParams.ExpressionAttributeNames,
+            ...filterExpression.ExpressionAttributeNames,
+          };
+          updateParams.ExpressionAttributeValues = {
+            ...updateParams.ExpressionAttributeValues,
+            ...filterExpression.ExpressionAttributeValues,
+          };
+        }
+      } else {
+        // Handle existence constraints
+        if (constraints.mustExist) {
+          conditionExpressions.push("attribute_exists(#pk)");
+          conditionNames["#pk"] = "_pk";
+        }
+        if (constraints.mustNotExist) {
+          conditionExpressions.push("attribute_not_exists(#pk)");
+          conditionNames["#pk"] = "_pk";
+        }
+
+        // Handle field match constraints
+        if (constraints.fieldMatches) {
+          if (instanceObj === null) {
+            throw new Error(
+              "Instance object is required to check field matches",
+            );
+          }
+
+          const matchFields = Array.isArray(constraints.fieldMatches)
+            ? constraints.fieldMatches
+            : [constraints.fieldMatches];
+
+          matchFields.forEach((fieldName, index) => {
+            if (!this._getField(fieldName)) {
+              throw new Error(
+                `Unknown field in fieldMatches constraint: ${fieldName}`,
+              );
+            }
+
+            const nameKey = `#match${index}`;
+            const valueKey = `:match${index}`;
+
+            conditionExpressions.push(`${nameKey} = ${valueKey}`);
+            conditionNames[nameKey] = fieldName;
+            conditionValues[valueKey] = currentItem
+              ? currentItem._loadedDyData[fieldName]
+              : undefined;
+          });
+        }
+
+        // Add condition expression if we have any conditions
+        if (conditionExpressions.length > 0) {
+          updateParams.ConditionExpression = conditionExpressions.join(" AND ");
+          updateParams.ExpressionAttributeNames = {
+            ...updateParams.ExpressionAttributeNames,
+            ...conditionNames,
+          };
+          if (Object.keys(conditionValues).length > 0) {
+            updateParams.ExpressionAttributeValues = {
+              ...updateParams.ExpressionAttributeValues,
+              ...conditionValues,
+            };
+          }
+        } else if (isNew) {
+          // For new items, ensure they don't already exist
+          updateParams.ConditionExpression = "attribute_not_exists(#pk)";
+          updateParams.ExpressionAttributeNames = {
+            ...updateParams.ExpressionAttributeNames,
+            "#pk": "_pk",
+          };
+        }
       }
+
+      const dyKey = this._getDyKeyForPkSk(this._parsePrimaryId(primaryId));
+      logger.debug("dyKey", dyKey);
 
       try {
         let response;

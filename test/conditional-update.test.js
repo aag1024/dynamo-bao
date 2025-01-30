@@ -115,21 +115,6 @@ describe("Conditional Update Tests", () => {
     expect(result.count).toBe(6);
   });
 
-  test("should fail when mixing condition and constraints", async () => {
-    await expect(
-      model.update(
-        testUser.userId,
-        { status: "inactive" },
-        {
-          condition: { status: "active" },
-          constraints: { mustExist: true },
-        },
-      ),
-    ).rejects.toThrow(
-      "Cannot use both condition and constraints options together",
-    );
-  });
-
   test("should support string operators", async () => {
     const result = await model.update(
       testUser.userId,

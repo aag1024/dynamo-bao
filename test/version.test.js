@@ -96,7 +96,9 @@ describe("Version Field Tests", () => {
 
     // First client updates successfully
     client1.name = "Client 1 Update";
-    await client1.save({ constraints: { fieldMatches: "version" } });
+    await client1.save({
+      condition: { version: client1.version },
+    });
 
     logger.log("VERSIONS", client1.version, testVersion.version);
     expect(client1.version).not.toBe(testVersion.version);
@@ -105,9 +107,9 @@ describe("Version Field Tests", () => {
     client2.name = "Client 2 Update";
     await expect(
       client2.save({
-        constraints: { fieldMatches: "version" },
+        condition: { version: client2.version },
       }),
-    ).rejects.toThrow("Field values have been modified");
+    ).rejects.toThrow("Condition check failed");
   });
 
   test("should maintain version through instance updates", async () => {

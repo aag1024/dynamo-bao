@@ -1,6 +1,7 @@
 const {
   TransactWriteCommand,
   UpdateCommand,
+  DeleteCommand,
 } = require("@aws-sdk/lib-dynamodb");
 const { defaultLogger: logger } = require("../utils/logger");
 const { pluginManager } = require("../plugin-manager");
@@ -119,59 +120,100 @@ const MutationMethods = {
       throw new Error("Item not found");
     }
 
-    const transactItems = [
-      {
-        Delete: {
+    // Check if we need to clean up any unique constraints
+    const uniqueConstraints = Object.values(this.uniqueConstraints || {});
+    const hasConstraintsToClean = uniqueConstraints.some((constraint) => {
+      const value = item[constraint.field];
+      return value != null;
+    });
+
+    try {
+      let response;
+
+      if (hasConstraintsToClean) {
+        // Transaction path - handle unique constraint cleanup
+        const transactItems = [
+          {
+            Delete: {
+              TableName: this.table,
+              Key: {
+                _pk: item._dyData._pk,
+                _sk: item._dyData._sk,
+              },
+            },
+          },
+        ];
+
+        // Add condition if specified
+        if (options.condition) {
+          const builder = new FilterExpressionBuilder();
+          const filterExpression = builder.build(options.condition, this);
+
+          if (filterExpression) {
+            transactItems[0].Delete = {
+              ...transactItems[0].Delete,
+              ConditionExpression: filterExpression.FilterExpression,
+              ExpressionAttributeNames:
+                filterExpression.ExpressionAttributeNames,
+              ExpressionAttributeValues:
+                filterExpression.ExpressionAttributeValues,
+            };
+          }
+        }
+
+        // Add unique constraint cleanup operations
+        for (const constraint of uniqueConstraints) {
+          const value = item[constraint.field];
+          if (value) {
+            const constraintOp = await this._removeUniqueConstraint(
+              constraint.field,
+              value,
+              item.getPrimaryId(),
+              constraint.constraintId,
+            );
+            transactItems.push(constraintOp);
+          }
+        }
+
+        response = await retryOperation(() =>
+          this.documentClient.send(
+            new TransactWriteCommand({
+              TransactItems: transactItems,
+              ReturnConsumedCapacity: "TOTAL",
+            }),
+          ),
+        );
+      } else {
+        // Fast path - simple delete
+        const deleteParams = {
           TableName: this.table,
           Key: {
             _pk: item._dyData._pk,
             _sk: item._dyData._sk,
           },
-        },
-      },
-    ];
-
-    // Add condition if specified
-    if (options.condition) {
-      const builder = new FilterExpressionBuilder();
-      const filterExpression = builder.build(options.condition, this);
-
-      if (filterExpression) {
-        transactItems[0].Delete = {
-          ...transactItems[0].Delete,
-          ConditionExpression: filterExpression.FilterExpression,
-          ExpressionAttributeNames: filterExpression.ExpressionAttributeNames,
-          ExpressionAttributeValues: filterExpression.ExpressionAttributeValues,
+          ReturnValues: "ALL_OLD",
+          ReturnConsumedCapacity: "TOTAL",
         };
-      }
-    }
 
-    // Add unique constraint cleanup
-    const uniqueConstraints = Object.values(this.uniqueConstraints || {});
-    if (uniqueConstraints.length > 0) {
-      for (const constraint of uniqueConstraints) {
-        const value = item[constraint.field];
-        if (value) {
-          const constraintOp = await this._removeUniqueConstraint(
-            constraint.field,
-            value,
-            item.getPrimaryId(),
-            constraint.constraintId,
-          );
-          transactItems.push(constraintOp);
+        // Add condition if specified
+        if (options.condition) {
+          const builder = new FilterExpressionBuilder();
+          const filterExpression = builder.build(options.condition, this);
+
+          if (filterExpression) {
+            deleteParams.ConditionExpression =
+              filterExpression.FilterExpression;
+            deleteParams.ExpressionAttributeNames =
+              filterExpression.ExpressionAttributeNames;
+            deleteParams.ExpressionAttributeValues =
+              filterExpression.ExpressionAttributeValues;
+          }
         }
-      }
-    }
 
-    try {
-      const response = await retryOperation(() =>
-        this.documentClient.send(
-          new TransactWriteCommand({
-            TransactItems: transactItems,
-            ReturnConsumedCapacity: "TOTAL",
-          }),
-        ),
-      );
+        response = await retryOperation(() =>
+          this.documentClient.send(new DeleteCommand(deleteParams)),
+        );
+      }
 
       await pluginManager.executeHooks(
         this.name,
@@ -180,8 +222,17 @@ const MutationMethods = {
         options,
       );
 
-      item._setConsumedCapacity(response.ConsumedCapacity, "write", false);
-      return item;
+      // For transaction path, we already have the item
+      // For fast path, we get it from the response
+      const deletedItem = hasConstraintsToClean
+        ? item
+        : this._createFromDyItem(response.Attributes);
+      deletedItem._setConsumedCapacity(
+        response.ConsumedCapacity,
+        "write",
+        false,
+      );
+      return deletedItem;
     } catch (error) {
       if (
         error.name === "ConditionalCheckFailedException" ||

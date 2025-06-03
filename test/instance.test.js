@@ -2,6 +2,7 @@ const dynamoBao = require("../src");
 const testConfig = require("./config");
 const { cleanupTestData, verifyCleanup } = require("./utils/test-utils");
 const { ulid } = require("ulid");
+const { ConditionalError } = require("../src/exceptions");
 
 let testUser, testId;
 
@@ -159,7 +160,7 @@ describe("Instance Methods", () => {
     // Try to update user1's email to user2's email
     user1.email = user2.email;
 
-    await expect(user1.save()).rejects.toThrow("email must be unique");
+    await expect(user1.save()).rejects.toThrow(ConditionalError);
 
     // Verify the original email wasn't changed in the database
     const freshUser1 = await User.find(user1.userId);
@@ -219,7 +220,7 @@ describe("Instance Methods", () => {
       status: "active",
     });
 
-    await expect(newUser2.save()).rejects.toThrow("email must be unique");
+    await expect(newUser2.save()).rejects.toThrow(ConditionalError);
 
     // This is creating a new user with an existing userId, which should fail
     const newUser3 = new User({
@@ -231,6 +232,6 @@ describe("Instance Methods", () => {
       status: "active",
     });
 
-    await expect(newUser3.save()).rejects.toThrow("Transaction cancelled");
+    await expect(newUser3.save()).rejects.toThrow(ConditionalError);
   });
 });

@@ -6,6 +6,7 @@ const { StringField, VersionField } = require("../src/fields");
 const { cleanupTestData, verifyCleanup } = require("./utils/test-utils");
 const { ulid } = require("ulid");
 const { defaultLogger: logger } = require("../src/utils/logger");
+const { ConditionalError } = require("../src/exceptions");
 
 let testId;
 
@@ -109,7 +110,7 @@ describe("Version Field Tests", () => {
       client2.save({
         condition: { version: client2.version },
       }),
-    ).rejects.toThrow("Condition check failed");
+    ).rejects.toThrow(ConditionalError);
   });
 
   test("should maintain version through instance updates", async () => {

@@ -43,9 +43,9 @@ async function verifyCapacityUsage(
 
   // Calculate total capacity from raw DynamoDB response
   // This is an item model
-  let writeCapacity, readCapacity;
+  let writeCapacity, readCapacity, totalCapacity;
   if (result.getNumericConsumedCapacity) {
-    // const totalCapacity = result.getNumericConsumedCapacity('total', true);
+    totalCapacity = result.getNumericConsumedCapacity("total", true);
     writeCapacity = result.getNumericConsumedCapacity("write", true);
     readCapacity = result.getNumericConsumedCapacity("read", true);
   } else {

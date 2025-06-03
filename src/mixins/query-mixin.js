@@ -6,6 +6,7 @@ const { PrimaryKeyConfig } = require("../model-config");
 const assert = require("assert");
 const { retryOperation } = require("../utils/retry-helper");
 const { QueryCommand } = require("@aws-sdk/lib-dynamodb");
+const { QueryError } = require("../exceptions");
 
 const QueryMethods = {
   /**
@@ -139,15 +140,20 @@ const QueryMethods = {
   async queryByIndex(indexName, pkValue, skCondition = null, options = {}) {
     const index = this.indexes[indexName];
     if (!index) {
-      throw new Error(`Index "${indexName}" not found in ${this.name} model`);
+      throw new QueryError(
+        `Index "${indexName}" not found in ${this.name} model`,
+        indexName,
+      );
     }
 
     // Validate sort key field if condition is provided
     if (skCondition) {
       const [[fieldName]] = Object.entries(skCondition);
       if (fieldName !== index.sk) {
-        throw new Error(
+        throw new QueryError(
           `Field "${fieldName}" is not the sort key for index "${indexName}"`,
+          indexName,
+          fieldName,
         );
       }
     }

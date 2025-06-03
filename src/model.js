@@ -25,6 +25,12 @@ const {
 
 const GID_SEPARATOR = "##__SK__##";
 const { UNIQUE_CONSTRAINT_KEY, SYSTEM_FIELDS } = require("./constants");
+const {
+  ConfigurationError,
+  ValidationError,
+  QueryError,
+  DataFormatError,
+} = require("./exceptions");
 
 /**
  * @description
@@ -83,7 +89,10 @@ class BaoModel {
     }
 
     if (!fieldDef) {
-      throw new Error(`Field ${fieldName} not found in ${this.name} fields`);
+      throw new ConfigurationError(
+        `Field ${fieldName} not found in ${this.name} fields`,
+        this.name,
+      );
     }
 
     return fieldDef;
@@ -91,7 +100,9 @@ class BaoModel {
 
   static _getPkValue(data) {
     if (!data) {
-      throw new Error("Data object is required for static _getPkValue call");
+      throw new ValidationError(
+        "Data object is required for static _getPkValue call",
+      );
     }
 
     const pkValue =
@@ -106,7 +117,9 @@ class BaoModel {
 
   static _getSkValue(data) {
     if (!data) {
-      throw new Error("Data object is required for static _getSkValue call");
+      throw new ValidationError(
+        "Data object is required for static _getSkValue call",
+      );
     }
 
     if (this.primaryKey.sk === "modelPrefix") {
@@ -228,18 +241,26 @@ class BaoModel {
   // dynamo string keys. No test prefix or model prefix is applied.
   static _getPrimaryKeyValues(data) {
     if (!data) {
-      throw new Error("Data object is required for _getPrimaryKeyValues call");
+      throw new ValidationError(
+        "Data object is required for _getPrimaryKeyValues call",
+      );
     }
 
     const pkField = this._getField(this.primaryKey.pk);
     const skField = this._getField(this.primaryKey.sk);
 
     if (skField === undefined && this.primaryKey.sk !== "modelPrefix") {
-      throw new Error(`SK field is required for getPkSk call`);
+      throw new ConfigurationError(
+        `SK field is required for getPkSk call`,
+        this.name,
+      );
     }
 
     if (pkField === undefined && this.primaryKey.pk !== "modelPrefix") {
-      throw new Error(`PK field is required for getPkSk call`);
+      throw new ConfigurationError(
+        `PK field is required for getPkSk call`,
+        this.name,
+      );
     }
 
     // If the field is set, use the GSI value, otherwise use the raw value
@@ -256,7 +277,7 @@ class BaoModel {
       pkValue === null ||
       skValue === null
     ) {
-      throw new Error(`PK and SK must be defined to get a PkSk`);
+      throw new ValidationError(`PK and SK must be defined to get a PkSk`);
     }
 
     let key = {
@@ -271,6 +292,23 @@ class BaoModel {
 
   /**
    * @description
+   * Make a primary ID from a pk and sk.
+   * @param {string} pk - The partition key.
+   * @param {string} sk - The sort key.
+   * @returns {string} The primary ID.
+   */
+  static makePrimaryId(pk, sk) {
+    if (this.primaryKey.pk === "modelPrefix") {
+      return sk;
+    } else if (this.primaryKey.sk === "modelPrefix") {
+      return pk;
+    } else {
+      return pk + GID_SEPARATOR + sk;
+    }
+  }
+
+  /**
+   * @description
    * Static version of {@link BaoModel#getPrimaryId}.
    * @param {Object} data - The data object to get the primary ID for.
    * @returns {string} The primary ID.
@@ -280,15 +318,7 @@ class BaoModel {
     const pkSk = this._getPrimaryKeyValues(data);
     logger.debug("getPrimaryId", pkSk);
 
-    let primaryId;
-    if (this.primaryKey.pk === "modelPrefix") {
-      primaryId = pkSk.sk;
-    } else if (this.primaryKey.sk === "modelPrefix") {
-      primaryId = pkSk.pk;
-    } else {
-      primaryId = pkSk.pk + GID_SEPARATOR + pkSk.sk;
-    }
-
+    let primaryId = this.makePrimaryId(pkSk.pk, pkSk.sk);
     return primaryId;
   }
 
@@ -306,7 +336,7 @@ class BaoModel {
 
   static _parsePrimaryId(primaryId) {
     if (!primaryId) {
-      throw new Error("Primary ID is required to parse");
+      throw new DataFormatError("Primary ID is required to parse");
     }
 
     if (primaryId.indexOf(GID_SEPARATOR) !== -1) {
@@ -318,7 +348,7 @@ class BaoModel {
       } else if (this.primaryKey.sk === "modelPrefix") {
         return { pk: primaryId, sk: this.modelPrefix };
       } else {
-        throw new Error(`Invalid primary ID: ${primaryId}`);
+        throw new DataFormatError(`Invalid primary ID: ${primaryId}`);
       }
     }
   }
@@ -440,7 +470,10 @@ class BaoModel {
 
     const field = this.constructor.fields[fieldName];
     if (!field || !field.modelName) {
-      throw new Error(`Field ${fieldName} is not a valid relation field`);
+      throw new ConfigurationError(
+        `Field ${fieldName} is not a valid relation field`,
+        this.constructor.name,
+      );
     }
 
     const value = this[fieldName];
@@ -508,7 +541,10 @@ class BaoModel {
   getRelated(fieldName) {
     const field = this.constructor.fields[fieldName];
     if (!(field instanceof RelatedFieldClass)) {
-      throw new Error(`Field ${fieldName} is not a RelatedField`);
+      throw new ConfigurationError(
+        `Field ${fieldName} is not a RelatedField`,
+        this.constructor.name,
+      );
     }
     return this._relatedObjects[fieldName];
   }
@@ -529,13 +565,17 @@ class BaoModel {
   ) {
     const constraint = this.uniqueConstraints[constraintName];
     if (!constraint) {
-      throw new Error(
+      throw new ConfigurationError(
         `Unknown unique constraint '${constraintName}' in ${this.name}`,
+        this.name,
       );
     }
 
     if (!value) {
-      throw new Error(`${constraint.field} value is required`);
+      throw new ValidationError(
+        `${constraint.field} value is required`,
+        constraint.field,
+      );
     }
 
     const key = this._formatUniqueConstraintKey(
@@ -561,7 +601,7 @@ class BaoModel {
     const item = await this.find(result.Item.relatedId, { loaderContext });
 
     if (item) {
-      item._addConsumedCapacity(result.ConsumedCapacity);
+      item._addConsumedCapacity(result.ConsumedCapacity, "read");
     }
 
     return item;
@@ -584,30 +624,30 @@ class BaoModel {
     this._addConsumedCapacity(capacity, type, fromContext);
   }
 
-  _addConsumedCapacity(capacity, type = "read", fromContext = false) {
-    if (type !== "read" && type !== "write" && type !== "total") {
-      throw new Error(`Invalid consumed capacity type: ${type}`);
+  _addConsumedCapacity(consumedCapacity, type, isRelated = false) {
+    if (!["read", "write"].includes(type)) {
+      throw new ValidationError(`Invalid consumed capacity type: ${type}`);
     }
 
-    if (!capacity) {
+    if (!consumedCapacity) {
       return;
     }
 
-    if (Array.isArray(capacity)) {
-      capacity.forEach((item) =>
-        this._addConsumedCapacity(item, type, fromContext),
+    if (Array.isArray(consumedCapacity)) {
+      consumedCapacity.forEach((item) =>
+        this._addConsumedCapacity(item, type, isRelated),
       );
     } else {
-      if (capacity.consumedCapacity) {
+      if (consumedCapacity.consumedCapacity) {
         this._consumedCapacity.push({
-          consumedCapacity: capacity.consumedCapacity,
-          fromContext: capacity.fromContext || fromContext,
-          type: capacity.type || type,
+          consumedCapacity: consumedCapacity.consumedCapacity,
+          fromContext: consumedCapacity.fromContext || isRelated,
+          type: consumedCapacity.type || type,
         });
       } else {
         this._consumedCapacity.push({
-          consumedCapacity: capacity,
-          fromContext: fromContext,
+          consumedCapacity: consumedCapacity,
+          fromContext: isRelated,
           type: type,
         });
       }
@@ -624,8 +664,8 @@ class BaoModel {
    * @returns {number} The numeric consumed capacity.
    */
   getNumericConsumedCapacity(type, includeRelated = false) {
-    if (type !== "read" && type !== "write" && type !== "total") {
-      throw new Error(`Invalid consumed capacitytype: ${type}`);
+    if (!["read", "write", "total"].includes(type)) {
+      throw new ValidationError(`Invalid consumed capacity type: ${type}`);
     }
 
     let consumedCapacity = this._consumedCapacity;

@@ -222,6 +222,7 @@ describe("Batch Delay Tests", () => {
       });
     }
 
+    // Note: This timeout error might benefit from a specific TimeoutError exception in the future
     await expect(promise).rejects.toThrow("Batch request timed out");
   });
 });

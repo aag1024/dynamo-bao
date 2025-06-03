@@ -3,6 +3,13 @@ const testConfig = require("./config");
 const { cleanupTestData, verifyCleanup } = require("./utils/test-utils");
 const { ulid } = require("ulid");
 const { defaultLogger: logger } = require("../src/utils/logger");
+const {
+  BaoModel,
+  PrimaryKeyConfig,
+  UniqueConstraintConfig,
+} = require("../src/model");
+const { StringField, IntegerField } = require("../src/fields");
+const { ConditionalError } = require("../src/exceptions");
 
 let testId;
 
@@ -50,7 +57,7 @@ describe("User Unique Constraints", () => {
         name: "Test User 2",
         email: "test1@example.com",
       });
-    }).rejects.toThrow("email must be unique");
+    }).rejects.toThrow(ConditionalError);
   });
 
   test("should allow creating user with different email", async () => {
@@ -124,7 +131,7 @@ describe("User Unique Constraints", () => {
         status: user1.status,
         createdAt: user1.createdAt,
       });
-    }).rejects.toThrow("email must be unique");
+    }).rejects.toThrow(ConditionalError);
   });
 
   test("should allow reusing email after user deletion", async () => {

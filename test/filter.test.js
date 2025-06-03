@@ -1,9 +1,6 @@
 const dynamoBao = require("../src");
 const testConfig = require("./config");
 const { BaoModel, PrimaryKeyConfig, IndexConfig } = require("../src/model");
-
-const { GSI_INDEX_ID1 } = require("../src/constants");
-
 const {
   StringField,
   IntegerField,
@@ -11,6 +8,9 @@ const {
   DateTimeField,
   UlidField,
 } = require("../src/fields");
+const { QueryError, ValidationError } = require("../src/exceptions");
+
+const { GSI_INDEX_ID1 } = require("../src/constants");
 
 const { cleanupTestData, verifyCleanup } = require("./utils/test-utils");
 const { ulid } = require("ulid");
@@ -200,7 +200,7 @@ describe("Filter Expression Tests", () => {
       TestUser.queryByIndex("byStatus", "active", null, {
         filter: { invalidField: "value" },
       }),
-    ).rejects.toThrow("Unknown field in filter: invalidField");
+    ).rejects.toThrow(QueryError);
   });
 
   test("should reject invalid operators", async () => {
@@ -208,7 +208,7 @@ describe("Filter Expression Tests", () => {
       TestUser.queryByIndex("byStatus", "active", null, {
         filter: { age: { $invalid: 25 } },
       }),
-    ).rejects.toThrow("Invalid operator $invalid for field age");
+    ).rejects.toThrow(QueryError);
   });
 
   test("should handle empty filter object", async () => {
@@ -276,7 +276,7 @@ describe("Filter Expression Tests", () => {
       TestUser.queryByIndex("byStatus", "active", null, {
         filter: { age: { $exists: "true" } },
       }),
-    ).rejects.toThrow("$exists operator requires a boolean value");
+    ).rejects.toThrow(ValidationError);
   });
 
   test("should work with $exists in complex conditions", async () => {

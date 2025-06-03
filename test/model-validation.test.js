@@ -2,6 +2,7 @@ const dynamoBao = require("../src");
 const testConfig = require("./config");
 const { BaoModel, PrimaryKeyConfig, IndexConfig } = require("../src/model");
 const { StringField } = require("../src/fields");
+const { ConfigurationError, ValidationError } = require("../src/exceptions");
 const { ulid } = require("ulid");
 const { cleanupTestData, verifyCleanup } = require("./utils/test-utils");
 let testId, manager;
@@ -41,9 +42,7 @@ describe("Model Validation Tests", () => {
     // We expect the error to be thrown during model registration
     expect(() => {
       manager.registerModel(InvalidFieldModel);
-    }).toThrow(
-      "Field name '_invalidField' in InvalidFieldModel cannot start with underscore",
-    );
+    }).toThrow(ConfigurationError);
   });
 
   test("should reject index names starting with underscore", () => {
@@ -62,9 +61,7 @@ describe("Model Validation Tests", () => {
     // We expect the error to be thrown during model registration
     expect(() => {
       manager.registerModel(InvalidIndexModel);
-    }).toThrow(
-      "Index name '_invalidIndex' in InvalidIndexModel cannot start with underscore",
-    );
+    }).toThrow(ConfigurationError);
   });
 
   test("should validate required fields during creation", async () => {
@@ -94,14 +91,14 @@ describe("Model Validation Tests", () => {
       RequiredFieldModel.create({
         id: "test-2",
       }),
-    ).rejects.toThrow("Field is required");
+    ).rejects.toThrow(ValidationError);
 
     // Should fail without required id field
     await expect(
       RequiredFieldModel.create({
         name: "Test Name",
       }),
-    ).rejects.toThrow("Field is required");
+    ).rejects.toThrow(ValidationError);
 
     // Should succeed with optional field missing
     const validModelNoOptional = await RequiredFieldModel.create({
@@ -142,7 +139,7 @@ describe("Model Validation Tests", () => {
       RequiredFieldModel.update(model.id, {
         name: null,
       }),
-    ).rejects.toThrow("Field is required");
+    ).rejects.toThrow(ValidationError);
 
     // Should succeed when updating optional field
     const optionalUpdate = await RequiredFieldModel.update(model.id, {
@@ -172,13 +169,13 @@ describe("Model Validation Tests", () => {
       ImplicitRequiredModel.create({
         sortKey: "test",
       }),
-    ).rejects.toThrow("Field is required");
+    ).rejects.toThrow(ValidationError);
 
     await expect(
       ImplicitRequiredModel.create({
         id: "test",
       }),
-    ).rejects.toThrow("Field is required");
+    ).rejects.toThrow(ValidationError);
 
     // Should succeed with both primary key fields
     const validModel = await ImplicitRequiredModel.create({
@@ -208,7 +205,7 @@ describe("Model Validation Tests", () => {
       SingleKeyModel.create({
         otherField: "test",
       }),
-    ).rejects.toThrow("Field is required");
+    ).rejects.toThrow(ValidationError);
 
     // Should succeed with primary key field
     const validModel = await SingleKeyModel.create({
@@ -238,7 +235,7 @@ describe("Model Validation Tests", () => {
       ExplicitRequiredModel.create({
         sortKey: "test",
       }),
-    ).rejects.toThrow("Field is required");
+    ).rejects.toThrow(ValidationError);
 
     // Should succeed with both fields
     const validModel = await ExplicitRequiredModel.create({
@@ -246,5 +243,12 @@ describe("Model Validation Tests", () => {
       sortKey: "test",
     });
     expect(validModel).toBeDefined();
+
+    // Should fail when setting the required field to null
+    await expect(
+      ExplicitRequiredModel.update(validModel.getPrimaryId(), {
+        id: null,
+      }),
+    ).rejects.toThrow(ValidationError);
   });
 });

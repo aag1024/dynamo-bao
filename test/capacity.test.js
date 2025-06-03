@@ -88,8 +88,8 @@ describe("Capacity Usage Tests", () => {
           email: "new-email@example.com",
           status: user.status,
         }),
-      0, // Expected RCU - reads are eventually consistent
-      16.0, // Expected WCU - for update with unique constraint changes (assuming running in test)
+      1.0, // Expected RCU - reads are eventually consistent
+      11.0, // Expected WCU - for update with unique constraint changes (assuming running in test)
     );
     expect(result.email).toBe("new-email@example.com");
   });

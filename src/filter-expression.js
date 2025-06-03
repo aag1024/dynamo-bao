@@ -1,3 +1,6 @@
+const { defaultLogger: logger } = require("./utils/logger");
+const { QueryError, ValidationError } = require("./exceptions");
+
 /**
  * Supporting class for building DynamoDB filter expressions.
  * @class
@@ -59,20 +62,22 @@ class FilterExpressionBuilder {
       case "$beginsWith":
         return `begins_with(${nameKey}, ${this.generateValue(convertedValue)})`;
       case "$in":
-        if (!Array.isArray(convertedValue)) {
-          throw new Error("$in operator requires an array value");
+        if (!Array.isArray(value)) {
+          throw new ValidationError("$in operator requires an array value");
         }
-        const valueKeys = convertedValue.map((v) => this.generateValue(v));
+        const valueKeys = value.map((v) => this.generateValue(v));
         return `${nameKey} IN (${valueKeys.join(", ")})`;
       case "$exists":
         if (typeof value !== "boolean") {
-          throw new Error("$exists operator requires a boolean value");
+          throw new ValidationError(
+            "$exists operator requires a boolean value",
+          );
         }
         return value
           ? `attribute_exists(${nameKey})`
           : `attribute_not_exists(${nameKey})`;
       default:
-        throw new Error(`Unsupported operator: ${operator}`);
+        throw new QueryError(`Unsupported operator: ${operator}`);
     }
   }
 
@@ -89,7 +94,7 @@ class FilterExpressionBuilder {
 
     const operators = Object.keys(condition);
     if (operators.length === 0) {
-      throw new Error(`Empty condition object for field: ${fieldName}`);
+      throw new QueryError(`Empty condition object for field: ${fieldName}`);
     }
 
     const expressions = operators.map((operator) => {
@@ -107,7 +112,7 @@ class FilterExpressionBuilder {
   // Build expression for logical operators
   buildLogicalExpression(operator, conditions, model) {
     if (!Array.isArray(conditions)) {
-      throw new Error(`${operator} requires an array of conditions`);
+      throw new QueryError(`${operator} requires an array of conditions`);
     }
 
     const expressions = conditions.map((condition) => {
@@ -208,8 +213,9 @@ class FilterExpressionBuilder {
         }
 
         // Validate field exists in model
-        if (!model.fields[key]) {
-          throw new Error(`Unknown field in filter: ${key}`);
+        const field = model.fields[key];
+        if (!field) {
+          throw new QueryError(`Unknown field in filter: ${key}`);
         }
 
         // Recursively validate nested conditions
@@ -221,21 +227,20 @@ class FilterExpressionBuilder {
         ) {
           const operators = Object.keys(value);
           operators.forEach((op) => {
-            if (
-              ![
-                "$eq",
-                "$ne",
-                "$gt",
-                "$gte",
-                "$lt",
-                "$lte",
-                "$in",
-                "$contains",
-                "$beginsWith",
-                "$exists",
-              ].includes(op)
-            ) {
-              throw new Error(`Invalid operator ${op} for field ${key}`);
+            const validOperators = [
+              "$eq",
+              "$ne",
+              "$gt",
+              "$gte",
+              "$lt",
+              "$lte",
+              "$in",
+              "$contains",
+              "$beginsWith",
+              "$exists",
+            ];
+            if (!validOperators.includes(op)) {
+              throw new QueryError(`Invalid operator ${op} for field ${key}`);
             }
           });
         }

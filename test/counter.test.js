@@ -4,6 +4,7 @@ const { BaoModel, PrimaryKeyConfig } = require("../src/model");
 const { StringField, CounterField } = require("../src/fields");
 const { cleanupTestData, verifyCleanup } = require("./utils/test-utils");
 const { ulid } = require("ulid");
+const { ValidationError } = require("../src/exceptions");
 
 let testId;
 
@@ -146,11 +147,11 @@ describe("Counter Field Tests", () => {
 
   test("should validate counter values", async () => {
     // Should reject non-integer values
-    await expect(async () => {
-      await TestCounter.create({
+    await expect(
+      TestCounter.create({
         counterId: "test-counter-3",
         count: 3.14,
-      });
-    }).rejects.toThrow("CounterField value must be an integer");
+      }),
+    ).rejects.toThrow(ValidationError);
   });
 });

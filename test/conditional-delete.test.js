@@ -4,6 +4,7 @@ const { BaoModel, PrimaryKeyConfig } = require("../src/model");
 const { StringField, IntegerField, BooleanField } = require("../src/fields");
 const { cleanupTestData, verifyCleanup } = require("./utils/test-utils");
 const { ulid } = require("ulid");
+const { ConditionalError, QueryError } = require("../src/exceptions");
 
 let testId;
 
@@ -76,7 +77,7 @@ describe("Conditional Delete Tests", () => {
           status: "inactive",
         },
       }),
-    ).rejects.toThrow("Delete condition not met");
+    ).rejects.toThrow(ConditionalError);
 
     // Verify item still exists
     const existingUser = await TestUser.find(user.userId);
@@ -97,6 +98,35 @@ describe("Conditional Delete Tests", () => {
     expect(deletedUser.exists()).toBe(false);
   });
 
+  test("should support $or conditions", async () => {
+    // Test successful delete with $or where one condition matches
+    await expect(
+      TestUser.delete(user.userId, {
+        condition: {
+          $or: [{ status: "inactive" }, { age: { $gte: 25 } }],
+        },
+      }),
+    ).resolves.toBeDefined();
+
+    // Verify deletion
+    const deletedUser = await TestUser.find(user.userId);
+    expect(deletedUser.exists()).toBe(false);
+  });
+
+  test("should fail $or conditions when no condition matches", async () => {
+    await expect(
+      TestUser.delete(user.userId, {
+        condition: {
+          $or: [{ status: "inactive" }, { age: { $lt: 20 } }],
+        },
+      }),
+    ).rejects.toThrow(ConditionalError);
+
+    // Verify item still exists
+    const existingUser = await TestUser.find(user.userId);
+    expect(existingUser.exists()).toBe(true);
+  });
+
   test("should reject invalid field names in condition", async () => {
     await expect(
       TestUser.delete(user.userId, {
@@ -104,6 +134,6 @@ describe("Conditional Delete Tests", () => {
           invalidField: "value",
         },
       }),
-    ).rejects.toThrow("Unknown field in filter: invalidField");
+    ).rejects.toThrow(QueryError);
   });
 });

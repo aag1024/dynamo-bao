@@ -5,6 +5,7 @@ const { cleanupTestData, verifyCleanup } = require("./utils/test-utils");
 const { ulid } = require("ulid");
 const { QueryCommand } = require("@aws-sdk/lib-dynamodb");
 const { defaultLogger: logger } = require("../src/utils/logger");
+const { ConditionalError, QueryError } = require("../src/exceptions");
 
 let testId;
 
@@ -98,7 +99,7 @@ describe("User CRUD Operations", () => {
         email: "test1@example.com",
         externalId: "ext2",
       });
-    }).rejects.toThrow("email must be unique");
+    }).rejects.toThrow(ConditionalError);
   });
 });
 
@@ -175,7 +176,7 @@ describe("GSI Queries", () => {
   test("should throw error for invalid index name", async () => {
     await expect(
       User.queryByIndex("invalidIndex", "someValue"),
-    ).rejects.toThrow('Index "invalidIndex" not found in User model');
+    ).rejects.toThrow(QueryError);
   });
 });
 

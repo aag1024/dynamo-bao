@@ -4,6 +4,7 @@ const { BaoModel, PrimaryKeyConfig } = require("../src/model");
 const { StringField, BinaryField } = require("../src/fields");
 const { cleanupTestData, verifyCleanup } = require("./utils/test-utils");
 const { ulid } = require("ulid");
+const { ValidationError } = require("../src/exceptions");
 
 let testId;
 
@@ -82,7 +83,7 @@ describe("Binary Field Tests", () => {
         data: "not a buffer",
         requiredData: Buffer.from("Required"),
       });
-    }).rejects.toThrow("BinaryField value must be a Buffer");
+    }).rejects.toThrow(ValidationError);
   });
 
   test("should enforce required field constraint", async () => {
@@ -92,7 +93,7 @@ describe("Binary Field Tests", () => {
         name: "Test Binary 4",
         data: Buffer.from("Optional"),
       });
-    }).rejects.toThrow("Field is required");
+    }).rejects.toThrow(ValidationError);
   });
 
   test("should update binary data and return Uint8Array", async () => {
@@ -113,7 +114,7 @@ describe("Binary Field Tests", () => {
 
     expect(() => {
       BinaryField().toGsi(binary.data);
-    }).toThrow("BinaryField does not support GSI conversion");
+    }).toThrow(ValidationError);
   });
 
   test("should handle large binary data", async () => {

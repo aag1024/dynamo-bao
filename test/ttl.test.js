@@ -5,6 +5,7 @@ const { StringField, TtlField } = require("../src/fields");
 const { cleanupTestData, verifyCleanup } = require("./utils/test-utils");
 const { ulid } = require("ulid");
 const { GetCommand } = require("@aws-sdk/lib-dynamodb");
+const { ValidationError } = require("../src/exceptions");
 
 let testId;
 
@@ -163,6 +164,15 @@ describe("TTL Field Tests", () => {
       await TestTtl.update(testItem.itemId, {
         ttl: "not-a-date",
       });
-    }).rejects.toThrow();
+    }).rejects.toThrow(ValidationError);
+  });
+
+  test("should fail with invalid date", async () => {
+    await expect(
+      TestTtl.create({
+        itemId: "ttl-test-6",
+        ttl: "invalid-date",
+      }),
+    ).rejects.toThrow(ValidationError);
   });
 });

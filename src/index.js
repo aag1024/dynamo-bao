@@ -6,6 +6,8 @@ const { ModelManager } = require("./model-manager");
 const { defaultLogger: logger } = require("./utils/logger");
 const fields = require("./fields");
 const constants = require("./constants");
+const exceptions = require("./exceptions");
+const { ConfigurationError } = require("./exceptions");
 
 const {
   BaoModel,
@@ -35,8 +37,7 @@ function findModelFiles(dir) {
 
 function _registerModels(manager = null, modelsDir = null) {
   if (!modelsDir) {
-    throw new Error("modelsDir is required");
-    return;
+    throw new ConfigurationError("modelsDir is required");
   }
 
   const modelFiles = findModelFiles(modelsDir);
@@ -115,6 +116,9 @@ const firstExport = {
 
   // Export the constants module directly
   constants,
+
+  // Export the exceptions module
+  exceptions,
 
   models: {},
 };

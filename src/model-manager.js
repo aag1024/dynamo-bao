@@ -2,6 +2,7 @@ const { DynamoDBClient } = require("@aws-sdk/client-dynamodb");
 const { DynamoDBDocument } = require("@aws-sdk/lib-dynamodb");
 const { defaultLogger: logger } = require("./utils/logger");
 const { pluginManager } = require("./plugin-manager");
+const { ConfigurationError } = require("./exceptions");
 
 class ModelManager {
   static _instances = new Map();
@@ -45,11 +46,11 @@ class ModelManager {
   }
 
   getModel(modelName) {
-    const ModelClass = this._models.get(modelName);
-    if (!ModelClass) {
-      throw new Error(`Model ${modelName} not found`);
+    const model = this._models.get(modelName);
+    if (!model) {
+      throw new ConfigurationError(`Model ${modelName} not found`);
     }
-    return ModelClass;
+    return model;
   }
 
   // Registry methods

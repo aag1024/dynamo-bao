@@ -5,6 +5,7 @@
  */
 const { ulid, decodeTime } = require("ulid");
 const { defaultLogger: logger } = require("./utils/logger");
+const { ValidationError } = require("./exceptions");
 
 /**
  * @class BaoBaseField
@@ -43,7 +44,7 @@ class BaoBaseField {
    */
   validate(value) {
     if (this.required && (value === null || value === undefined)) {
-      throw new Error("Field is required");
+      throw new ValidationError("Field is required", null, value);
     }
     return true;
   }
@@ -155,7 +156,19 @@ class BaoBaseField {
  * A field that stores a string value.
  */
 class StringField extends BaoBaseField {
-  // String fields are pass-through since DynamoDB handles them natively
+  validate(value) {
+    if (this.required && !value) {
+      throw new ValidationError("Field is required", null, value);
+    }
+    if (value && this.maxLength && value.length > this.maxLength) {
+      throw new ValidationError(
+        `Value exceeds maximum length of ${this.maxLength}`,
+        null,
+        value,
+      );
+    }
+    return true;
+  }
 }
 
 /**
@@ -167,7 +180,7 @@ class StringField extends BaoBaseField {
 class DateTimeField extends BaoBaseField {
   validate(value) {
     if (this.required && value === undefined) {
-      throw new Error("Field is required");
+      throw new ValidationError("Field is required", null, value);
     }
     if (
       value !== undefined &&
@@ -175,8 +188,10 @@ class DateTimeField extends BaoBaseField {
       typeof value !== "number" &&
       typeof value !== "string"
     ) {
-      throw new Error(
+      throw new ValidationError(
         "DateTimeField value must be a Date object, timestamp number, or ISO string",
+        null,
+        value,
       );
     }
   }
@@ -376,21 +391,25 @@ class UlidField extends BaoBaseField {
 
   validate(value) {
     if (!value && !this.autoAssign) {
-      throw new Error("ULID is required");
+      throw new ValidationError("ULID is required", null, value);
     }
 
     if (value) {
       // Check if it's a valid ULID format
       // ULIDs are 26 characters, uppercase alphanumeric
       if (!/^[0-9A-Z]{26}$/.test(value)) {
-        throw new Error("Invalid ULID format");
+        throw new ValidationError("Invalid ULID format", null, value);
       }
 
       try {
         // Attempt to decode the timestamp to verify it's valid
         decodeTime(value);
       } catch (error) {
-        throw new Error("Invalid ULID: could not decode timestamp");
+        throw new ValidationError(
+          "Invalid ULID: could not decode timestamp",
+          null,
+          value,
+        );
       }
     }
     return true;
@@ -421,7 +440,7 @@ class RelatedField extends BaoBaseField {
 
   validate(value) {
     if (this.required && !value) {
-      throw new Error("Field is required");
+      throw new ValidationError("Field is required", null, value);
     }
     // Allow both string IDs and model instances
     if (
@@ -429,8 +448,10 @@ class RelatedField extends BaoBaseField {
       typeof value !== "string" &&
       (!value.getPrimaryId || typeof value.getPrimaryId !== "function")
     ) {
-      throw new Error(
+      throw new ValidationError(
         "Related field value must be a string ID or model instance",
+        null,
+        value,
       );
     }
     return true;
@@ -475,7 +496,11 @@ class CounterField extends BaoBaseField {
       }
       // Accept regular integer values
       if (!Number.isInteger(value)) {
-        throw new Error("CounterField value must be an integer");
+        throw new ValidationError(
+          "CounterField value must be an integer",
+          null,
+          value,
+        );
       }
     }
     return true;
@@ -576,7 +601,11 @@ class BinaryField extends BaoBaseField {
       !(value instanceof Buffer) &&
       !(value instanceof Uint8Array)
     ) {
-      throw new Error("BinaryField value must be a Buffer or Uint8Array");
+      throw new ValidationError(
+        "BinaryField value must be a Buffer or Uint8Array",
+        null,
+        value,
+      );
     }
     return true;
   }
@@ -593,7 +622,11 @@ class BinaryField extends BaoBaseField {
   }
 
   toGsi(value) {
-    throw new Error("BinaryField does not support GSI conversion");
+    throw new ValidationError(
+      "BinaryField does not support GSI conversion",
+      null,
+      value,
+    );
   }
 }
 
@@ -619,7 +652,11 @@ class VersionField extends BaoBaseField {
     if (value !== undefined) {
       // Verify it's a valid ULID string
       if (typeof value !== "string" || value.length !== 26) {
-        throw new Error("VersionField value must be a valid ULID");
+        throw new ValidationError(
+          "VersionField value must be a valid ULID",
+          null,
+          value,
+        );
       }
     }
     return true;
@@ -654,7 +691,11 @@ class BooleanField extends BaoBaseField {
   validate(value) {
     super.validate(value);
     if (value !== undefined && value !== null && typeof value !== "boolean") {
-      throw new Error("BooleanField value must be a boolean");
+      throw new ValidationError(
+        "BooleanField value must be a boolean",
+        null,
+        value,
+      );
     }
     return true;
   }
@@ -699,7 +740,7 @@ class TtlField extends DateTimeField {
     if (value === null || value === undefined) {
       return true; // Allow null/undefined for field removal
     }
-    return super.validate(value); // Use parent validation for dates
+    super.validate(value); // Use parent validation for dates
   }
 
   toDy(value) {
@@ -714,7 +755,11 @@ class TtlField extends DateTimeField {
     } else {
       date = new Date(value);
       if (isNaN(date.getTime())) {
-        throw new Error("Invalid date value provided for TTL field");
+        throw new ValidationError(
+          "Invalid date value provided for TTL field",
+          null,
+          value,
+        );
       }
     }
 

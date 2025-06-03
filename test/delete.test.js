@@ -6,6 +6,7 @@ const {
   UniqueConstraintConfig,
 } = require("../src/model");
 const { StringField, IntegerField } = require("../src/fields");
+const { ConditionalError } = require("../src/exceptions");
 const { cleanupTestData, verifyCleanup } = require("./utils/test-utils");
 const { ulid } = require("ulid");
 const { UNIQUE_CONSTRAINT_ID1 } = require("../src/constants");
@@ -106,7 +107,7 @@ describe("Delete Operation Tests", () => {
         SimpleUser.delete(user2.userId, {
           condition: { age: { $lt: 20 } },
         }),
-      ).rejects.toThrow("Delete condition not met");
+      ).rejects.toThrow(ConditionalError);
     });
   });
 
@@ -159,7 +160,7 @@ describe("Delete Operation Tests", () => {
         UserWithUnique.delete(user2.userId, {
           condition: { name: "Wrong Name" },
         }),
-      ).rejects.toThrow("Delete condition not met");
+      ).rejects.toThrow(ConditionalError);
     });
   });
 });

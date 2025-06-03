@@ -1,6 +1,7 @@
 const { defaultLogger: logger } = require("../utils/logger");
 const { TtlFieldClass } = require("../fields");
 const { PrimaryKeyConfig } = require("../model-config");
+const { ConfigurationError } = require("../exceptions");
 const {
   GSI_INDEX_ID1,
   GSI_INDEX_ID2,
@@ -43,18 +44,25 @@ const ValidationMethods = {
    */
   _validateConfiguration() {
     if (!this.modelPrefix) {
-      throw new Error(`${this.name} must define a modelPrefix`);
+      throw new ConfigurationError(
+        `${this.name} must define a modelPrefix`,
+        this.name,
+      );
     }
 
     if (!this.primaryKey) {
-      throw new Error(`${this.name} must define a primaryKey`);
+      throw new ConfigurationError(
+        `${this.name} must define a primaryKey`,
+        this.name,
+      );
     }
 
     // Update to use TtlFieldClass instead of TtlField
     Object.entries(this.fields).forEach(([fieldName, field]) => {
       if (field instanceof TtlFieldClass && fieldName !== "ttl") {
-        throw new Error(
+        throw new ConfigurationError(
           `TtlField must be named 'ttl', found '${fieldName}' in ${this.name}`,
+          this.name,
         );
       }
     });
@@ -79,8 +87,9 @@ const ValidationMethods = {
     // Validate field names don't start with underscore
     Object.keys(this.fields).forEach((fieldName) => {
       if (fieldName.startsWith("_")) {
-        throw new Error(
+        throw new ConfigurationError(
           `Field name '${fieldName}' in ${this.name} cannot start with underscore`,
+          this.name,
         );
       }
     });
@@ -96,20 +105,23 @@ const ValidationMethods = {
     Object.entries(this.indexes).forEach(([indexName, index]) => {
       // Check if index name starts with underscore
       if (indexName.startsWith("_")) {
-        throw new Error(
+        throw new ConfigurationError(
           `Index name '${indexName}' in ${this.name} cannot start with underscore`,
+          this.name,
         );
       }
 
       // Check if referenced fields start with underscore
       if (index.pk !== "modelPrefix" && index.pk.startsWith("_")) {
-        throw new Error(
+        throw new ConfigurationError(
           `Index '${indexName}' references invalid field '${index.pk}' (cannot start with underscore)`,
+          this.name,
         );
       }
       if (index.sk !== "modelPrefix" && index.sk.startsWith("_")) {
-        throw new Error(
+        throw new ConfigurationError(
           `Index '${indexName}' references invalid field '${index.sk}' (cannot start with underscore)`,
+          this.name,
         );
       }
 
@@ -120,7 +132,10 @@ const ValidationMethods = {
         index.sk === this.primaryKey.sk;
 
       if (!validIndexIds.includes(index.indexId) && !isPrimaryKeyIndex) {
-        throw new Error(`Invalid index ID ${index.indexId} in ${this.name}`);
+        throw new ConfigurationError(
+          `Invalid index ID ${index.indexId} in ${this.name}`,
+          this.name,
+        );
       }
 
       // These will throw errors if the fields don't exist
@@ -137,14 +152,16 @@ const ValidationMethods = {
 
     Object.values(this.uniqueConstraints || {}).forEach((constraint) => {
       if (!validConstraintIds.includes(constraint.constraintId)) {
-        throw new Error(
+        throw new ConfigurationError(
           `Invalid constraint ID ${constraint.constraintId} in ${this.name}`,
+          this.name,
         );
       }
 
       if (!this._getField(constraint.field)) {
-        throw new Error(
+        throw new ConfigurationError(
           `Unique constraint field '${constraint.field}' not found in ${this.name} fields`,
+          this.name,
         );
       }
     });

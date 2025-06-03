@@ -1,3 +1,6 @@
+const { defaultLogger: logger } = require("./utils/logger");
+const { QueryError } = require("./exceptions");
+
 class KeyConditionBuilder {
   constructor() {
     this.names = {};
@@ -29,20 +32,27 @@ class KeyConditionBuilder {
   validateSortKeyField(model, indexName, fieldName) {
     const index = model.indexes[indexName];
     if (!index) {
-      throw new Error(`Index "${indexName}" not found in ${model.name}`);
+      throw new QueryError(
+        `Index "${indexName}" not found in ${model.name}`,
+        indexName,
+      );
     }
 
     if (index.sk === "modelPrefix") {
-      throw new Error(
+      throw new QueryError(
         `Cannot query by sort key on index "${indexName}" as it uses modelPrefix`,
+        indexName,
+        fieldName,
       );
     }
 
     const skField = index.sk;
     if (skField !== fieldName) {
-      throw new Error(
+      throw new QueryError(
         `Field "${fieldName}" is not the sort key for index "${indexName}". ` +
           `Expected "${skField}"`,
+        indexName,
+        fieldName,
       );
     }
   }
@@ -86,7 +96,9 @@ class KeyConditionBuilder {
 
       case "$between":
         if (!Array.isArray(value) || value.length !== 2) {
-          throw new Error("$between requires an array with exactly 2 elements");
+          throw new QueryError(
+            "$between requires an array with exactly 2 elements",
+          );
         }
         return {
           condition: `${nameKey} BETWEEN ${this.generateValue(value[0])} AND ${this.generateValue(value[1])}`,
@@ -111,7 +123,7 @@ class KeyConditionBuilder {
         };
 
       default:
-        throw new Error(`Unsupported sort key operator: ${operator}`);
+        throw new QueryError(`Unsupported sort key operator: ${operator}`);
     }
   }
 
@@ -167,7 +179,7 @@ class KeyConditionBuilder {
   buildKeyCondition(model, indexName, condition, gsiSortKeyName) {
     // Validate the condition format
     if (!condition || typeof condition !== "object") {
-      throw new Error("Invalid condition format");
+      throw new QueryError("Invalid condition format");
     }
 
     const [[fieldName, fieldCondition]] = Object.entries(condition);
@@ -175,8 +187,10 @@ class KeyConditionBuilder {
     // Validate that this field is the sort key for the index
     const index = model.indexes[indexName];
     if (!index || index.sk !== fieldName) {
-      throw new Error(
+      throw new QueryError(
         `Field "${fieldName}" is not the sort key for index "${indexName}"`,
+        indexName,
+        fieldName,
       );
     }
 
@@ -201,13 +215,13 @@ class KeyConditionBuilder {
         "$lte",
       ];
       if (!validOperators.includes(operator)) {
-        throw new Error(`Unsupported sort key operator: ${operator}`);
+        throw new QueryError(`Unsupported sort key operator: ${operator}`);
       }
 
       switch (operator) {
         case "$between":
           if (!Array.isArray(value) || value.length !== 2) {
-            throw new Error(
+            throw new QueryError(
               "$between requires an array with exactly 2 elements",
             );
           }
@@ -238,20 +252,20 @@ class KeyConditionBuilder {
           };
 
         default:
-          throw new Error(`Unsupported sort key operator: ${operator}`);
+          throw new QueryError(`Unsupported sort key operator: ${operator}`);
       }
-    }
+    } else {
+      // Handle direct value (treat as equality)
+      if (fieldCondition === undefined) {
+        throw new QueryError("Sort key condition value cannot be undefined");
+      }
 
-    // Handle simple value case (treated as equality)
-    if (fieldCondition === undefined) {
-      throw new Error("Sort key condition value cannot be undefined");
+      return {
+        condition: `${nameKey} = :sortKeyValue`,
+        names,
+        values: { ":sortKeyValue": field.toGsi(fieldCondition) },
+      };
     }
-
-    return {
-      condition: `${nameKey} = :sortKeyValue`,
-      names,
-      values: { ":sortKeyValue": field.toGsi(fieldCondition) },
-    };
   }
 }
 

@@ -2,6 +2,7 @@ const dynamoBao = require("../src");
 const testConfig = require("./config");
 const { cleanupTestData, verifyCleanup } = require("./utils/test-utils");
 const { ulid } = require("ulid");
+const { ValidationError } = require("../src/exceptions");
 
 let User, testId;
 
@@ -84,13 +85,13 @@ describe("User Unique Constraint Lookups", () => {
     test("should throw error for invalid email format", async () => {
       await expect(
         User.findByUniqueConstraint("uniqueEmail", ""),
-      ).rejects.toThrow();
+      ).rejects.toThrow(ValidationError);
     });
 
     test("should throw error for null external ID", async () => {
       await expect(
         User.findByUniqueConstraint("uniqueExternalId", null),
-      ).rejects.toThrow();
+      ).rejects.toThrow(ValidationError);
     });
   });
 });

@@ -1,6 +1,7 @@
 const { GetCommand } = require("@aws-sdk/lib-dynamodb");
 const { defaultLogger: logger } = require("../utils/logger");
 const { UNIQUE_CONSTRAINT_KEY } = require("../constants");
+const { ConditionalError } = require("../exceptions");
 
 const UniqueConstraintMethods = {
   async _validateUniqueConstraints(data, currentId = null) {
@@ -51,15 +52,23 @@ const UniqueConstraintMethods = {
         if (result.Item) {
           logger.debug("Found existing constraint:", result.Item);
           if (!currentId || result.Item.relatedId !== currentId) {
-            throw new Error(`${constraint.field} must be unique`);
+            throw new ConditionalError(
+              `${constraint.field} must be unique`,
+              "unique_constraint",
+              constraint.field,
+            );
           }
         }
       } catch (innerError) {
-        if (innerError.message.includes("must be unique")) {
+        if (innerError instanceof ConditionalError) {
           throw innerError;
         }
         console.error("Error checking unique constraint:", innerError);
-        throw new Error(`Failed to validate ${constraint.field} uniqueness`);
+        throw new ConditionalError(
+          `Failed to validate ${constraint.field} uniqueness`,
+          "unique_constraint",
+          constraint.field,
+        );
       }
     }
   },

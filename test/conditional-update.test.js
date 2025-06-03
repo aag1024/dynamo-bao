@@ -11,6 +11,7 @@ const {
   UlidField,
   CreateDateField,
 } = require("../src/fields");
+const { ConditionalError, ItemNotFoundError } = require("../src/exceptions");
 
 class TestUser extends BaoModel {
   static modelPrefix = "tu";
@@ -84,7 +85,7 @@ describe("Conditional Update Tests", () => {
           condition: { status: "pending" },
         },
       ),
-    ).rejects.toThrow("Condition check failed");
+    ).rejects.toThrow(ConditionalError);
   });
 
   test("should support complex conditions with $and", async () => {
@@ -152,7 +153,7 @@ describe("Conditional Update Tests", () => {
           condition: { status: "active" },
         },
       ),
-    ).rejects.toThrow("Item not found");
+    ).rejects.toThrow(ItemNotFoundError);
   });
 
   test("should prevent creating duplicate items", async () => {
@@ -164,7 +165,7 @@ describe("Conditional Update Tests", () => {
         name: "Duplicate User",
         status: "active",
       }),
-    ).rejects.toThrow("Condition check failed");
+    ).rejects.toThrow(ConditionalError);
   });
 
   test("should support $exists: false condition", async () => {
@@ -203,7 +204,7 @@ describe("Conditional Update Tests", () => {
           },
         },
       ),
-    ).rejects.toThrow("Condition check failed");
+    ).rejects.toThrow(ConditionalError);
   });
 
   test("should support conditions on createdAt field", async () => {
@@ -243,6 +244,6 @@ describe("Conditional Update Tests", () => {
           },
         },
       ),
-    ).rejects.toThrow("Condition check failed");
+    ).rejects.toThrow(ConditionalError);
   });
 });

@@ -8,6 +8,11 @@ const { pluginManager } = require("../plugin-manager");
 const { retryOperation } = require("../utils/retry-helper");
 const assert = require("assert");
 const { FilterExpressionBuilder } = require("../filter-expression");
+const {
+  ItemNotFoundError,
+  ConditionalError,
+  ValidationError,
+} = require("../exceptions");
 
 const MutationMethods = {
   /**
@@ -117,7 +122,7 @@ const MutationMethods = {
 
     const item = await this.find(primaryId, { batchDelay: 0 });
     if (!item) {
-      throw new Error("Item not found");
+      throw new ItemNotFoundError("Item not found", primaryId);
     }
 
     // Check if we need to clean up any unique constraints
@@ -232,6 +237,7 @@ const MutationMethods = {
         "write",
         false,
       );
+
       return deletedItem;
     } catch (error) {
       if (
@@ -239,7 +245,11 @@ const MutationMethods = {
         (error.name === "TransactionCanceledException" &&
           error.CancellationReasons?.[0]?.Code === "ConditionalCheckFailed")
       ) {
-        throw new Error("Delete condition not met");
+        throw new ConditionalError(
+          "Delete condition not met",
+          "delete",
+          options.condition,
+        );
       }
       throw error;
     }
@@ -291,12 +301,12 @@ const MutationMethods = {
             ...currentItem.getConsumedCapacity(),
           ];
         } else {
-          throw new Error("Item not found");
+          throw new ItemNotFoundError("Item not found", primaryId);
         }
       }
 
       if (!isNew && !currentItem) {
-        throw new Error("Item not found");
+        throw new ItemNotFoundError("Item not found", primaryId);
       }
 
       const transactItems = [];
@@ -338,7 +348,11 @@ const MutationMethods = {
             (jsUpdates[fieldName] === undefined ||
               jsUpdates[fieldName] === null)
           ) {
-            throw new Error(`Field is required: ${fieldName} `);
+            throw new ValidationError(
+              `Field is required: ${fieldName}`,
+              fieldName,
+              jsUpdates[fieldName],
+            );
           }
         }
       }
@@ -489,7 +503,7 @@ const MutationMethods = {
           logger.debug("savedItem.getPrimaryId()", savedItem.getPrimaryId());
 
           if (!savedItem.exists()) {
-            throw new Error("Failed to fetch saved item");
+            throw new ConditionalError("Failed to fetch saved item", "update");
           }
 
           // Set the consumed capacity from the transaction
@@ -528,15 +542,34 @@ const MutationMethods = {
             false,
           );
           savedItem._addConsumedCapacity(consumedCapacity, "read", false);
+
+          if (!savedItem.exists()) {
+            throw new ConditionalError("Failed to fetch saved item", "update");
+          }
+
           return savedItem;
         }
       } catch (error) {
         logger.error("Error in _saveItem", error);
         if (error.name === "ConditionalCheckFailedException") {
-          throw new Error("Condition check failed", error);
+          throw new ConditionalError("Condition check failed", "update", error);
         }
 
         if (error.name === "TransactionCanceledException") {
+          // Check if it's due to conditional check failure
+          if (
+            error.CancellationReasons?.some(
+              (reason) => reason.Code === "ConditionalCheckFailed",
+            )
+          ) {
+            throw new ConditionalError(
+              "Transaction cancelled due to condition check failure",
+              "update",
+              error,
+            );
+          }
+          // For other transaction cancellation reasons, try to validate unique constraints
+          // which will throw the appropriate ConditionalError if that's the issue
           await this._validateUniqueConstraints(
             jsUpdates,
             isNew ? null : primaryId,

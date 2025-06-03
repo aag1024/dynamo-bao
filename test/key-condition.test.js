@@ -13,6 +13,7 @@ const {
 const { cleanupTestData, verifyCleanup } = require("./utils/test-utils");
 const { ulid } = require("ulid");
 const { defaultLogger: logger } = require("../src/utils/logger");
+const { QueryError } = require("../src/exceptions");
 
 let testId;
 
@@ -159,7 +160,7 @@ describe("Key Condition Tests", () => {
       TestUser.queryByIndex("byStatus", "active", {
         category: { $invalid: "value" },
       }),
-    ).rejects.toThrow(/Unsupported sort key operator/);
+    ).rejects.toThrow(QueryError);
   });
 
   test("should combine key condition with filter expression", async () => {
@@ -179,6 +180,30 @@ describe("Key Condition Tests", () => {
       TestUser.queryByIndex("byStatus", "active", {
         category: { $between: ["basic"] }, // Missing second value
       }),
-    ).rejects.toThrow("$between requires an array with exactly 2 elements");
+    ).rejects.toThrow(QueryError);
+  });
+
+  test("should reject invalid operator in query", async () => {
+    await expect(
+      TestUser.queryByIndex("byStatus", "active", {
+        category: { $invalidOperator: "value" },
+      }),
+    ).rejects.toThrow(QueryError);
+  });
+
+  test("should reject invalid regex in query", async () => {
+    await expect(
+      TestUser.queryByIndex("byStatus", "active", {
+        category: { $regex: /test/ },
+      }),
+    ).rejects.toThrow(QueryError);
+  });
+
+  test("should reject invalid $between with wrong number of elements", async () => {
+    await expect(
+      TestUser.queryByIndex("byStatus", "active", {
+        category: { $between: [20] }, // Should have 2 elements
+      }),
+    ).rejects.toThrow(QueryError);
   });
 });

@@ -121,7 +121,7 @@ const MutationMethods = {
     );
 
     const item = await this.find(primaryId, { batchDelay: 0 });
-    if (!item) {
+    if (!item.exists()) {
       throw new ItemNotFoundError("Item not found", primaryId);
     }
 

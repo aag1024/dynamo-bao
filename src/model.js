@@ -600,7 +600,7 @@ class BaoModel {
 
     const item = await this.find(result.Item.relatedId, { loaderContext });
 
-    if (item) {
+    if (item.exists()) {
       item._addConsumedCapacity(result.ConsumedCapacity, "read");
     }
 

@@ -2,7 +2,7 @@ const {
   TransactWriteCommand,
   UpdateCommand,
   DeleteCommand,
-} = require("@aws-sdk/lib-dynamodb");
+} = require("../dynamodb-client");
 const { defaultLogger: logger } = require("../utils/logger");
 const { pluginManager } = require("../plugin-manager");
 const { retryOperation } = require("../utils/retry-helper");

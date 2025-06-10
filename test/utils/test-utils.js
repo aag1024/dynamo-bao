@@ -1,6 +1,6 @@
 const testConfig = require("../config");
 const { ModelManager } = require("../../src/model-manager");
-const { QueryCommand, DeleteCommand } = require("@aws-sdk/lib-dynamodb");
+const { QueryCommand, DeleteCommand } = require("../../src/dynamodb-client");
 const { defaultLogger: logger } = require("../../src/utils/logger");
 
 async function cleanupTestData(testId) {

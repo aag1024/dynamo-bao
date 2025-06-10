@@ -1,5 +1,4 @@
-const { DynamoDBClient } = require("@aws-sdk/client-dynamodb");
-const { DynamoDBDocument } = require("@aws-sdk/lib-dynamodb");
+const { DynamoDBClient, DynamoDBDocumentClient } = require("./dynamodb-client");
 const { defaultLogger: logger } = require("./utils/logger");
 const { pluginManager } = require("./plugin-manager");
 const { ConfigurationError } = require("./exceptions");
@@ -29,7 +28,7 @@ class ModelManager {
     const client = new DynamoDBClient({
       region: config.aws.region,
     });
-    this._docClient = DynamoDBDocument.from(client);
+    this._docClient = DynamoDBDocumentClient.from(client);
     this._tableName = config.db.tableName;
     this._testId = config.testId || this._testId;
 

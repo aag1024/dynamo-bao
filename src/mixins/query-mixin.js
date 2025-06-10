@@ -5,7 +5,7 @@ const { ObjectNotFound } = require("../object-not-found");
 const { PrimaryKeyConfig } = require("../model-config");
 const assert = require("assert");
 const { retryOperation } = require("../utils/retry-helper");
-const { QueryCommand } = require("@aws-sdk/lib-dynamodb");
+const { QueryCommand } = require("../dynamodb-client");
 const { QueryError } = require("../exceptions");
 
 const QueryMethods = {

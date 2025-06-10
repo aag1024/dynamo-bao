@@ -585,14 +585,17 @@ class BaoModel {
       value,
     );
 
-    const result = await this.documentClient.get({
-      TableName: this.table,
-      Key: {
-        _pk: key,
-        _sk: UNIQUE_CONSTRAINT_KEY,
-      },
-      ReturnConsumedCapacity: "TOTAL",
-    });
+    const { GetCommand } = require("./dynamodb-client");
+    const result = await this.documentClient.send(
+      new GetCommand({
+        TableName: this.table,
+        Key: {
+          _pk: key,
+          _sk: UNIQUE_CONSTRAINT_KEY,
+        },
+        ReturnConsumedCapacity: "TOTAL",
+      })
+    );
 
     if (!result.Item) {
       return new ObjectNotFound(result.ConsumedCapacity);

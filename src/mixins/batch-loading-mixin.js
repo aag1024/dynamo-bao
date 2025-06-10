@@ -1,7 +1,7 @@
 const { defaultLogger: logger } = require("../utils/logger");
 const { ObjectNotFound } = require("../object-not-found");
 const { pluginManager } = require("../plugin-manager");
-const { BatchGetCommand, GetCommand } = require("@aws-sdk/lib-dynamodb");
+const { BatchGetCommand, GetCommand } = require("../dynamodb-client");
 
 // Move these constants from model.js to here
 const BATCH_REQUESTS = new Map(); // testId -> { modelName-delay -> batch }

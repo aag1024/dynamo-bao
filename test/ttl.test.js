@@ -4,7 +4,7 @@ const { BaoModel, PrimaryKeyConfig } = require("../src/model");
 const { StringField, TtlField } = require("../src/fields");
 const { cleanupTestData, verifyCleanup } = require("./utils/test-utils");
 const { ulid } = require("ulid");
-const { GetCommand } = require("@aws-sdk/lib-dynamodb");
+const { GetCommand } = require("../src/dynamodb-client");
 const { ValidationError } = require("../src/exceptions");
 
 let testId;

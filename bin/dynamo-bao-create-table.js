@@ -4,7 +4,7 @@ const {
   DynamoDBClient,
   CreateTableCommand,
   ListTablesCommand,
-} = require("@aws-sdk/client-dynamodb");
+} = require("../src/dynamodb-client");
 const readline = require("readline");
 const fs = require("fs");
 const path = require("path");
@@ -51,7 +51,7 @@ const prompt = (query) => {
 };
 
 async function writeConfigFile(tableName) {
-  const region = await client.config.region();
+  const region = client.region || process.env.AWS_REGION || 'us-east-1';
   const configContent = `const path = require("path");
 
 const config = {

@@ -1,9 +1,9 @@
 const dynamoBao = require("../src");
 const testConfig = require("./config");
-const { DescribeTableCommand } = require("@aws-sdk/client-dynamodb");
+const { DescribeTableCommand } = require("../src/dynamodb-client");
 const { cleanupTestData, verifyCleanup } = require("./utils/test-utils");
 const { ulid } = require("ulid");
-const { QueryCommand } = require("@aws-sdk/lib-dynamodb");
+const { QueryCommand } = require("../src/dynamodb-client");
 const { defaultLogger: logger } = require("../src/utils/logger");
 const { ConditionalError, QueryError } = require("../src/exceptions");
 

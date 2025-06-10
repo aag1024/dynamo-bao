@@ -1,4 +1,4 @@
-const { GetCommand } = require("@aws-sdk/lib-dynamodb");
+const { GetCommand } = require("../dynamodb-client");
 const { defaultLogger: logger } = require("../utils/logger");
 const { UNIQUE_CONSTRAINT_KEY } = require("../constants");
 const { ConditionalError } = require("../exceptions");

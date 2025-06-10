@@ -31,12 +31,12 @@
   },
   "dependencies": {
     "aws4fetch": "^1.0.20",
-    "chokidar": "^4.0.3",
     "dotenv": "^16.4.7",
     "js-yaml": "^4.1.0",
     "ulid": "^2.3.0"
   },
   "devDependencies": {
+    "chokidar": "^4.0.3",
     "clean-jsdoc-theme": "^4.3.0",
     "cross-env": "^7.0.3",
     "docdash": "^2.0.2",

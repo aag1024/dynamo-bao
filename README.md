@@ -20,7 +20,13 @@ DynamoBao is the tool I wish I had when I started.
 - Efficiently load data: load related objects in parallel, cache data using loading contexts
 - Minimize race conditions: save diffs, version checks on save, atomic counters
 - Enforce unique constraints and use them for lookups
+- Built-in multi-tenancy support with complete data isolation and concurrency safety
 - Return total read/write consumed capacity (even when multiple operations were performed)
+
+## Requirements
+
+- **Node.js 12.17.0+** (for AsyncLocalStorage support in multi-tenant features)
+- AWS credentials configured for DynamoDB access
 
 ## Example 1: Simple model
 

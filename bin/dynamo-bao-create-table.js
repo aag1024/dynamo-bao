@@ -73,6 +73,9 @@ const config = {
     modelsDefinitionPath: path.resolve(__dirname, "./models.yaml"),
     fieldsDir: path.resolve(__dirname, "./fields"), // optional for custom fields
   },
+  tenancy: {
+    enabled: false, // Set to true to enable multi-tenancy
+  },
 };
 
 module.exports = config;

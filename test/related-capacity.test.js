@@ -1,6 +1,7 @@
 const dynamoBao = require("../src");
+const { TenantContext } = dynamoBao;
 const testConfig = require("./config");
-const { cleanupTestData, verifyCleanup } = require("./utils/test-utils");
+const { cleanupTestData, verifyCleanup, initTestModelsWithTenant } = require("./utils/test-utils");
 const { ulid } = require("ulid");
 const { verifyCapacityUsage } = require("./dynamoTestUtils");
 
@@ -10,10 +11,7 @@ describe("Capacity Tracking", () => {
   beforeEach(async () => {
     testId = ulid();
 
-    const manager = dynamoBao.initModels({
-      ...testConfig,
-      testId: testId,
-    });
+    const manager = initTestModelsWithTenant(testConfig, testId);
 
     await cleanupTestData(testId);
     await verifyCleanup(testId);
@@ -50,6 +48,7 @@ describe("Capacity Tracking", () => {
   });
 
   afterEach(async () => {
+    TenantContext.clearTenant();
     if (testId) {
       await cleanupTestData(testId);
       await verifyCleanup(testId);

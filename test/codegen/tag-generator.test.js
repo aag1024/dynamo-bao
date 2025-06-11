@@ -1,6 +1,7 @@
 const dynamoBao = require("dynamo-bao");
+const { TenantContext } = dynamoBao;
 const testConfig = require("../config");
-const { cleanupTestData, verifyCleanup } = require("../utils/test-utils");
+const { cleanupTestData, verifyCleanup, initTestModelsWithTenant } = require("../utils/test-utils");
 const { ulid } = require("ulid");
 const { Tag } = require("./generated/tag");
 const { TaggedPost } = require("./generated/tagged-post");
@@ -13,10 +14,7 @@ describe("Generated Tag Models", () => {
   beforeEach(async () => {
     testId = ulid();
 
-    const manager = dynamoBao.initModels({
-      ...testConfig,
-      testId: testId,
-    });
+    const manager = initTestModelsWithTenant(testConfig, testId);
 
     // Register all models
     manager.registerModel(Tag);
@@ -31,6 +29,7 @@ describe("Generated Tag Models", () => {
   });
 
   afterEach(async () => {
+    TenantContext.clearTenant();
     if (testId) {
       await cleanupTestData(testId);
       await verifyCleanup(testId);

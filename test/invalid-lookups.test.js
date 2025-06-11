@@ -1,4 +1,5 @@
 const dynamoBao = require("../src");
+const { TenantContext } = dynamoBao;
 const testConfig = require("./config");
 const {
   BaoModel,
@@ -10,7 +11,7 @@ const {
 const { GSI_INDEX_ID1, UNIQUE_CONSTRAINT_ID1 } = require("../src/constants");
 
 const { StringField } = require("../src/fields");
-const { cleanupTestData, verifyCleanup } = require("./utils/test-utils");
+const { cleanupTestData, verifyCleanup, initTestModelsWithTenant } = require("./utils/test-utils");
 const { ulid } = require("ulid");
 
 let testId;
@@ -39,10 +40,7 @@ describe("Invalid Lookup Tests", () => {
   beforeEach(async () => {
     testId = ulid();
 
-    const manager = dynamoBao.initModels({
-      ...testConfig,
-      testId: testId,
-    });
+    const manager = initTestModelsWithTenant(testConfig, testId);
 
     manager.registerModel(TestModel);
 
@@ -53,6 +51,7 @@ describe("Invalid Lookup Tests", () => {
   });
 
   afterEach(async () => {
+    TenantContext.clearTenant();
     if (testId) {
       await cleanupTestData(testId);
       await verifyCleanup(testId);

@@ -54,6 +54,9 @@ function findConfig() {
         ? path.resolve(process.cwd(), process.env.MODELS_DIR)
         : null,
     },
+    tenancy: {
+      enabled: process.env.DYNAMO_BAO_TENANCY_ENABLED === "true" || false,
+    },
   };
 }
 
@@ -71,6 +74,10 @@ function normalizeConfig(rawConfig, configDir) {
       fieldsDir: rawConfig.paths.fieldsDir
         ? path.resolve(configDir, rawConfig.paths.fieldsDir)
         : null,
+    },
+    tenancy: {
+      enabled: false,
+      ...rawConfig.tenancy,
     },
   };
 }

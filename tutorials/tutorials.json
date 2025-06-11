@@ -19,5 +19,8 @@
   },
   "07-command-line-tools": {
     "title": "Command Line Tools"
+  },
+  "08-multi-tenancy": {
+    "title": "Multi-Tenancy"
   }
 }

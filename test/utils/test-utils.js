@@ -1,15 +1,16 @@
 const testConfig = require("../config");
 const { ModelManager } = require("../../src/model-manager");
+const { TenantContext } = require("../../src/tenant-context");
 const { QueryCommand, DeleteCommand } = require("../../src/dynamodb-client");
 const { defaultLogger: logger } = require("../../src/utils/logger");
 
-async function cleanupTestData(testId) {
-  if (!testId) {
-    throw new Error("testId is required for cleanup");
+async function cleanupTestData(tenantIdOrTestId) {
+  if (!tenantIdOrTestId) {
+    throw new Error("tenantId/testId is required for cleanup");
   }
 
   try {
-    const docClient = ModelManager.getInstance(testId).documentClient;
+    const docClient = ModelManager.getInstance(tenantIdOrTestId).documentClient;
 
     // Query items by GSI
     const params = {
@@ -20,7 +21,7 @@ async function cleanupTestData(testId) {
         "#testId": "_gsi_test_id",
       },
       ExpressionAttributeValues: {
-        ":testId": testId,
+        ":testId": tenantIdOrTestId,
       },
     };
 
@@ -49,15 +50,15 @@ async function cleanupTestData(testId) {
   }
 }
 
-async function verifyCleanup(testId) {
-  if (!testId) {
-    logger.log("No testId provided, skipping verification");
+async function verifyCleanup(tenantIdOrTestId) {
+  if (!tenantIdOrTestId) {
+    logger.log("No tenantId/testId provided, skipping verification");
     return true;
   }
 
-  const manager = ModelManager.getInstance(testId);
+  const manager = ModelManager.getInstance(tenantIdOrTestId);
   if (!manager) {
-    console.error("Failed to get ModelManager instance for testId:", testId);
+    console.error("Failed to get ModelManager instance for tenantId/testId:", tenantIdOrTestId);
     return false;
   }
 
@@ -75,7 +76,7 @@ async function verifyCleanup(testId) {
       "#testId": "_gsi_test_id",
     },
     ExpressionAttributeValues: {
-      ":testId": testId,
+      ":testId": tenantIdOrTestId,
     },
   };
 
@@ -83,7 +84,7 @@ async function verifyCleanup(testId) {
 
   if (result.Items && result.Items.length > 0) {
     console.warn("Warning: Found items after cleanup, retrying cleanup:", {
-      testId,
+      tenantId: tenantIdOrTestId,
       itemCount: result.Items.length,
       items: result.Items,
     });
@@ -92,14 +93,14 @@ async function verifyCleanup(testId) {
     await new Promise((resolve) => setTimeout(resolve, 100));
 
     // Attempt cleanup again
-    await cleanupTestData(testId);
+    await cleanupTestData(tenantIdOrTestId);
 
     // Re-check for items
     result = await docClient.send(new QueryCommand(params));
 
     if (result.Items && result.Items.length > 0) {
       throw new Error(
-        `Error: Items still found after second cleanup attempt for testId: ${testId}`,
+        `Error: Items still found after second cleanup attempt for tenantId/testId: ${tenantIdOrTestId}`,
       );
     }
   }
@@ -107,7 +108,23 @@ async function verifyCleanup(testId) {
   return true;
 }
 
+/**
+ * Initializes models with tenant context for testing
+ * @param {Object} config - Configuration object
+ * @param {string} tenantId - Tenant ID to use
+ * @returns {ModelManager} The initialized model manager
+ */
+function initTestModelsWithTenant(config, tenantId) {
+  TenantContext.setCurrentTenant(tenantId);
+  const dynamoBao = require("../../src/index");
+  return dynamoBao.initModels({
+    ...config,
+    tenancy: { enabled: true },
+  });
+}
+
 module.exports = {
   cleanupTestData,
   verifyCleanup,
+  initTestModelsWithTenant,
 };

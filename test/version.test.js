@@ -1,9 +1,10 @@
 const dynamoBao = require("../src");
+const { TenantContext } = dynamoBao;
 const testConfig = require("./config");
 const { ModelManager } = require("../src/model-manager");
 const { BaoModel, PrimaryKeyConfig } = require("../src/model");
 const { StringField, VersionField } = require("../src/fields");
-const { cleanupTestData, verifyCleanup } = require("./utils/test-utils");
+const { cleanupTestData, verifyCleanup, initTestModelsWithTenant } = require("./utils/test-utils");
 const { ulid } = require("ulid");
 const { defaultLogger: logger } = require("../src/utils/logger");
 const { ConditionalError } = require("../src/exceptions");
@@ -50,6 +51,7 @@ describe("Version Field Tests", () => {
   });
 
   afterEach(async () => {
+    TenantContext.clearTenant();
     if (testId) {
       await cleanupTestData(testId);
       await verifyCleanup(testId);

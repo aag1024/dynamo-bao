@@ -1,4 +1,5 @@
 const dynamoBao = require("../src");
+const { TenantContext } = dynamoBao;
 const testConfig = require("./config");
 const { BaoModel, PrimaryKeyConfig, IndexConfig } = require("../src/model");
 
@@ -10,7 +11,7 @@ const {
   BooleanField,
   UlidField,
 } = require("../src/fields");
-const { cleanupTestData, verifyCleanup } = require("./utils/test-utils");
+const { cleanupTestData, verifyCleanup, initTestModelsWithTenant } = require("./utils/test-utils");
 const { ulid } = require("ulid");
 const { defaultLogger: logger } = require("../src/utils/logger");
 const { QueryError } = require("../src/exceptions");
@@ -43,10 +44,7 @@ describe("Key Condition Tests", () => {
   beforeEach(async () => {
     testId = ulid();
 
-    const manager = dynamoBao.initModels({
-      ...testConfig,
-      testId: testId,
-    });
+    const manager = initTestModelsWithTenant(testConfig, testId);
 
     manager.registerModel(TestUser);
 
@@ -79,6 +77,7 @@ describe("Key Condition Tests", () => {
   });
 
   afterEach(async () => {
+    TenantContext.clearTenant();
     if (testId) {
       await cleanupTestData(testId);
       await verifyCleanup(testId);

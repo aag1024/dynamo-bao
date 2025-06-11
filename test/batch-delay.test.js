@@ -1,8 +1,9 @@
 const dynamoBao = require("../src");
+const { TenantContext } = dynamoBao;
 const testConfig = require("./config");
 const { BaoModel, PrimaryKeyConfig } = require("../src/model");
 const { StringField } = require("../src/fields");
-const { cleanupTestData, verifyCleanup } = require("./utils/test-utils");
+const { cleanupTestData, verifyCleanup, initTestModelsWithTenant } = require("./utils/test-utils");
 const { ulid } = require("ulid");
 
 let testId;
@@ -27,10 +28,7 @@ describe("Batch Delay Tests", () => {
     testId = ulid();
     loaderContext = {};
 
-    const manager = dynamoBao.initModels({
-      ...testConfig,
-      testId: testId,
-    });
+    const manager = initTestModelsWithTenant(testConfig, testId);
 
     manager.registerModel(TestBatchModel);
 
@@ -60,6 +58,7 @@ describe("Batch Delay Tests", () => {
   });
 
   afterEach(async () => {
+    TenantContext.clearTenant();
     // Clear batch requests for this test
     const testBatchRequests = TestBatchModel._getBatchRequests();
     if (testBatchRequests) {

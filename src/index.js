@@ -76,12 +76,24 @@ function initModels(userConfig = {}) {
       ...config.paths,
       ...(userConfig.paths || {}),
     },
+    tenancy: {
+      ...config.tenancy,
+      ...(userConfig.tenancy || {}),
+    },
   };
+
+  // Validate tenant context if tenancy enabled
+  if (finalConfig.tenancy?.enabled) {
+    const { TenantContext } = require('./tenant-context');
+    TenantContext.validateTenantRequired(finalConfig);
+  }
 
   const modelsDir = finalConfig.paths.modelsDir;
 
-  // Get/create manager instance with testId
-  const manager = ModelManager.getInstance(finalConfig.testId);
+  // Get/create manager instance with tenantId
+  const { TenantContext } = require('./tenant-context');
+  const tenantId = TenantContext.getCurrentTenant() || finalConfig.testId;
+  const manager = ModelManager.getInstance(tenantId);
 
   // First pass to register models
   const registeredModels = _registerModels(manager, modelsDir);
@@ -91,6 +103,7 @@ function initModels(userConfig = {}) {
 
   logger.log("Models initialized:", {
     testId: finalConfig.testId,
+    tenantId: manager.getTenantId(),
     managerTestId: manager.getTestId(),
     registeredModels: Array.from(manager._models.keys()),
   });
@@ -100,6 +113,8 @@ function initModels(userConfig = {}) {
   return manager;
 }
 
+const { TenantContext } = require('./tenant-context');
+
 const firstExport = {
   // Initialize function
   initModels,
@@ -108,6 +123,9 @@ const firstExport = {
   BaoModel,
   ModelManager,
   fields,
+
+  // Tenant management
+  TenantContext,
 
   // Configurations
   PrimaryKeyConfig,

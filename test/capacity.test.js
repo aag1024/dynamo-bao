@@ -1,6 +1,7 @@
 const dynamoBao = require("../src");
+const { TenantContext } = dynamoBao;
 const testConfig = require("./config");
-const { cleanupTestData, verifyCleanup } = require("./utils/test-utils");
+const { cleanupTestData, verifyCleanup, initTestModelsWithTenant } = require("./utils/test-utils");
 const { verifyCapacityUsage } = require("./dynamoTestUtils");
 const { ulid } = require("ulid");
 
@@ -15,10 +16,7 @@ async function sumConsumedCapacity() {
 beforeEach(async () => {
   testId = ulid();
 
-  const manager = dynamoBao.initModels({
-    ...testConfig,
-    testId: testId,
-  });
+  const manager = initTestModelsWithTenant(testConfig, testId);
 
   if (testId) {
     await cleanupTestData(testId);
@@ -30,6 +28,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+    TenantContext.clearTenant();
   if (testId) {
     await cleanupTestData(testId);
     await verifyCleanup(testId);

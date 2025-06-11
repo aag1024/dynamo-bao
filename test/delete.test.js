@@ -1,4 +1,5 @@
 const dynamoBao = require("../src");
+const { TenantContext } = dynamoBao;
 const testConfig = require("./config");
 const {
   BaoModel,
@@ -7,7 +8,7 @@ const {
 } = require("../src/model");
 const { StringField, IntegerField } = require("../src/fields");
 const { ConditionalError } = require("../src/exceptions");
-const { cleanupTestData, verifyCleanup } = require("./utils/test-utils");
+const { cleanupTestData, verifyCleanup, initTestModelsWithTenant } = require("./utils/test-utils");
 const { ulid } = require("ulid");
 const { UNIQUE_CONSTRAINT_ID1 } = require("../src/constants");
 
@@ -41,10 +42,7 @@ class UserWithUnique extends BaoModel {
 describe("Delete Operation Tests", () => {
   beforeEach(async () => {
     testId = ulid();
-    const manager = dynamoBao.initModels({
-      ...testConfig,
-      testId: testId,
-    });
+    const manager = initTestModelsWithTenant(testConfig, testId);
     manager.registerModel(SimpleUser);
     manager.registerModel(UserWithUnique);
 
@@ -55,6 +53,7 @@ describe("Delete Operation Tests", () => {
   });
 
   afterEach(async () => {
+    TenantContext.clearTenant();
     if (testId) {
       await cleanupTestData(testId);
       await verifyCleanup(testId);

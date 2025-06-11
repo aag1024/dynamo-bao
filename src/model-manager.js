@@ -10,31 +10,40 @@ class ModelManager {
     this._initialized = false;
     this._docClient = null;
     this._tableName = null;
-    this._testId = null;
+    this._tenantId = null; // Changed from _testId
+    this._tenancyEnabled = false;
     this._models = new Map();
   }
 
-  static getInstance(testId = null) {
-    const key = testId || "default";
+  static getInstance(tenantId = null) {
+    const key = tenantId || "default";
     if (!ModelManager._instances.has(key)) {
       const instance = new ModelManager();
-      instance._testId = testId;
+      instance._tenantId = tenantId;
       ModelManager._instances.set(key, instance);
     }
     return ModelManager._instances.get(key);
   }
 
   init(config = {}) {
+    // Validate tenant requirement
+    const { TenantContext } = require('./tenant-context');
+    TenantContext.validateTenantRequired(config);
+
     const client = new DynamoDBClient({
       region: config.aws.region,
     });
     this._docClient = DynamoDBDocumentClient.from(client);
     this._tableName = config.db.tableName;
-    this._testId = config.testId || this._testId;
+    this._tenancyEnabled = config.tenancy?.enabled || false;
+    
+    // Support both tenantId and testId for backward compatibility
+    this._tenantId = config.tenantId || config.testId || this._tenantId;
 
     // Initialize all registered models
     for (const [_, ModelClass] of this._models) {
-      ModelClass._testId = this._testId;
+      ModelClass._tenantId = this._tenantId;
+      ModelClass._testId = this._tenantId; // Backward compatibility
       ModelClass.documentClient = this._docClient;
       ModelClass.table = this._tableName;
       ModelClass._validateConfiguration();
@@ -74,7 +83,8 @@ class ModelManager {
     };
 
     // Initialize as before
-    ModelClass._testId = this._testId;
+    ModelClass._tenantId = this._tenantId;
+    ModelClass._testId = this._tenantId; // Backward compatibility
     if (this._initialized) {
       ModelClass.documentClient = this._docClient;
       ModelClass.table = this._tableName;
@@ -93,8 +103,17 @@ class ModelManager {
     return this._tableName;
   }
 
+  getTenantId() {
+    return this._tenantId;
+  }
+
+  // Backward compatibility
   getTestId() {
-    return this._testId;
+    return this._tenantId;
+  }
+
+  isTenancyEnabled() {
+    return this._tenancyEnabled;
   }
 
   // Helper method for debugging

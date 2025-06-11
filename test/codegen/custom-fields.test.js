@@ -1,6 +1,7 @@
 const dynamoBao = require("../../src");
+const { TenantContext } = dynamoBao;
 const testConfig = require("../config");
-const { cleanupTestData, verifyCleanup } = require("../utils/test-utils");
+const { cleanupTestData, verifyCleanup, initTestModelsWithTenant } = require("../utils/test-utils");
 const { ulid } = require("ulid");
 const { UserWithEmail } = require("./generated/user-with-email");
 
@@ -10,10 +11,7 @@ describe("Custom Fields", () => {
   beforeEach(async () => {
     testId = ulid();
 
-    const manager = dynamoBao.initModels({
-      ...testConfig,
-      testId: testId,
-    });
+    const manager = initTestModelsWithTenant(testConfig, testId);
 
     // Register the model
     manager.registerModel(UserWithEmail);
@@ -25,6 +23,7 @@ describe("Custom Fields", () => {
   });
 
   afterEach(async () => {
+    TenantContext.clearTenant();
     if (testId) {
       await cleanupTestData(testId);
       await verifyCleanup(testId);

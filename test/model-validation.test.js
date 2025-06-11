@@ -1,10 +1,11 @@
 const dynamoBao = require("../src");
+const { TenantContext } = dynamoBao;
 const testConfig = require("./config");
 const { BaoModel, PrimaryKeyConfig, IndexConfig } = require("../src/model");
 const { StringField } = require("../src/fields");
 const { ConfigurationError, ValidationError } = require("../src/exceptions");
 const { ulid } = require("ulid");
-const { cleanupTestData, verifyCleanup } = require("./utils/test-utils");
+const { cleanupTestData, verifyCleanup, initTestModelsWithTenant } = require("./utils/test-utils");
 let testId, manager;
 
 describe("Model Validation Tests", () => {
@@ -23,6 +24,7 @@ describe("Model Validation Tests", () => {
   });
 
   afterEach(async () => {
+    TenantContext.clearTenant();
     if (testId) {
       await cleanupTestData(testId);
       await verifyCleanup(testId);

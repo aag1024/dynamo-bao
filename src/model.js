@@ -39,7 +39,8 @@ const {
  * by the code generator.
  */
 class BaoModel {
-  static _testId = null;
+  static _tenantId = null;
+  static _testId = null; // Backward compatibility
   static table = null;
   static documentClient = null;
 
@@ -67,17 +68,23 @@ class BaoModel {
    * prevent data from being shared between tests/tests to run in parallel.
    * However, it should not be used outside of this context. For examples,
    * showing how to use this, see the tests.
+   * 
+   * @deprecated Use TenantContext.setCurrentTenant() with the new multi-tenancy 
+   * system for both testing and production tenant isolation. See tutorial 08-multi-tenancy.
    * @param {string} testId - The ID of the test.
    */
   static setTestId(testId) {
-    this._testId = testId;
+    this._tenantId = testId;
+    this._testId = testId; // Backward compatibility
     const manager = ModelManager.getInstance(testId);
     this.documentClient = manager.documentClient;
     this.table = manager.tableName;
   }
 
   static get manager() {
-    return ModelManager.getInstance(this._testId);
+    const { TenantContext } = require('./tenant-context');
+    const tenantId = TenantContext.getCurrentTenant();
+    return ModelManager.getInstance(tenantId || this._tenantId);
   }
 
   static _getField(fieldName) {
@@ -137,21 +144,21 @@ class BaoModel {
   }
 
   static _formatGsiKey(modelPrefix, indexId, value) {
-    const testId = this.manager.getTestId();
+    const tenantId = this.manager.getTenantId();
     const baseKey = `${modelPrefix}#${indexId}#${value}`;
-    return testId ? `[${testId}]#${baseKey}` : baseKey;
+    return tenantId ? `[${tenantId}]#${baseKey}` : baseKey;
   }
 
   static _formatPrimaryKey(modelPrefix, value) {
-    const testId = this.manager.getTestId();
+    const tenantId = this.manager.getTenantId();
     const baseKey = `${modelPrefix}#${value}`;
-    return testId ? `[${testId}]#${baseKey}` : baseKey;
+    return tenantId ? `[${tenantId}]#${baseKey}` : baseKey;
   }
 
   static _formatUniqueConstraintKey(constraintId, modelPrefix, field, value) {
-    const testId = this.manager.getTestId();
+    const tenantId = this.manager.getTenantId();
     const baseKey = `${UNIQUE_CONSTRAINT_KEY}#${constraintId}#${modelPrefix}#${field}:${value}`;
-    return testId ? `[${testId}]#${baseKey}` : baseKey;
+    return tenantId ? `[${tenantId}]#${baseKey}` : baseKey;
   }
 
   static _getDyKeyForPkSk(pkSk) {

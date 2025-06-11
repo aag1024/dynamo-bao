@@ -1,7 +1,8 @@
 const dynamoBao = require("../src");
+const { TenantContext } = dynamoBao;
 const testConfig = require("./config");
 const { DescribeTableCommand } = require("../src/dynamodb-client");
-const { cleanupTestData, verifyCleanup } = require("./utils/test-utils");
+const { cleanupTestData, verifyCleanup, initTestModelsWithTenant } = require("./utils/test-utils");
 const { ulid } = require("ulid");
 const { QueryCommand } = require("../src/dynamodb-client");
 const { defaultLogger: logger } = require("../src/utils/logger");
@@ -31,10 +32,7 @@ beforeAll(async () => {
 beforeEach(async () => {
   testId = ulid();
 
-  const manager = dynamoBao.initModels({
-    ...testConfig,
-    testId: testId,
-  });
+  const manager = initTestModelsWithTenant(testConfig, testId);
 
   await cleanupTestData(testId);
   await verifyCleanup(testId);
@@ -43,6 +41,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+    TenantContext.clearTenant();
   if (testId) {
     await cleanupTestData(testId);
     await verifyCleanup(testId);
@@ -220,10 +219,7 @@ describe("Date Range Queries", () => {
 });
 
 test("should properly set testId on models", async () => {
-  const manager = dynamoBao.initModels({
-    ...testConfig,
-    testId: testId,
-  });
+  const manager = initTestModelsWithTenant(testConfig, testId);
 
   const user = await User.create({
     name: "Test User",

@@ -1,12 +1,12 @@
 const dynamoBao = require("../src");
 const { TenantContext } = dynamoBao;
 const testConfig = require("./config");
-const { cleanupTestData, verifyCleanup, initTestModelsWithTenant } = require("./utils/test-utils");
+const { cleanupTestDataByIteration, verifyCleanup, initTestModelsWithTenant } = require("./utils/test-utils");
 const { verifyCapacityUsage } = require("./dynamoTestUtils");
 const { ulid } = require("ulid");
 
 let totalConsumedCapacity = 0,
-  testId;
+  testId, User;
 
 // Add helper function to track capacity
 async function sumConsumedCapacity() {
@@ -18,20 +18,21 @@ beforeEach(async () => {
 
   const manager = initTestModelsWithTenant(testConfig, testId);
 
+  User = manager.getModel("User");
+
   if (testId) {
-    await cleanupTestData(testId);
-    await verifyCleanup(testId);
+    await cleanupTestDataByIteration(testId, [User]);
+    await verifyCleanup(testId, [User]);
   }
 
-  User = manager.getModel("User");
   totalConsumedCapacity = 0; // Reset capacity counter
 });
 
 afterEach(async () => {
     TenantContext.clearTenant();
   if (testId) {
-    await cleanupTestData(testId);
-    await verifyCleanup(testId);
+    await cleanupTestDataByIteration(testId, [User]);
+    await verifyCleanup(testId, [User]);
   }
 });
 
@@ -43,8 +44,8 @@ describe("Capacity Usage Tests", () => {
           name: "Test User 1",
           email: "test1@example.com",
         }),
-      0, // Expected RCU
-      10.0, // Expected WCU - for create with unique constraints
+      0.5, // Expected RCU
+      7.0, // Expected WCU - for create with unique constraints
     );
     expect(result).toBeDefined();
     expect(result.email).toBe("test1@example.com");
@@ -88,7 +89,7 @@ describe("Capacity Usage Tests", () => {
           status: user.status,
         }),
       1.0, // Expected RCU - reads are eventually consistent
-      11.0, // Expected WCU - for update with unique constraint changes (assuming running in test)
+      8.0, // Expected WCU - for update with unique constraint changes (assuming running in test)
     );
     expect(result.email).toBe("new-email@example.com");
   });
@@ -104,7 +105,7 @@ describe("Capacity Usage Tests", () => {
     const result = await verifyCapacityUsage(
       async () => await User.delete(userId),
       0, // Expected RCU
-      10.0, // Expected WCU - for delete with unique constraints
+      7.0, // Expected WCU - for delete with unique constraints
     );
     expect(result.userId).toBe(userId);
   });

@@ -3,7 +3,7 @@ const { TenantContext } = dynamoBao;
 const testConfig = require("./config");
 const { BaoModel, PrimaryKeyConfig } = require("../src/model");
 const { StringField, BinaryField } = require("../src/fields");
-const { cleanupTestData, verifyCleanup, initTestModelsWithTenant } = require("./utils/test-utils");
+const { cleanupTestDataByIteration, verifyCleanup, initTestModelsWithTenant } = require("./utils/test-utils");
 const { ulid } = require("ulid");
 const { ValidationError } = require("../src/exceptions");
 
@@ -11,6 +11,8 @@ let testId;
 
 class TestBinary extends BaoModel {
   static modelPrefix = "tb";
+  static iterable = true;
+  static iterationBuckets = 1;
 
   static fields = {
     binaryId: StringField({ required: true }),
@@ -33,8 +35,8 @@ describe("Binary Field Tests", () => {
     manager.registerModel(TestBinary);
 
     if (testId) {
-      await cleanupTestData(testId);
-      await verifyCleanup(testId);
+      await cleanupTestDataByIteration(testId, [TestBinary]);
+      await verifyCleanup(testId, [TestBinary]);
     }
 
     // Create a test instance with sample binary data
@@ -49,8 +51,8 @@ describe("Binary Field Tests", () => {
   afterEach(async () => {
     TenantContext.clearTenant();
     if (testId) {
-      await cleanupTestData(testId);
-      await verifyCleanup(testId);
+      await cleanupTestDataByIteration(testId, [TestBinary]);
+      await verifyCleanup(testId, [TestBinary]);
     }
   });
 

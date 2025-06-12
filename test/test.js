@@ -218,7 +218,7 @@ describe("Date Range Queries", () => {
   });
 });
 
-test("should properly set testId on models", async () => {
+test("should properly set tenantId on models", async () => {
   const manager = initTestModelsWithTenant(testConfig, testId);
 
   const user = await User.create({
@@ -228,23 +228,14 @@ test("should properly set testId on models", async () => {
     externalPlatform: "platform1",
   });
 
-  const docClient = manager.documentClient;
-  const result = await docClient.send(
-    new QueryCommand({
-      TableName: testConfig.db.tableName,
-      IndexName: "gsi_test",
-      KeyConditionExpression: "#testId = :testId",
-      ExpressionAttributeNames: {
-        "#testId": "_gsi_test_id",
-      },
-      ExpressionAttributeValues: {
-        ":testId": testId,
-      },
-    }),
-  );
-
-  expect(result.Items.length).toBe(3);
-  result.Items.forEach((item) => {
-    expect(item._gsi_test_id).toBe(testId);
-  });
+  // Verify that the tenant context is working
+  expect(manager.getTenantId()).toBe(testId);
+  
+  // Verify that the user was created with the proper tenant isolation
+  expect(user._dyData._pk).toContain(`[${testId}]`);
+  
+  // Verify that we can find the user using the model (which uses tenant context)
+  const foundUser = await User.find(user.userId);
+  expect(foundUser.exists()).toBe(true);
+  expect(foundUser.email).toBe("test@example.com");
 });

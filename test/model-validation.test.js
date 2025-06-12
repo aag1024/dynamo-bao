@@ -5,7 +5,7 @@ const { BaoModel, PrimaryKeyConfig, IndexConfig } = require("../src/model");
 const { StringField } = require("../src/fields");
 const { ConfigurationError, ValidationError } = require("../src/exceptions");
 const { ulid } = require("ulid");
-const { cleanupTestData, verifyCleanup, initTestModelsWithTenant } = require("./utils/test-utils");
+const { cleanupTestDataByIteration, verifyCleanup, initTestModelsWithTenant } = require("./utils/test-utils");
 let testId, manager;
 
 describe("Model Validation Tests", () => {
@@ -16,24 +16,18 @@ describe("Model Validation Tests", () => {
       ...testConfig,
       testId: testId,
     });
-
-    if (testId) {
-      await cleanupTestData(testId);
-      await verifyCleanup(testId);
-    }
   });
 
   afterEach(async () => {
     TenantContext.clearTenant();
-    if (testId) {
-      await cleanupTestData(testId);
-      await verifyCleanup(testId);
-    }
   });
 
   test("should reject field names starting with underscore", () => {
     class InvalidFieldModel extends BaoModel {
       static modelPrefix = "test";
+      static iterable = true;
+      static iterationBuckets = 1;
+
       static fields = {
         validField: StringField(),
         _invalidField: StringField(),
@@ -50,6 +44,9 @@ describe("Model Validation Tests", () => {
   test("should reject index names starting with underscore", () => {
     class InvalidIndexModel extends BaoModel {
       static modelPrefix = "test";
+      static iterable = true;
+      static iterationBuckets = 1;
+
       static fields = {
         id: StringField(),
         name: StringField(),
@@ -69,6 +66,9 @@ describe("Model Validation Tests", () => {
   test("should validate required fields during creation", async () => {
     class RequiredFieldModel extends BaoModel {
       static modelPrefix = "test";
+      static iterable = true;
+      static iterationBuckets = 1;
+
       static fields = {
         id: StringField({ required: true }),
         name: StringField({ required: true }),
@@ -114,6 +114,9 @@ describe("Model Validation Tests", () => {
   test("should validate required fields during update", async () => {
     class RequiredFieldModel extends BaoModel {
       static modelPrefix = "test";
+      static iterable = true;
+      static iterationBuckets = 1;
+
       static fields = {
         id: StringField({ required: true }),
         name: StringField({ required: true }),
@@ -153,6 +156,9 @@ describe("Model Validation Tests", () => {
   test("should automatically mark primary key fields as required", async () => {
     class ImplicitRequiredModel extends BaoModel {
       static modelPrefix = "test";
+      static iterable = true;
+      static iterationBuckets = 1;
+
       static fields = {
         id: StringField(), // Not explicitly required
         sortKey: StringField(), // Not explicitly required
@@ -190,6 +196,9 @@ describe("Model Validation Tests", () => {
   test("should work with single-field primary keys", async () => {
     class SingleKeyModel extends BaoModel {
       static modelPrefix = "test";
+      static iterable = true;
+      static iterationBuckets = 1;
+
       static fields = {
         id: StringField(), // Not explicitly required
         otherField: StringField(),
@@ -219,6 +228,9 @@ describe("Model Validation Tests", () => {
   test("should accept explicitly required primary key fields", async () => {
     class ExplicitRequiredModel extends BaoModel {
       static modelPrefix = "test";
+      static iterable = true;
+      static iterationBuckets = 1;
+
       static fields = {
         id: StringField({ required: true }),
         sortKey: StringField({ required: true }),

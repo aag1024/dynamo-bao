@@ -23,6 +23,8 @@ const {
 
 class Comment extends BaoModel {
   static modelPrefix = 'c';
+  static iterable = true;
+  static iterationBuckets = 1;
   
   static fields = {
     commentId: UlidField({ autoAssign: true, required: true }),

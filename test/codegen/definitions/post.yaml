@@ -1,6 +1,8 @@
 models:
   Post:
     modelPrefix: p
+    iterable: true
+    iterationBuckets: 1
     fields:
       postId:
         type: UlidField

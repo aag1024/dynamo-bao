@@ -1,6 +1,8 @@
 models:
   Comment:
     modelPrefix: c
+    iterable: true
+    iterationBuckets: 1
     fields:
       commentId:
         type: UlidField

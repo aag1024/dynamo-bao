@@ -11,7 +11,7 @@ const {
   BooleanField,
   UlidField,
 } = require("../src/fields");
-const { cleanupTestData, verifyCleanup, initTestModelsWithTenant } = require("./utils/test-utils");
+const { cleanupTestDataByIteration, verifyCleanup, initTestModelsWithTenant } = require("./utils/test-utils");
 const { ulid } = require("ulid");
 const { defaultLogger: logger } = require("../src/utils/logger");
 const { QueryError } = require("../src/exceptions");
@@ -20,6 +20,8 @@ let testId;
 
 class TestUser extends BaoModel {
   static modelPrefix = "tu";
+  static iterable = true;
+  static iterationBuckets = 1;
 
   static fields = {
     userId: UlidField({ required: true, autoAssign: true }),
@@ -49,8 +51,8 @@ describe("Key Condition Tests", () => {
     manager.registerModel(TestUser);
 
     if (testId) {
-      await cleanupTestData(testId);
-      await verifyCleanup(testId);
+      await cleanupTestDataByIteration(testId, [TestUser]);
+      await verifyCleanup(testId, [TestUser]);
     }
 
     // Create test users with more predictable data
@@ -79,8 +81,8 @@ describe("Key Condition Tests", () => {
   afterEach(async () => {
     TenantContext.clearTenant();
     if (testId) {
-      await cleanupTestData(testId);
-      await verifyCleanup(testId);
+      await cleanupTestDataByIteration(testId, [TestUser]);
+      await verifyCleanup(testId, [TestUser]);
     }
   });
 

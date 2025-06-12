@@ -1,7 +1,7 @@
 const dynamoBao = require("../src");
 const { TenantContext } = dynamoBao;
 const testConfig = require("./config");
-const { cleanupTestData, verifyCleanup, initTestModelsWithTenant } = require("./utils/test-utils");
+const { cleanupTestDataByIteration, verifyCleanup, initTestModelsWithTenant } = require("./utils/test-utils");
 const { ulid } = require("ulid");
 const { defaultLogger: logger } = require("../src/utils/logger");
 const {
@@ -12,24 +12,21 @@ const {
 const { StringField, IntegerField } = require("../src/fields");
 const { ConditionalError } = require("../src/exceptions");
 
-let testId;
+let testId, User;
 
 beforeEach(async () => {
   testId = ulid();
 
   const manager = initTestModelsWithTenant(testConfig, testId);
-
-  await cleanupTestData(testId);
-  await verifyCleanup(testId);
-
+  
   User = manager.getModel("User");
 });
 
 afterEach(async () => {
     TenantContext.clearTenant();
   if (testId) {
-    await cleanupTestData(testId);
-    await verifyCleanup(testId);
+    await cleanupTestDataByIteration(testId, [User]);
+    await verifyCleanup(testId, [User]);
   }
 });
 

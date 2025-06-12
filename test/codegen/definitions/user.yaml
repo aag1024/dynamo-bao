@@ -1,6 +1,8 @@
 models:
   User:
     modelPrefix: u
+    iterable: true
+    iterationBuckets: 1
     fields:
       userId:
         type: UlidField

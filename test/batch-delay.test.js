@@ -3,13 +3,15 @@ const { TenantContext } = dynamoBao;
 const testConfig = require("./config");
 const { BaoModel, PrimaryKeyConfig } = require("../src/model");
 const { StringField } = require("../src/fields");
-const { cleanupTestData, verifyCleanup, initTestModelsWithTenant } = require("./utils/test-utils");
+const { cleanupTestDataByIteration, verifyCleanup, initTestModelsWithTenant } = require("./utils/test-utils");
 const { ulid } = require("ulid");
 
 let testId;
 
 class TestBatchModel extends BaoModel {
   static modelPrefix = "tbm";
+  static iterable = true;
+  static iterationBuckets = 1;
 
   static fields = {
     itemId: StringField({ required: true }),
@@ -33,8 +35,8 @@ describe("Batch Delay Tests", () => {
     manager.registerModel(TestBatchModel);
 
     if (testId) {
-      await cleanupTestData(testId);
-      await verifyCleanup(testId);
+      await cleanupTestDataByIteration(testId, [TestBatchModel]);
+      await verifyCleanup(testId, [TestBatchModel]);
     }
 
     // Create test items
@@ -71,8 +73,8 @@ describe("Batch Delay Tests", () => {
     }
 
     if (testId) {
-      await cleanupTestData(testId);
-      await verifyCleanup(testId);
+      await cleanupTestDataByIteration(testId, [TestBatchModel]);
+      await verifyCleanup(testId, [TestBatchModel]);
     }
   });
 

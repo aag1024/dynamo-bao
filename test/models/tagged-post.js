@@ -6,6 +6,8 @@ const { CreateDateField, RelatedField } = require("../../src/fields");
 
 class TaggedPost extends BaoModel {
   static modelPrefix = "tp";
+  static iterable = true;
+  static iterationBuckets = 1;
 
   static fields = {
     tagId: RelatedField("Tag", { required: true }),

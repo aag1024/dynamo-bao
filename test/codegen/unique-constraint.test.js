@@ -1,7 +1,7 @@
 const dynamoBao = require("dynamo-bao");
 const { TenantContext } = dynamoBao;
 const testConfig = require("../config");
-const { cleanupTestData, verifyCleanup, initTestModelsWithTenant } = require("../utils/test-utils");
+const { cleanupTestDataByIteration, verifyCleanup, initTestModelsWithTenant } = require("../utils/test-utils");
 const { ulid } = require("ulid");
 const { User } = require("./generated/user");
 
@@ -16,17 +16,13 @@ describe("Unique Constraint Lookups", () => {
     // Register models
     manager.registerModel(User);
 
-    if (testId) {
-      await cleanupTestData(testId);
-      await verifyCleanup(testId);
-    }
-  });
+});
 
   afterEach(async () => {
     TenantContext.clearTenant();
     if (testId) {
-      await cleanupTestData(testId);
-      await verifyCleanup(testId);
+      await cleanupTestDataByIteration(testId, [User]);
+      await verifyCleanup(testId, [User]);
     }
   });
 

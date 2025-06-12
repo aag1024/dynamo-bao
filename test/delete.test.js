@@ -8,7 +8,7 @@ const {
 } = require("../src/model");
 const { StringField, IntegerField } = require("../src/fields");
 const { ConditionalError } = require("../src/exceptions");
-const { cleanupTestData, verifyCleanup, initTestModelsWithTenant } = require("./utils/test-utils");
+const { cleanupTestDataByIteration, verifyCleanup, initTestModelsWithTenant } = require("./utils/test-utils");
 const { ulid } = require("ulid");
 const { UNIQUE_CONSTRAINT_ID1 } = require("../src/constants");
 
@@ -17,6 +17,9 @@ let testId;
 // Model without unique constraints - should use fast path
 class SimpleUser extends BaoModel {
   static modelPrefix = "su";
+  static iterable = true;
+  static iterationBuckets = 1;
+
   static fields = {
     userId: StringField({ required: true }),
     name: StringField({ required: true }),
@@ -28,6 +31,9 @@ class SimpleUser extends BaoModel {
 // Model with unique constraints - should use transaction path
 class UserWithUnique extends BaoModel {
   static modelPrefix = "uu";
+  static iterable = true;
+  static iterationBuckets = 1;
+
   static fields = {
     userId: StringField({ required: true }),
     email: StringField({ required: true }),
@@ -47,16 +53,16 @@ describe("Delete Operation Tests", () => {
     manager.registerModel(UserWithUnique);
 
     if (testId) {
-      await cleanupTestData(testId);
-      await verifyCleanup(testId);
+      await cleanupTestDataByIteration(testId, [SimpleUser, UserWithUnique]);
+      await verifyCleanup(testId, [SimpleUser, UserWithUnique]);
     }
   });
 
   afterEach(async () => {
     TenantContext.clearTenant();
     if (testId) {
-      await cleanupTestData(testId);
-      await verifyCleanup(testId);
+      await cleanupTestDataByIteration(testId, [SimpleUser, UserWithUnique]);
+      await verifyCleanup(testId, [SimpleUser, UserWithUnique]);
     }
   });
 

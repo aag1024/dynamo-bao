@@ -143,6 +143,33 @@ const ValidationMethods = {
       const idxSkField = this._getField(index.sk);
     });
 
+    // Validate iteration configuration
+    if (this.hasOwnProperty('iterable')) {
+      if (typeof this.iterable !== 'boolean') {
+        throw new ConfigurationError(
+          `iterable must be a boolean in ${this.name}`,
+          this.name
+        );
+      }
+      
+      if (this.iterable) {
+        if (!this.hasOwnProperty('iterationBuckets')) {
+          this.iterationBuckets = 100; // Set default
+        } else {
+          if (!Number.isInteger(this.iterationBuckets) || 
+              this.iterationBuckets < 1 || 
+              this.iterationBuckets > 1000) {
+            throw new ConfigurationError(
+              `iterationBuckets must be an integer between 1 and 1000 in ${this.name}`,
+              this.name
+            );
+          }
+        }
+      }
+    } else {
+      this.iterable = false;
+    }
+
     // Validate unique constraints
     const validConstraintIds = [
       UNIQUE_CONSTRAINT_ID1,

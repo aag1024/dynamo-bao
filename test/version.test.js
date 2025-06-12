@@ -4,7 +4,7 @@ const testConfig = require("./config");
 const { ModelManager } = require("../src/model-manager");
 const { BaoModel, PrimaryKeyConfig } = require("../src/model");
 const { StringField, VersionField } = require("../src/fields");
-const { cleanupTestData, verifyCleanup, initTestModelsWithTenant } = require("./utils/test-utils");
+const { cleanupTestDataByIteration, verifyCleanup, initTestModelsWithTenant } = require("./utils/test-utils");
 const { ulid } = require("ulid");
 const { defaultLogger: logger } = require("../src/utils/logger");
 const { ConditionalError } = require("../src/exceptions");
@@ -13,6 +13,8 @@ let testId;
 
 class TestVersion extends BaoModel {
   static modelPrefix = "tv";
+  static iterable = true;
+  static iterationBuckets = 1;
 
   static fields = {
     id: StringField({ required: true }),
@@ -35,12 +37,12 @@ describe("Version Field Tests", () => {
       testId: testId,
     });
 
-    await cleanupTestData(testId);
-    await verifyCleanup(testId);
-
     // Register the TestVersion model
     const manager = ModelManager.getInstance(testId);
     manager.registerModel(TestVersion);
+
+    await cleanupTestDataByIteration(testId, [TestVersion]);
+    await verifyCleanup(testId, [TestVersion]);
 
     // Create a new version test item for each test
     testVersion = await TestVersion.create({
@@ -53,8 +55,8 @@ describe("Version Field Tests", () => {
   afterEach(async () => {
     TenantContext.clearTenant();
     if (testId) {
-      await cleanupTestData(testId);
-      await verifyCleanup(testId);
+      await cleanupTestDataByIteration(testId, [TestVersion]);
+      await verifyCleanup(testId, [TestVersion]);
     }
   });
 

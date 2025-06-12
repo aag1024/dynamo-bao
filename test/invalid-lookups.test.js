@@ -11,13 +11,15 @@ const {
 const { GSI_INDEX_ID1, UNIQUE_CONSTRAINT_ID1 } = require("../src/constants");
 
 const { StringField } = require("../src/fields");
-const { cleanupTestData, verifyCleanup, initTestModelsWithTenant } = require("./utils/test-utils");
+const { cleanupTestDataByIteration, verifyCleanup, initTestModelsWithTenant } = require("./utils/test-utils");
 const { ulid } = require("ulid");
 
 let testId;
 
 class TestModel extends BaoModel {
   static modelPrefix = "tm";
+  static iterable = true;
+  static iterationBuckets = 1;
 
   static fields = {
     itemId: StringField({ required: true }),
@@ -45,16 +47,16 @@ describe("Invalid Lookup Tests", () => {
     manager.registerModel(TestModel);
 
     if (testId) {
-      await cleanupTestData(testId);
-      await verifyCleanup(testId);
+      await cleanupTestDataByIteration(testId, [TestModel]);
+      await verifyCleanup(testId, [TestModel]);
     }
   });
 
   afterEach(async () => {
     TenantContext.clearTenant();
     if (testId) {
-      await cleanupTestData(testId);
-      await verifyCleanup(testId);
+      await cleanupTestDataByIteration(testId, [TestModel]);
+      await verifyCleanup(testId, [TestModel]);
     }
   });
 

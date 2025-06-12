@@ -106,7 +106,8 @@ async function createTable() {
       { AttributeName: "_gsi2_sk", AttributeType: "S" },
       { AttributeName: "_gsi3_pk", AttributeType: "S" },
       { AttributeName: "_gsi3_sk", AttributeType: "S" },
-      { AttributeName: "_gsi_test_id", AttributeType: "S" },
+      { AttributeName: "_iter_pk", AttributeType: "S" },
+      { AttributeName: "_iter_sk", AttributeType: "S" },
     ],
     KeySchema: [
       { AttributeName: "_pk", KeyType: "HASH" },
@@ -138,9 +139,12 @@ async function createTable() {
         Projection: { ProjectionType: "ALL" },
       },
       {
-        IndexName: "gsi_test",
-        KeySchema: [{ AttributeName: "_gsi_test_id", KeyType: "HASH" }],
-        Projection: { ProjectionType: "ALL" },
+        IndexName: "iter_index",
+        KeySchema: [
+          { AttributeName: "_iter_pk", KeyType: "HASH" },
+          { AttributeName: "_iter_sk", KeyType: "RANGE" },
+        ],
+        Projection: { ProjectionType: "KEYS_ONLY" },
       },
     ],
     TimeToLiveSpecification: {

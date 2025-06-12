@@ -1,7 +1,7 @@
 const dynamoBao = require("dynamo-bao");
 const { TenantContext } = dynamoBao;
 const testConfig = require("../config");
-const { cleanupTestData, verifyCleanup, initTestModelsWithTenant } = require("../utils/test-utils");
+const { cleanupTestDataByIteration, verifyCleanup, initTestModelsWithTenant } = require("../utils/test-utils");
 const { ulid } = require("ulid");
 const { Post } = require("./generated/post");
 const { User } = require("./generated/user");
@@ -21,11 +21,6 @@ describe("Related Field Getters", () => {
     manager.registerModel(Post);
     manager.registerModel(User);
     manager.registerModel(Comment);
-
-    if (testId) {
-      await cleanupTestData(testId);
-      await verifyCleanup(testId);
-    }
 
     // Create test data
     user = await User.create({
@@ -49,8 +44,8 @@ describe("Related Field Getters", () => {
   afterEach(async () => {
     TenantContext.clearTenant();
     if (testId) {
-      await cleanupTestData(testId);
-      await verifyCleanup(testId);
+      await cleanupTestDataByIteration(testId, [Post, User, Comment]);
+      await verifyCleanup(testId, [Post, User, Comment]);
     }
   });
 

@@ -75,6 +75,11 @@ function normalizeConfig(rawConfig, configDir) {
         ? path.resolve(configDir, rawConfig.paths.fieldsDir)
         : null,
     },
+    logging: {
+      ...rawConfig.logging,
+      // Allow environment variable to override config file
+      level: process.env.LOG_LEVEL || rawConfig.logging?.level || "ERROR",
+    },
     tenancy: {
       enabled: false,
       ...rawConfig.tenancy,

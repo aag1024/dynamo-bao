@@ -1,11 +1,11 @@
 const dynamoBao = require("../src");
 const { TenantContext } = dynamoBao;
 const testConfig = require("./config");
-const { cleanupTestData, verifyCleanup, initTestModelsWithTenant } = require("./utils/test-utils");
+const { cleanupTestData, cleanupTestDataByIteration, verifyCleanup, initTestModelsWithTenant } = require("./utils/test-utils");
 const { ulid } = require("ulid");
 const { defaultLogger: logger } = require("../src/utils/logger");
 
-let testUser, testId;
+let testUser, testId, User, Post;
 
 describe("Post Model", () => {
   beforeEach(async () => {
@@ -33,8 +33,9 @@ describe("Post Model", () => {
   afterEach(async () => {
     TenantContext.clearTenant();
     if (testId) {
-      await cleanupTestData(testId);
-      await verifyCleanup(testId);
+      // New recommended cleanup approach - works because all test models are iterable
+      await cleanupTestDataByIteration(testId, [User, Post]);
+      await verifyCleanup(testId, [User, Post]);
     }
   });
 

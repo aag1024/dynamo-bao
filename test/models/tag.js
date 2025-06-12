@@ -4,6 +4,8 @@ const { StringField, CreateDateField, UlidField } = require("../../src/fields");
 
 class Tag extends BaoModel {
   static modelPrefix = "t";
+  static iterable = true;
+  static iterationBuckets = 1;
 
   static fields = {
     tagId: UlidField({ autoAssign: true }),

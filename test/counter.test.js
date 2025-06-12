@@ -3,7 +3,7 @@ const { TenantContext } = dynamoBao;
 const testConfig = require("./config");
 const { BaoModel, PrimaryKeyConfig } = require("../src/model");
 const { StringField, CounterField } = require("../src/fields");
-const { cleanupTestData, verifyCleanup, initTestModelsWithTenant } = require("./utils/test-utils");
+const { cleanupTestDataByIteration, verifyCleanup, initTestModelsWithTenant } = require("./utils/test-utils");
 const { ulid } = require("ulid");
 const { ValidationError } = require("../src/exceptions");
 
@@ -11,6 +11,8 @@ let testId;
 
 class TestCounter extends BaoModel {
   static modelPrefix = "tc";
+  static iterable = true;
+  static iterationBuckets = 1;
 
   static fields = {
     counterId: StringField({ required: true }),
@@ -34,8 +36,8 @@ describe("Counter Field Tests", () => {
     manager.registerModel(TestCounter);
 
     if (testId) {
-      await cleanupTestData(testId);
-      await verifyCleanup(testId);
+      await cleanupTestDataByIteration(testId, [TestCounter]);
+      await verifyCleanup(testId, [TestCounter]);
     }
 
     // Create a new counter for each test
@@ -50,8 +52,8 @@ describe("Counter Field Tests", () => {
   afterEach(async () => {
     TenantContext.clearTenant();
     if (testId) {
-      await cleanupTestData(testId);
-      await verifyCleanup(testId);
+      await cleanupTestDataByIteration(testId, [TestCounter]);
+      await verifyCleanup(testId, [TestCounter]);
     }
   });
 

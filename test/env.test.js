@@ -1,17 +1,17 @@
 const dynamoBao = require("../src");
 const testConfig = require("./config");
-const User = dynamoBao.models.User;
 
 const { ulid } = require("ulid");
 const { defaultLogger: logger } = require("../src/utils/logger");
 
-let testId;
+let testId, User;
 
 beforeAll(async () => {
   // Initialize models
   const manager = dynamoBao.initModels({
     ...testConfig,
   });
+  User = manager.getModel("User");
 });
 
 beforeEach(async () => {});

@@ -20,6 +20,8 @@ const { TaggedPost } = require('./tagged-post');
 
 class Tag extends BaoModel {
   static modelPrefix = 't';
+  static iterable = true;
+  static iterationBuckets = 1;
   
   static fields = {
     tagId: UlidField({ autoAssign: true, required: true }),

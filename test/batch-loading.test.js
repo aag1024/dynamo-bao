@@ -3,12 +3,14 @@ const { TenantContext } = dynamoBao;
 const testConfig = require("./config");
 const { BaoModel, PrimaryKeyConfig, IndexConfig } = require("../src/model");
 const { StringField, RelatedField } = require("../src/fields");
-const { cleanupTestData, verifyCleanup, initTestModelsWithTenant } = require("./utils/test-utils");
+const { cleanupTestDataByIteration, verifyCleanup, initTestModelsWithTenant } = require("./utils/test-utils");
 const { ulid } = require("ulid");
 
 // Define test models
 class Organization extends BaoModel {
   static modelPrefix = "org";
+  static iterable = true;
+  static iterationBuckets = 1;
 
   static fields = {
     organizationId: StringField({ required: true }),
@@ -25,6 +27,8 @@ class Organization extends BaoModel {
 
 class User extends BaoModel {
   static modelPrefix = "usr";
+  static iterable = true;
+  static iterationBuckets = 1;
 
   static fields = {
     userId: StringField({ required: true }),
@@ -46,6 +50,8 @@ class User extends BaoModel {
 
 class Post extends BaoModel {
   static modelPrefix = "pst";
+  static iterable = true;
+  static iterationBuckets = 1;
 
   static fields = {
     postId: StringField({ required: true }),
@@ -77,8 +83,8 @@ describe("Batch Loading and Related Data", () => {
     manager.registerModel(User);
     manager.registerModel(Post);
 
-    await cleanupTestData(testId);
-    await verifyCleanup(testId);
+    await cleanupTestDataByIteration(testId, [Organization, User, Post]);
+    await verifyCleanup(testId, [Organization, User, Post]);
 
     // Create test organizations
     testOrgs = await Promise.all(
@@ -138,8 +144,8 @@ describe("Batch Loading and Related Data", () => {
   afterEach(async () => {
     TenantContext.clearTenant();
     if (testId) {
-      await cleanupTestData(testId);
-      await verifyCleanup(testId);
+      await cleanupTestDataByIteration(testId, [Organization, User, Post]);
+      await verifyCleanup(testId, [Organization, User, Post]);
     }
   });
 

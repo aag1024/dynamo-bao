@@ -4,13 +4,15 @@ const testConfig = require("./config");
 const { BaoModel, PrimaryKeyConfig, IndexConfig } = require("../src/model");
 const { GSI_INDEX_ID1 } = require("../src/constants");
 const { StringField, IntegerField, BooleanField } = require("../src/fields");
-const { cleanupTestData, verifyCleanup, initTestModelsWithTenant } = require("./utils/test-utils");
+const { cleanupTestDataByIteration, verifyCleanup, initTestModelsWithTenant } = require("./utils/test-utils");
 const { ulid } = require("ulid");
 
 let testId;
 
 class TestUser extends BaoModel {
   static modelPrefix = "tu";
+  static iterable = true;
+  static iterationBuckets = 1;
 
   static fields = {
     userId: StringField({ required: true }),
@@ -36,8 +38,8 @@ describe("Count Query Tests", () => {
     manager.registerModel(TestUser);
 
     if (testId) {
-      await cleanupTestData(testId);
-      await verifyCleanup(testId);
+      await cleanupTestDataByIteration(testId, [TestUser]);
+      await verifyCleanup(testId, [TestUser]);
     }
 
     // Create test users
@@ -69,8 +71,8 @@ describe("Count Query Tests", () => {
   afterEach(async () => {
     TenantContext.clearTenant();
     if (testId) {
-      await cleanupTestData(testId);
-      await verifyCleanup(testId);
+      await cleanupTestDataByIteration(testId, [TestUser]);
+      await verifyCleanup(testId, [TestUser]);
     }
   });
 

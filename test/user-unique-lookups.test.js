@@ -1,7 +1,7 @@
 const dynamoBao = require("../src");
 const { TenantContext } = dynamoBao;
 const testConfig = require("./config");
-const { cleanupTestData, verifyCleanup, initTestModelsWithTenant } = require("./utils/test-utils");
+const { cleanupTestDataByIteration, verifyCleanup, initTestModelsWithTenant } = require("./utils/test-utils");
 const { ulid } = require("ulid");
 const { ValidationError } = require("../src/exceptions");
 
@@ -13,18 +13,19 @@ describe("User Unique Constraint Lookups", () => {
 
     const manager = initTestModelsWithTenant(testConfig, testId);
 
-    await cleanupTestData(testId);
-    await verifyCleanup(testId);
-
     User = manager.getModel("User");
+    
+    // Clean up any existing data
+    await cleanupTestDataByIteration(testId, [User]);
+    await verifyCleanup(testId, [User]);
   });
 
   afterEach(async () => {
-    TenantContext.clearTenant();
     if (testId) {
-      await cleanupTestData(testId);
-      await verifyCleanup(testId);
+      await cleanupTestDataByIteration(testId, [User]);
+      await verifyCleanup(testId, [User]);
     }
+    TenantContext.clearTenant();
   });
 
   describe("Email Lookups", () => {

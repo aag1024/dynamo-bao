@@ -2,7 +2,7 @@ const dynamoBao = require("../src");
 const { TenantContext } = dynamoBao;
 const testConfig = require("./config");
 const { BaoModel, PrimaryKeyConfig, IndexConfig } = require("../src/model");
-const { cleanupTestData, verifyCleanup, initTestModelsWithTenant } = require("./utils/test-utils");
+const { cleanupTestDataByIteration, verifyCleanup, initTestModelsWithTenant } = require("./utils/test-utils");
 const { ulid } = require("ulid");
 const {
   StringField,
@@ -16,6 +16,8 @@ const { ConditionalError, ItemNotFoundError } = require("../src/exceptions");
 
 class TestUser extends BaoModel {
   static modelPrefix = "tu";
+  static iterable = true;
+  static iterationBuckets = 1;
 
   static fields = {
     userId: UlidField({ required: true, autoAssign: true }),
@@ -43,8 +45,8 @@ describe("Conditional Update Tests", () => {
     manager.registerModel(TestUser);
     model = TestUser;
 
-    await cleanupTestData(testId);
-    await verifyCleanup(testId);
+    await cleanupTestDataByIteration(testId, [TestUser]);
+    await verifyCleanup(testId, [TestUser]);
 
     // Create a test user
     testUser = await model.create({
@@ -58,8 +60,8 @@ describe("Conditional Update Tests", () => {
   afterEach(async () => {
     TenantContext.clearTenant();
     if (testId) {
-      await cleanupTestData(testId);
-      await verifyCleanup(testId);
+      await cleanupTestDataByIteration(testId, [TestUser]);
+      await verifyCleanup(testId, [TestUser]);
     }
   });
 

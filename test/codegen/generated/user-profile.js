@@ -19,6 +19,8 @@ const {
 
 class UserProfile extends BaoModel {
   static modelPrefix = 'up';
+  static iterable = true;
+  static iterationBuckets = 1;
   
   static fields = {
     userId: RelatedField('User', { required: true }),

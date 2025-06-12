@@ -3,7 +3,7 @@ const { TenantContext } = dynamoBao;
 const testConfig = require("./config");
 const { BaoModel, PrimaryKeyConfig } = require("../src/model");
 const { StringField } = require("../src/fields");
-const { cleanupTestData, verifyCleanup, initTestModelsWithTenant } = require("./utils/test-utils");
+const { cleanupTestDataByIteration, verifyCleanup, initTestModelsWithTenant } = require("./utils/test-utils");
 const { ulid } = require("ulid");
 const { defaultLogger: logger } = require("../src/utils/logger");
 
@@ -11,6 +11,8 @@ let testId;
 
 class TestUser extends BaoModel {
   static modelPrefix = "tu";
+  static iterable = true;
+  static iterationBuckets = 1;
 
   static fields = {
     userId: StringField({ required: true }),
@@ -47,8 +49,8 @@ describe("Plugin Methods Tests", () => {
     TestUser.registerPlugin(userPlugin);
 
     if (testId) {
-      await cleanupTestData(testId);
-      await verifyCleanup(testId);
+      await cleanupTestDataByIteration(testId, [TestUser]);
+      await verifyCleanup(testId, [TestUser]);
     }
 
     // Create test user after model and plugin are fully registered
@@ -62,8 +64,8 @@ describe("Plugin Methods Tests", () => {
   afterEach(async () => {
     TenantContext.clearTenant();
     if (testId) {
-      await cleanupTestData(testId);
-      await verifyCleanup(testId);
+      await cleanupTestDataByIteration(testId, [TestUser]);
+      await verifyCleanup(testId, [TestUser]);
     }
   });
 

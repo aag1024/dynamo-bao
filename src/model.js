@@ -24,7 +24,13 @@ const {
 } = require("./model-config");
 
 const GID_SEPARATOR = "##__SK__##";
-const { UNIQUE_CONSTRAINT_KEY, SYSTEM_FIELDS } = require("./constants");
+const {
+  UNIQUE_CONSTRAINT_KEY,
+  SYSTEM_FIELDS,
+  ITERATION_INDEX_NAME,
+  ITERATION_PK_FIELD,
+  ITERATION_SK_FIELD,
+} = require("./constants");
 const {
   ConfigurationError,
   ValidationError,
@@ -50,6 +56,8 @@ class BaoModel {
   static primaryKey = null;
   static indexes = {};
   static uniqueConstraints = {};
+  static iterable = false;
+  static iterationBuckets = 100;
 
   static defaultQueryLimit = 100;
 
@@ -178,6 +186,136 @@ class BaoModel {
         _sk: pkSk.sk,
       };
     }
+  }
+
+  static _getIterationKeys(objectId, dyData) {
+    if (!this.iterable) {
+      return {};
+    }
+    
+    const tenantId = this.manager.getTenantId();
+    let iterPk;
+    
+    if (this.iterationBuckets === 1) {
+      iterPk = tenantId ? 
+        `[${tenantId}]#${this.modelPrefix}#iter` : 
+        `${this.modelPrefix}#iter`;
+    } else {
+      const bucketNum = this._hashObjectId(objectId) % this.iterationBuckets;
+      const bucket = bucketNum.toString().padStart(3, '0');
+      iterPk = tenantId ? 
+        `[${tenantId}]#${this.modelPrefix}#iter#${bucket}` : 
+        `${this.modelPrefix}#iter#${bucket}`;
+    }
+    
+    return {
+      [ITERATION_PK_FIELD]: iterPk,
+      [ITERATION_SK_FIELD]: objectId
+    };
+  }
+
+  static _hashObjectId(objectId) {
+    let hash = 0;
+    for (let i = 0; i < objectId.length; i++) {
+      const char = objectId.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash;
+    }
+    return Math.abs(hash);
+  }
+
+  static getIterationBuckets() {
+    return this.iterable ? this.iterationBuckets : 1;
+  }
+
+  static async* iterateAll(options = {}) {
+    if (!this.iterable) {
+      throw new Error(`Model ${this.name} is not configured as iterable`);
+    }
+    
+    const { batchSize = 100, filter = null, loaderContext = null } = options;
+    
+    if (this.iterationBuckets === 1) {
+      yield* this._iterateSingleBucket(null, { batchSize, filter, loaderContext });
+    } else {
+      for (let bucket = 0; bucket < this.iterationBuckets; bucket++) {
+        yield* this._iterateSingleBucket(bucket, { batchSize, filter, loaderContext });
+      }
+    }
+  }
+
+  static async* iterateBucket(bucketNum, options = {}) {
+    if (!this.iterable) {
+      throw new Error(`Model ${this.name} is not configured as iterable`);
+    }
+    
+    if (bucketNum < 0 || bucketNum >= this.iterationBuckets) {
+      throw new Error(`Invalid bucket number ${bucketNum}. Must be 0-${this.iterationBuckets - 1}`);
+    }
+    
+    yield* this._iterateSingleBucket(bucketNum, options);
+  }
+
+  static async* _iterateSingleBucket(bucketNum, options = {}) {
+    const { batchSize = 100, filter = null, loaderContext = null } = options;
+    const tenantId = this.manager.getTenantId();
+    
+    let iterPk;
+    if (this.iterationBuckets === 1) {
+      iterPk = tenantId ? 
+        `[${tenantId}]#${this.modelPrefix}#iter` : 
+        `${this.modelPrefix}#iter`;
+    } else {
+      const bucket = bucketNum.toString().padStart(3, '0');
+      iterPk = tenantId ? 
+        `[${tenantId}]#${this.modelPrefix}#iter#${bucket}` : 
+        `${this.modelPrefix}#iter#${bucket}`;
+    }
+    
+    let lastEvaluatedKey = null;
+    
+    do {
+      const { QueryCommand } = require("./dynamodb-client");
+      const params = {
+        TableName: this.table,
+        IndexName: ITERATION_INDEX_NAME,
+        KeyConditionExpression: '#pk = :pk',
+        ExpressionAttributeNames: { '#pk': ITERATION_PK_FIELD },
+        ExpressionAttributeValues: { ':pk': iterPk },
+        Limit: batchSize,
+        ReturnConsumedCapacity: 'TOTAL'
+      };
+      
+      if (lastEvaluatedKey) {
+        params.ExclusiveStartKey = lastEvaluatedKey;
+      }
+      
+      if (filter) {
+        const { FilterExpressionBuilder } = require("./filter-expression");
+        const filterBuilder = new FilterExpressionBuilder();
+        const filterExpression = filterBuilder.build(filter, this);
+        if (filterExpression) {
+          params.FilterExpression = filterExpression.FilterExpression;
+          Object.assign(params.ExpressionAttributeNames, filterExpression.ExpressionAttributeNames);
+          Object.assign(params.ExpressionAttributeValues, filterExpression.ExpressionAttributeValues);
+        }
+      }
+      
+      const response = await this.documentClient.send(new QueryCommand(params));
+      
+      if (response.Items && response.Items.length > 0) {
+        const objectIds = response.Items.map(item => item[ITERATION_SK_FIELD]);
+        
+        const { items } = await this.batchFind(objectIds, loaderContext);
+        const batch = Object.values(items);
+        
+        if (batch.length > 0) {
+          yield batch;
+        }
+      }
+      
+      lastEvaluatedKey = response.LastEvaluatedKey;
+    } while (lastEvaluatedKey);
   }
 
   /**

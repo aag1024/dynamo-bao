@@ -12,7 +12,7 @@ const {
   DateTimeField,
   UlidField,
 } = require("../src/fields");
-const { cleanupTestData, verifyCleanup, initTestModelsWithTenant } = require("./utils/test-utils");
+const { cleanupTestDataByIteration, verifyCleanup, initTestModelsWithTenant } = require("./utils/test-utils");
 const { ulid } = require("ulid");
 
 let testId;
@@ -20,6 +20,8 @@ let testId;
 // Reuse the same TestUser model
 class TestUser extends BaoModel {
   static modelPrefix = "tu";
+  static iterable = true;
+  static iterationBuckets = 1;
 
   static fields = {
     userId: UlidField({ required: true, autoAssign: true }),
@@ -50,8 +52,8 @@ describe("Pagination Tests", () => {
     manager.registerModel(TestUser);
 
     if (testId) {
-      await cleanupTestData(testId);
-      await verifyCleanup(testId);
+      await cleanupTestDataByIteration(testId, [TestUser]);
+      await verifyCleanup(testId, [TestUser]);
     }
 
     // Create more test users for pagination
@@ -67,8 +69,8 @@ describe("Pagination Tests", () => {
   afterEach(async () => {
     TenantContext.clearTenant();
     if (testId) {
-      await cleanupTestData(testId);
-      await verifyCleanup(testId);
+      await cleanupTestDataByIteration(testId, [TestUser]);
+      await verifyCleanup(testId, [TestUser]);
     }
   });
 

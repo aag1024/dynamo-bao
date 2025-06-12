@@ -2,6 +2,8 @@ models:
   TaggedPost:
     tableType: mapping
     modelPrefix: tp
+    iterable: true
+    iterationBuckets: 1
     fields:
       tagId:
         type: RelatedField

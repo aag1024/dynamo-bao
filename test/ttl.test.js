@@ -3,7 +3,7 @@ const { TenantContext } = dynamoBao;
 const testConfig = require("./config");
 const { BaoModel, PrimaryKeyConfig } = require("../src/model");
 const { StringField, TtlField } = require("../src/fields");
-const { cleanupTestData, verifyCleanup, initTestModelsWithTenant } = require("./utils/test-utils");
+const { cleanupTestDataByIteration, verifyCleanup, initTestModelsWithTenant } = require("./utils/test-utils");
 const { ulid } = require("ulid");
 const { GetCommand } = require("../src/dynamodb-client");
 const { ValidationError } = require("../src/exceptions");
@@ -12,6 +12,8 @@ let testId;
 
 class TestTtl extends BaoModel {
   static modelPrefix = "tt";
+  static iterable = true;
+  static iterationBuckets = 1;
 
   static fields = {
     itemId: StringField({ required: true }),
@@ -33,8 +35,8 @@ describe("TTL Field Tests", () => {
     manager.registerModel(TestTtl);
 
     if (testId) {
-      await cleanupTestData(testId);
-      await verifyCleanup(testId);
+      await cleanupTestDataByIteration(testId, [TestTtl]);
+      await verifyCleanup(testId, [TestTtl]);
     }
 
     testItem = await TestTtl.create({
@@ -46,8 +48,8 @@ describe("TTL Field Tests", () => {
   afterEach(async () => {
     TenantContext.clearTenant();
     if (testId) {
-      await cleanupTestData(testId);
-      await verifyCleanup(testId);
+      await cleanupTestDataByIteration(testId, [TestTtl]);
+      await verifyCleanup(testId, [TestTtl]);
     }
   });
 
@@ -108,10 +110,11 @@ describe("TTL Field Tests", () => {
     });
 
     // Get the raw DynamoDB item using v3 SDK
+    const tenantId = item._dyData._tenantId || item._dyData._gsi_test_id || testId;
     const params = {
       TableName: TestTtl.table,
       Key: {
-        _pk: `[${item._dyData._gsi_test_id}]#${TestTtl.modelPrefix}#${itemId}`,
+        _pk: `[${tenantId}]#${TestTtl.modelPrefix}#${itemId}`,
         _sk: TestTtl.modelPrefix,
       },
     };
@@ -146,10 +149,11 @@ describe("TTL Field Tests", () => {
     expect(result.ttl).toBeNull();
 
     // Verify in DynamoDB that the field is removed
+    const tenantId = item._dyData._tenantId || item._dyData._gsi_test_id || testId;
     const command = new GetCommand({
       TableName: TestTtl.table,
       Key: {
-        _pk: `[${item._dyData._gsi_test_id}]#${TestTtl.modelPrefix}#${itemId}`,
+        _pk: `[${tenantId}]#${TestTtl.modelPrefix}#${itemId}`,
         _sk: TestTtl.modelPrefix,
       },
     });

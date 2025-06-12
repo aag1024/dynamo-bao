@@ -3,13 +3,15 @@ const { TenantContext } = dynamoBao;
 const testConfig = require("./config");
 const { BaoModel, PrimaryKeyConfig } = require("../src/model");
 const { StringField } = require("../src/fields");
-const { cleanupTestData, verifyCleanup, initTestModelsWithTenant } = require("./utils/test-utils");
+const { cleanupTestDataByIteration, verifyCleanup, initTestModelsWithTenant } = require("./utils/test-utils");
 const { ulid } = require("ulid");
 
 let testId;
 
 class TestModel extends BaoModel {
   static modelPrefix = "tm";
+  static iterable = true;
+  static iterationBuckets = 1;
 
   static fields = {
     id: StringField({ required: true }),
@@ -30,8 +32,8 @@ describe("Plugin System Tests", () => {
     manager.registerModel(TestModel);
 
     if (testId) {
-      await cleanupTestData(testId);
-      await verifyCleanup(testId);
+      await cleanupTestDataByIteration(testId, [TestModel]);
+      await verifyCleanup(testId, [TestModel]);
     }
 
     // Create a new instance for each test
@@ -44,8 +46,8 @@ describe("Plugin System Tests", () => {
   afterEach(async () => {
     TenantContext.clearTenant();
     if (testId) {
-      await cleanupTestData(testId);
-      await verifyCleanup(testId);
+      await cleanupTestDataByIteration(testId, [TestModel]);
+      await verifyCleanup(testId, [TestModel]);
     }
   });
 

@@ -1,6 +1,8 @@
 models:
   Tag:
     modelPrefix: t
+    iterable: true
+    iterationBuckets: 1
     fields:
       tagId:
         type: UlidField

@@ -1,11 +1,11 @@
 const dynamoBao = require("../src");
 const { TenantContext } = dynamoBao;
 const testConfig = require("./config");
-const { cleanupTestData, verifyCleanup, initTestModelsWithTenant } = require("./utils/test-utils");
+const { cleanupTestDataByIteration, verifyCleanup, initTestModelsWithTenant } = require("./utils/test-utils");
 const { ulid } = require("ulid");
 const { ConditionalError } = require("../src/exceptions");
 
-let testUser, testId;
+let testUser, testId, User;
 
 describe("Instance Methods", () => {
   beforeEach(async () => {
@@ -13,10 +13,10 @@ describe("Instance Methods", () => {
 
     const manager = initTestModelsWithTenant(testConfig, testId);
 
-    await cleanupTestData(testId);
-    await verifyCleanup(testId);
-
     User = manager.getModel("User");
+
+    await cleanupTestDataByIteration(testId, [User]);
+    await verifyCleanup(testId, [User]);
 
     // Create a test user for each test
     testUser = await User.create({
@@ -32,8 +32,8 @@ describe("Instance Methods", () => {
   afterEach(async () => {
     TenantContext.clearTenant();
     if (testId) {
-      await cleanupTestData(testId);
-      await verifyCleanup(testId);
+      await cleanupTestDataByIteration(testId, [User]);
+      await verifyCleanup(testId, [User]);
     }
   });
 

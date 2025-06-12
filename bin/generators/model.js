@@ -110,6 +110,10 @@ function generateModelClass(
         .join("\n")
     : "";
 
+  // Handle iteration configuration
+  const iterable = modelConfig.iterable === true;
+  const iterationBuckets = modelConfig.iterationBuckets || 100;
+
   // Always need these
   baseImports.add("PrimaryKeyConfig");
   if (indexes) baseImports.add("IndexConfig");
@@ -186,6 +190,8 @@ ${Array.from(relatedModels)
 
 class ${modelName} extends BaoModel {
   static modelPrefix = '${modelConfig.modelPrefix}';
+  static iterable = ${iterable};
+  static iterationBuckets = ${iterationBuckets};
   
   static fields = {
 ${fields}

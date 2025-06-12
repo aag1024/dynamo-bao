@@ -406,19 +406,16 @@ const MutationMethods = {
         }
       }
 
-      // Add testId if we're in test mode
-      const testId = this.manager.getTestId();
-      if (testId) {
-        logger.debug("savedTestId", testId, currentItem);
-        if (testId !== currentItem?._loadedDyData._gsi_test_id) {
-          dyUpdatesToSave._gsi_test_id = testId;
-        }
-      }
-
       // Add GSI keys
       const indexKeys = this._getIndexKeys(dyUpdatesToSave);
       logger.debug("indexKeys", indexKeys);
       Object.assign(dyUpdatesToSave, indexKeys);
+
+      // Add iteration keys if model is iterable
+      if (this.iterable) {
+        const iterationKeys = this._getIterationKeys(primaryId, dyUpdatesToSave);
+        Object.assign(dyUpdatesToSave, iterationKeys);
+      }
 
       // Build the update expression first
       const { updateExpression, names, values } =

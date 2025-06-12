@@ -15,11 +15,6 @@ describe("Custom Fields", () => {
 
     // Register the model
     manager.registerModel(UserWithEmail);
-
-    if (testId) {
-      await cleanupTestData(testId);
-      await verifyCleanup(testId);
-    }
   });
 
   afterEach(async () => {

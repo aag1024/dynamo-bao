@@ -23,6 +23,8 @@ const {
 
 class User extends BaoModel {
   static modelPrefix = "u";
+  static iterable = true;
+  static iterationBuckets = 1;
 
   static fields = {
     userId: UlidField({ autoAssign: true }),

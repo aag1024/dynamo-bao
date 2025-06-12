@@ -7,6 +7,8 @@ const { StringField, RelatedField, UlidField } = require("../../src/fields");
 
 class CommentLike extends BaoModel {
   static modelPrefix = "cl";
+  static iterable = true;
+  static iterationBuckets = 1;
 
   static fields = {
     commentLikeId: UlidField({ autoAssign: true }),

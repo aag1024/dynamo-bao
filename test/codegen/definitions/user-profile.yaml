@@ -1,6 +1,8 @@
 models:
   UserProfile:
     modelPrefix: up
+    iterable: true
+    iterationBuckets: 1
     fields:
       userId:
         type: RelatedField

@@ -10,13 +10,13 @@ const config = {
     region: "us-west-2",
   },
   db: {
-    tableName: "dynamo-bao-test",
+    tableName: "dynamo-bao-test3",
   },
   logging: {
     level: "ERROR",
   },
   paths: {
-    modelsPath: path.resolve(__dirname, "./models"),
+    modelsDir: path.resolve(__dirname, "./models"),
     fieldsDir: path.resolve(__dirname, "./fields"),
   },
 };

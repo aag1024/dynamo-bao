@@ -3,7 +3,7 @@ const { TenantContext } = dynamoBao;
 const testConfig = require("./config");
 const { BaoModel, PrimaryKeyConfig } = require("../src/model");
 const { StringField, IntegerField, BooleanField } = require("../src/fields");
-const { cleanupTestData, verifyCleanup, initTestModelsWithTenant } = require("./utils/test-utils");
+const { cleanupTestDataByIteration, verifyCleanup, initTestModelsWithTenant } = require("./utils/test-utils");
 const { ulid } = require("ulid");
 
 const printPerfStats = false;
@@ -18,6 +18,8 @@ let testId;
 // Simple model with just two fields
 class SimpleModel extends BaoModel {
   static modelPrefix = "sm";
+  static iterable = true;
+  static iterationBuckets = 1;
 
   static fields = {
     id: StringField({ required: true }),
@@ -30,6 +32,8 @@ class SimpleModel extends BaoModel {
 // Complex model with many fields and different types
 class ComplexModel extends BaoModel {
   static modelPrefix = "cm";
+  static iterable = true;
+  static iterationBuckets = 1;
 
   static fields = {
     id: StringField({ required: true }),
@@ -104,16 +108,16 @@ describe("Performance Tests - Model Instantiation", () => {
     manager.registerModel(ComplexModel);
 
     if (testId) {
-      await cleanupTestData(testId);
-      await verifyCleanup(testId);
+      await cleanupTestDataByIteration(testId, [SimpleModel, ComplexModel]);
+      await verifyCleanup(testId, [SimpleModel, ComplexModel]);
     }
   });
 
   afterEach(async () => {
     TenantContext.clearTenant();
     if (testId) {
-      await cleanupTestData(testId);
-      await verifyCleanup(testId);
+      await cleanupTestDataByIteration(testId, [SimpleModel, ComplexModel]);
+      await verifyCleanup(testId, [SimpleModel, ComplexModel]);
     }
   });
 

@@ -1,24 +1,25 @@
 const dynamoBao = require("../src");
 const { TenantContext } = dynamoBao;
 const testConfig = require("./config");
-const { cleanupTestData, verifyCleanup, initTestModelsWithTenant } = require("./utils/test-utils");
+const { cleanupTestDataByIteration, verifyCleanup, initTestModelsWithTenant } = require("./utils/test-utils");
 const { ulid } = require("ulid");
 
 describe("Related Field Queries", () => {
   let testUser, testPosts, testTags, testId;
+  let User, Post, Tag, TaggedPost;
 
   beforeEach(async () => {
     testId = ulid();
 
     const manager = initTestModelsWithTenant(testConfig, testId);
 
-    await cleanupTestData(testId);
-    await verifyCleanup(testId);
-
     User = manager.getModel("User");
     Post = manager.getModel("Post");
     Tag = manager.getModel("Tag");
     TaggedPost = manager.getModel("TaggedPost");
+
+    await cleanupTestDataByIteration(testId, [User, Post, Tag, TaggedPost]);
+    await verifyCleanup(testId, [User, Post, Tag, TaggedPost]);
 
     // Create test user
     testUser = await User.create({
@@ -70,8 +71,8 @@ describe("Related Field Queries", () => {
   afterEach(async () => {
     TenantContext.clearTenant();
     if (testId) {
-      await cleanupTestData(testId);
-      await verifyCleanup(testId);
+      await cleanupTestDataByIteration(testId, [User, Post, Tag, TaggedPost]);
+      await verifyCleanup(testId, [User, Post, Tag, TaggedPost]);
     }
   });
 

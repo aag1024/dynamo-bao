@@ -1,20 +1,17 @@
 const dynamoBao = require("../src");
 const { TenantContext } = dynamoBao;
 const testConfig = require("./config");
-const { cleanupTestData, verifyCleanup, initTestModelsWithTenant } = require("./utils/test-utils");
+const { cleanupTestDataByIteration, verifyCleanup, initTestModelsWithTenant } = require("./utils/test-utils");
 const { ulid } = require("ulid");
 
-let testUser, testPost, testId;
+let testUser, testPost, testId, User, Post, Comment;
 
 describe("Comment Model", () => {
   beforeEach(async () => {
     testId = ulid();
 
     const manager = initTestModelsWithTenant(testConfig, testId);
-
-    await cleanupTestData(testId);
-    await verifyCleanup(testId);
-
+    
     User = manager.getModel("User");
     Post = manager.getModel("Post");
     Comment = manager.getModel("Comment");
@@ -39,8 +36,8 @@ describe("Comment Model", () => {
   afterEach(async () => {
     TenantContext.clearTenant();
     if (testId) {
-      await cleanupTestData(testId);
-      await verifyCleanup(testId);
+      await cleanupTestDataByIteration(testId, [User, Post, Comment]);
+      await verifyCleanup(testId, [User, Post, Comment]);
     }
   });
 

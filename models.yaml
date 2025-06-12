@@ -1,0 +1,13 @@
+# Edit this file to create your models. For more information see: aag1024.github.io/dynamo-bao/
+#
+# Here's a simple example:
+# models:
+#   User: {
+#   
+#     modelPrefix: u
+#     fields:
+#       userId: {type: UlidField, autoAssign: true, required: true}
+#       name: {type: StringField, required: true}
+#       email: {type: EmailField, required: true}
+#     primaryKey: {partitionKey: userId}
+#   }

@@ -7,6 +7,8 @@ models:
   ModelName:
     modelPrefix: "x" # Required: short (1-4 unique character prefix) for the model. This must be unique and cannot change later. It is not user visible.
     tableType: "standard" # Optional: "standard" (default) or "mapping"
+    iterable: true # Optional: "true" (default) or "false". See notes on iteration.
+    iterationBuckets: 10 # Optional: number of buckets for iteration. Default is 10.
     fields: {} # Required: field definitions
     primaryKey: {} # Required: primary key configuration
     indexes: {} # Optional: secondary indexes
@@ -183,37 +185,54 @@ Adding the `primaryKey` to the index is a shorthand that allows you to give the 
 
 ### Iterating Over All Objects for a Model
 
-If you want to iterate over all the objects for a model, you can set the `modelPrefix` as the `partitionKey` for the model. This will allow you to query the model by the `modelPrefix` and iterate over all the objects of that model.
+By default, all models in DynamoBao are iterable. This feature is designed to be a safe default, allowing you to perform full-table scans for administrative tasks, data migrations, or reporting without worrying about whether you enabled it during model creation.
 
-Here's an example:
+When `iterable` is `true` (the default), an `all` index is automatically created for the model. This enables the `iterateAll()` method, which returns an async generator to efficiently page through every object.
+
+**Cost and Performance Considerations**
+This convenience comes with a trade-off. To maintain the iteration index, every `create`, `update`, or `delete` operation requires a second write to the database. This effectively doubles the write cost for every item in your model.
+
+**Opting Out of Iteration**
+For high-volume, write-heavy models where you are certain you will never need to iterate over all items (e.g., logging tables, event streams), you can and should disable this feature to save costs.
+
+To disable iteration, explicitly set `iterable: false`:
+
+```yaml
+models:
+  AnalyticsEvent:
+    modelPrefix: "ae"
+    iterable: false # Disabling iteration for this write-heavy model
+    fields:
+      # ...
+```
+
+#### Handling Large Models with Iteration Buckets
+
+To prevent "hot partition" issues on large iterable models, DynamoBao automatically splits the iteration index into multiple partitions. The number of partitions is determined by `iterationBuckets`, which defaults to **10**.
+
+This provides a good balance of write scalability and read performance out of the box. If you need to change the number of buckets, you can specify it:
 
 ```yaml
 models:
   User:
     modelPrefix: "u"
+    iterable: true # This is the default, so it's not strictly needed
+    iterationBuckets: 20 # Overriding the default of 10 for a very large model
     fields:
-      userId:
-        type: UlidField
-        autoAssign: true
-    primaryKey:
-      partitionKey: "userId"
-    indexes:
-      allUsers:
-        partitionKey: "modelPrefix"
-        sortKey: "userId"
+      # ...
 ```
 
-If you don't set this up, there is no efficient way to iterate over all the objects for a given model. However, if you expect this model to grow large, you should not use the modelPrefix as the `partitionKey` since all objects of this model will be stored in the same partition. This is a fundamental tension present in Dynamo single table design.
+The `iterateAll` method handles iterating over all buckets automatically. For parallel processing, you can iterate a specific partition using the `iterateBucket(bucketNum)` method.
 
-One way of addressing this is to choose a root model and enable iteration on it. This allows you to iterate over all the objects for the root model and use that to access all the other data in the system.
+Choosing the number of buckets:
 
-For instance, a `User` model could have an `allUsers` index that allows you to iterate over all the users in the system. If all other data in the system is owned by a user, you can iterate over all the users to get all the data in the system.
+- `1`: Use for small models or when parallel iteration is not needed. All items in one partition.
+- `10` (default): Good for most models, providing a solid baseline for scalability.
+- `20+`: For very large models or high-throughput parallel processing scenarios.
 
-A good root model isn't too large and doesn't get written to frequently. For instance, a `User` model may be a good candidate, since you typically have many fewer users than posts, messages, or other objects in the system. Users also don't get written to as frequently as other objects, so it's a good fit for iteration. However, you should be aware that if you ever try to write lots of users to dynamo quickly (e.g. bulk importing users without rate limiting), you may hit write capacity limits since it's all on a single partition.
+A good root model isn't too large and doesn't get written to frequently. For instance, a `User` model may be a good candidate, since you typically have many fewer users than posts, messages, or other objects in the system. Users also don't get written to as frequently as other objects, so it's a good fit for iteration. Since iteration defaults to using 10 buckets, write capacity is automatically distributed, but you should still be mindful of very high-velocity writes (e.g. bulk importing users without rate limiting).
 
-It is not recommended to use the `modelPrefix` as the primaryKey's partitionKey, since it cannot be changed later. If you do enable iteration, I recommend using an _index_ with the `modelPrefix` as the partitionKey since you can always stop using the index if you run into capacity issues with no issues to the rest of the system.
-
-If you anticipate having a root model that is very large (1M+ objects), you will probably want to use a `partitionKey` that is the modelPrefix and a short hash of the object id. This will allow you to iterate over all the objects while also splitting the data across multiple partitions. If you need this, please [open an issue](https://github.com/aag1024/dynamo-bao/issues) and we can discuss further.
+It is not recommended to use the `modelPrefix` as the primaryKey's partitionKey, since it cannot be changed later. The `iterable` feature provides a safer and more flexible way to enable iteration.
 
 ## Unique Constraints
 
@@ -365,10 +384,7 @@ models:
         partitionKey: userId
         sortKey: createdAt
         indexId: gsi1
-      allPosts:
-        partitionKey: modelPrefix
-        sortKey: postId
-        indexId: gsi2
+    iterable: true
 ```
 
 ## Generated Features

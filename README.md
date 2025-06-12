@@ -22,6 +22,7 @@ DynamoBao is the tool I wish I had when I started.
 - Enforce unique constraints and use them for lookups
 - Built-in multi-tenancy support with complete data isolation and concurrency safety
 - Return total read/write consumed capacity (even when multiple operations were performed)
+- Easily iterate over all items in a model for batch processing or migrations
 
 ## Requirements
 
@@ -150,6 +151,40 @@ async function testUserModel() {
 testUserModel();
 ```
 
+### Iterating over all items
+
+DynamoBao makes it easy to iterate over all items in a model, which is useful for tasks like data migration, backfills, or reporting.
+
+By default, all models are created with `iterable: true`. This automatically sets up a dedicated index that allows you to use the `iterateAll()` method on the model class.
+
+```javascript
+// Iterate over all posts, 100 at a time
+for await (const batch of Post.iterateAll({ batchSize: 100 })) {
+  for (const post of batch) {
+    console.log(post.title);
+  }
+}
+```
+
+**Cost and Performance**
+
+This convenience comes at a cost: every `create`, `update`, or `delete` operation on an iterable model requires a second write to the database to maintain the iteration index. This doubles the write cost for every item.
+
+To prevent "hot partitions" on large models, the iteration index is automatically split into 10 "buckets" or partitions. The `iterateAll()` method handles fetching from all buckets seamlessly.
+
+**Opting Out**
+
+For high-volume, write-heavy models where you know you will never need to iterate (e.g., logging tables), you can disable this feature to save costs:
+
+```yaml
+models:
+  AnalyticsEvent:
+    modelPrefix: "ae"
+    iterable: false # Disabling iteration for this write-heavy model
+    fields:
+      # ...
+```
+
 ## Installation / Quick Start
 
 Make sure you have [AWS credentials setup in your environment](https://medium.com/@simonazhangzy/installing-and-configuring-the-aws-cli-7d33796e4a7c). You'll also need [node and npm](https://docs.npmjs.com/downloading-and-installing-node-js-and-npm) installed.
@@ -205,8 +240,6 @@ models:
     primaryKey:
       partitionKey: postId
     indexes:
-      # Enables Post.queryAllPosts() to query all posts
-      allPosts: { partitionKey: modelPrefix, sortKey: postId, indexId: gsi1 }
       # Enables user.queryPosts() to query posts for a user
       postsForUser: { partitionKey: userId, sortKey: createdAt, indexId: gsi2 }
 ```

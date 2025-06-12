@@ -45,8 +45,38 @@ function loadModelDefinitions(definitionsPath, fieldResolver) {
     }
   }
 
-  // Process models to ensure mapping tables get both regular and mapping functions
+  // Process models to set defaults and handle mapping tables
   for (const [modelName, modelDef] of Object.entries(models)) {
+    // Default 'iterable' based on tableType
+    if (modelDef.iterable === undefined) {
+      if (modelDef.tableType === "mapping") {
+        logger.debug(
+          `Model "${modelName}" is a mapping table, defaulting 'iterable' to false.`,
+        );
+        modelDef.iterable = false;
+      } else {
+        logger.debug(
+          `Model "${modelName}" is a standard table, defaulting 'iterable' to true.`,
+        );
+        modelDef.iterable = true;
+      }
+    }
+
+    // Default 'iterationBuckets'
+    if (modelDef.iterationBuckets === undefined) {
+      if (modelDef.iterable) {
+        logger.debug(
+          `Model "${modelName}" is iterable, defaulting 'iterationBuckets' to 10.`,
+        );
+        modelDef.iterationBuckets = 10;
+      } else {
+        logger.debug(
+          `Model "${modelName}" is not iterable, defaulting 'iterationBuckets' to 0.`,
+        );
+        modelDef.iterationBuckets = 0;
+      }
+    }
+
     if (modelDef.mapping) {
       // For mapping tables, merge mapping properties with regular model properties
       models[modelName] = {

@@ -100,14 +100,13 @@ function loadModelDefinitions(definitionsPath, fieldResolver) {
 function main() {
   const args = process.argv.slice(2);
 
-  // Set default paths, but prefer config paths if available
-  let definitionsPath = config?.paths?.modelsDefinitionPath
-    ? path.resolve(process.cwd(), config.paths.modelsDefinitionPath)
-    : path.resolve(process.cwd(), "./models.yaml");
+  // Paths should be pre-resolved by the config loader.
+  let definitionsPath =
+    config?.paths?.modelsDefinitionPath ||
+    path.resolve(process.cwd(), "./models.yaml");
 
-  let outputDir = config?.paths?.modelsDir
-    ? path.resolve(process.cwd(), config.paths.modelsDir)
-    : path.resolve(process.cwd(), "./models");
+  let outputDir =
+    config?.paths?.modelsDir || path.resolve(process.cwd(), "./models");
 
   // Override with command line arguments if provided
   if (args.length >= 1) {

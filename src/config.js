@@ -64,22 +64,22 @@ function normalizeConfig(rawConfig, configDir) {
   return {
     ...rawConfig,
     paths: {
-      ...rawConfig.paths,
-      modelsDir: rawConfig.paths.modelsDir
+      ...(rawConfig.paths || {}),
+      modelsDir: rawConfig.paths?.modelsDir
         ? path.resolve(configDir, rawConfig.paths.modelsDir)
         : null,
-      modelsDefinitionPath: rawConfig.paths.modelsDefinitionPath
+      modelsDefinitionPath: rawConfig.paths?.modelsDefinitionPath
         ? path.resolve(configDir, rawConfig.paths.modelsDefinitionPath)
         : null,
-      fieldsDir: rawConfig.paths.fieldsDir
+      fieldsDir: rawConfig.paths?.fieldsDir
         ? path.resolve(configDir, rawConfig.paths.fieldsDir)
         : null,
-      generatedModelsManifest: rawConfig.paths.generatedModelsManifest
+      generatedModelsManifest: rawConfig.paths?.generatedModelsManifest
         ? path.resolve(configDir, rawConfig.paths.generatedModelsManifest)
         : path.resolve(process.cwd(), ".bao/models.js"),
     },
     logging: {
-      ...rawConfig.logging,
+      ...(rawConfig.logging || {}),
       // Allow environment variable to override config file
       level: process.env.LOG_LEVEL || rawConfig.logging?.level || "ERROR",
     },

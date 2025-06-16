@@ -4,6 +4,7 @@ const fs = require("fs");
 const path = require("path");
 const yaml = require("js-yaml");
 const { generateModelFiles } = require("./generators/model");
+const { generateManifestFile } = require("./generators/manifest");
 const { createLogger } = require("./utils/scriptLogger");
 const FieldResolver = require("../src/fieldResolver");
 const logger = createLogger("CodeGen");
@@ -132,6 +133,16 @@ function main() {
       outputDir,
       definitions.fieldResolver,
     );
+
+    // After generating models, generate the manifest file
+    const manifestPath = config?.paths?.generatedModelsManifest;
+    if (outputDir && manifestPath) {
+      generateManifestFile(outputDir, manifestPath);
+    } else {
+      logger.warn(
+        "outputDir or generatedModelsManifest path not configured. Skipping manifest generation.",
+      );
+    }
   } catch (error) {
     console.error("Error generating models:", error);
     console.error("Stack trace:", error.stack);
@@ -139,8 +150,12 @@ function main() {
   }
 }
 
-if (require.main === module) {
+function run() {
   main();
 }
 
-module.exports = { loadModelDefinitions };
+if (require.main === module) {
+  run();
+}
+
+module.exports = { loadModelDefinitions, run };

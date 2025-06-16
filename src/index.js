@@ -35,23 +35,65 @@ function findModelFiles(dir) {
   return results;
 }
 
-function _registerModels(manager = null, modelsDir = null) {
-  if (!modelsDir) {
-    throw new ConfigurationError("modelsDir is required");
+function _registerModelsFromManifest(manager, manifestPath) {
+  try {
+    const allModels = require(manifestPath);
+    for (const ModelClass of Object.values(allModels.default || {})) {
+      if (ModelClass.prototype instanceof BaoModel) {
+        manager.registerModel(ModelClass);
+      }
+    }
+    return allModels.default ? Object.keys(allModels.default) : [];
+  } catch (err) {
+    if (err.code === "MODULE_NOT_FOUND") {
+      logger.warn(
+        `Model manifest not found at '${manifestPath}'. Falling back to directory scan. Please run codegen.`,
+      );
+      return null;
+    }
+    throw err;
   }
+}
 
+function _registerModelsFromDirectory(manager, modelsDir) {
+  if (!modelsDir || !fs.existsSync(modelsDir)) {
+    throw new ConfigurationError(
+      `modelsDir is not defined or does not exist: ${modelsDir}`,
+    );
+  }
   const modelFiles = findModelFiles(modelsDir);
   const models = {};
-
   modelFiles.forEach((file) => {
     const model = require(file);
     Object.entries(model).forEach(([name, ModelClass]) => {
-      manager.registerModel(ModelClass);
-      models[name] = ModelClass;
+      if (ModelClass.prototype instanceof BaoModel) {
+        manager.registerModel(ModelClass);
+        models[name] = ModelClass;
+      }
     });
   });
-
   return models;
+}
+
+function _registerModels(manager, config) {
+  const manifestPath = config.paths.generatedModelsManifest;
+
+  // Try loading from manifest first
+  if (manifestPath) {
+    const manifestModels = _registerModelsFromManifest(manager, manifestPath);
+    if (manifestModels) {
+      // If manifest load was successful, we can return those.
+      // The actual model classes are in the manager. Here we just return names.
+      const models = {};
+      manager.getModels().forEach((modelClass) => {
+        models[modelClass.name] = modelClass;
+      });
+      return models;
+    }
+  }
+
+  // Fallback to directory scan if manifest fails or isn't specified
+  return _registerModelsFromDirectory(manager, config.paths.modelsDir);
 }
 
 function initModels(userConfig = {}) {
@@ -84,19 +126,19 @@ function initModels(userConfig = {}) {
 
   // Validate tenant context if tenancy enabled
   if (finalConfig.tenancy?.enabled) {
-    const { TenantContext } = require('./tenant-context');
+    const { TenantContext } = require("./tenant-context");
     TenantContext.validateTenantRequired(finalConfig);
   }
 
   const modelsDir = finalConfig.paths.modelsDir;
 
   // Get/create manager instance with tenantId
-  const { TenantContext } = require('./tenant-context');
+  const { TenantContext } = require("./tenant-context");
   const tenantId = TenantContext.getCurrentTenant() || finalConfig.testId;
   const manager = ModelManager.getInstance(tenantId);
 
   // First pass to register models
-  const registeredModels = _registerModels(manager, modelsDir);
+  const registeredModels = _registerModels(manager, finalConfig);
 
   // Initialize the manager & 2nd model registration pass
   manager.init(finalConfig);
@@ -113,7 +155,7 @@ function initModels(userConfig = {}) {
   return manager;
 }
 
-const { TenantContext } = require('./tenant-context');
+const { TenantContext } = require("./tenant-context");
 
 const firstExport = {
   // Initialize function

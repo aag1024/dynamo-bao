@@ -74,6 +74,9 @@ function normalizeConfig(rawConfig, configDir) {
       fieldsDir: rawConfig.paths.fieldsDir
         ? path.resolve(configDir, rawConfig.paths.fieldsDir)
         : null,
+      generatedModelsManifest: rawConfig.paths.generatedModelsManifest
+        ? path.resolve(configDir, rawConfig.paths.generatedModelsManifest)
+        : path.resolve(process.cwd(), ".bao/models.js"),
     },
     logging: {
       ...rawConfig.logging,

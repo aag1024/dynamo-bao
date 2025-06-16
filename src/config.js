@@ -18,8 +18,10 @@ function findConfig() {
 
   const possibleNames = [
     "dynamo-bao.config.js",
+    "dynamo-bao.config.cjs",
     ".dynamo-bao/config.js",
     "config.js",
+    "config.cjs",
   ];
   const searchPaths = [
     process.cwd(), // Project root

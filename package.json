@@ -1,6 +1,6 @@
 {
   "name": "dynamo-bao",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "Simple powerful data modeling primitives for DynamoDB in JavaScript.",
   "main": "src/index.js",
   "scripts": {

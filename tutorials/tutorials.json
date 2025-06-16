@@ -22,5 +22,8 @@
   },
   "08-multi-tenancy": {
     "title": "Multi-Tenancy"
+  },
+  "09-cloudflare-workers": {
+    "title": "Cloudflare Workers"
   }
 }

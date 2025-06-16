@@ -65,6 +65,7 @@ function findConfig() {
 function normalizeConfig(rawConfig, configDir) {
   return {
     ...rawConfig,
+    models: rawConfig.models || null,
     paths: {
       ...(rawConfig.paths || {}),
       modelsDir: rawConfig.paths?.modelsDir

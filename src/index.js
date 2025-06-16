@@ -56,9 +56,14 @@ function _registerModelsFromManifest(manager, manifestPath) {
 }
 
 function _registerModelsFromDirectory(manager, modelsDir) {
-  if (!modelsDir || !fs.existsSync(modelsDir)) {
+  if (!modelsDir) {
     throw new ConfigurationError(
-      `modelsDir is not defined or does not exist: ${modelsDir}`,
+      "modelsDir is required when no direct models are provided. Either specify a modelsDir or provide models directly in the config.",
+    );
+  }
+  if (!fs.existsSync(modelsDir)) {
+    throw new ConfigurationError(
+      `modelsDir does not exist: ${modelsDir}`,
     );
   }
   const modelFiles = findModelFiles(modelsDir);
@@ -75,7 +80,46 @@ function _registerModelsFromDirectory(manager, modelsDir) {
   return models;
 }
 
+function _registerModelsFromDirectImports(manager, modelsObject) {
+  if (!modelsObject || typeof modelsObject !== 'object') {
+    throw new ConfigurationError(
+      "models must be an object containing model classes",
+    );
+  }
+
+  const models = {};
+  Object.entries(modelsObject).forEach(([name, ModelClass]) => {
+    if (!ModelClass || typeof ModelClass !== 'function') {
+      throw new ConfigurationError(
+        `Invalid model "${name}": must be a constructor function`,
+      );
+    }
+    if (!(ModelClass.prototype instanceof BaoModel)) {
+      throw new ConfigurationError(
+        `Model "${name}" must extend BaoModel`,
+      );
+    }
+    manager.registerModel(ModelClass);
+    models[name] = ModelClass;
+  });
+  return models;
+}
+
 function _registerModels(manager, config) {
+  // If models are provided directly, use them
+  if (config.models) {
+    return _registerModelsFromDirectImports(manager, config.models);
+  }
+
+  // Check if filesystem is available
+  const fsAvailable = typeof fs !== 'undefined' && fs.existsSync;
+  
+  if (!fsAvailable) {
+    throw new ConfigurationError(
+      "Filesystem not available. Please provide models directly using the 'models' config option.",
+    );
+  }
+
   const manifestPath = config.paths.generatedModelsManifest;
 
   // Try loading from manifest first
@@ -122,6 +166,7 @@ function initModels(userConfig = {}) {
       ...config.tenancy,
       ...(userConfig.tenancy || {}),
     },
+    models: userConfig.models || config.models || null,
   };
 
   // Validate tenant context if tenancy enabled

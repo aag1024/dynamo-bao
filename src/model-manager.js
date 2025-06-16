@@ -120,6 +120,10 @@ class ModelManager {
   listModels() {
     return Array.from(this._models.keys());
   }
+
+  getModels() {
+    return Array.from(this._models.values());
+  }
 }
 
 module.exports = { ModelManager };

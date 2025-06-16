@@ -135,21 +135,25 @@ function generateModelClass(
 
   logger.debug("fieldResolver customFields", fieldResolver.customFieldsPath);
 
-  // get relative path for fieldResolver.customFieldsPath from projectPath
-  const relativePath = path.relative(outputDir, fieldResolver.customFieldsPath);
-  logger.debug("relativePath", relativePath);
-
-  // Generate custom field imports
-  const customFieldImports = Array.from(customFields)
-    .map((fieldType) => {
-      // Remove 'Field' suffix before converting to kebab case
-      const baseName = fieldType.replace(/Field$/, "");
-      const kebabName = baseName
-        .replace(/([a-z0-9])([A-Z])/g, "$1-$2")
-        .toLowerCase();
-      return `const { ${fieldType} } = require('${relativePath}/${kebabName}-field');`;
-    })
-    .join("\n");
+  // Generate custom field imports only if we have custom fields and a path
+  const customFieldImports =
+    customFields.size > 0 && fieldResolver.customFieldsPath
+      ? Array.from(customFields)
+          .map((fieldType) => {
+            // Remove 'Field' suffix before converting to kebab case
+            const baseName = fieldType.replace(/Field$/, "");
+            const kebabName = baseName
+              .replace(/([a-z0-9])([A-Z])/g, "$1-$2")
+              .toLowerCase();
+            // get relative path for fieldResolver.customFieldsPath from projectPath
+            const relativePath = path.relative(
+              outputDir,
+              fieldResolver.customFieldsPath,
+            );
+            return `const { ${fieldType} } = require('${relativePath}/${kebabName}-field');`;
+          })
+          .join("\n")
+      : "";
 
   // Generate the final code with separated imports
   return `// 🧨 🧨 🧨 🧨 🧨 🧨 🧨 🧨 🧨 🧨 🧨 🧨 🧨 🧨 🧨  

@@ -1,0 +1,298 @@
+models:
+  User:
+    modelPrefix: "u"
+    iterable: true
+    fields:
+      userId:
+        type: UlidField
+        autoAssign: true
+        required: true
+      email:
+        type: StringField
+        required: true
+      name:
+        type: StringField
+        required: true
+      avatarUrl:
+        type: StringField
+      provider:
+        type: StringField
+        required: true
+      providerId:
+        type: StringField
+        required: true
+      createdAt:
+        type: CreateDateField
+      modifiedAt:
+        type: ModifiedDateField
+    primaryKey:
+      partitionKey: userId
+    uniqueConstraints:
+      uniqueEmail:
+        field: email
+        uniqueConstraintId: uc1
+      uniqueProvider:
+        field: providerId
+        uniqueConstraintId: uc2
+
+  App:
+    modelPrefix: "a"
+    iterable: true
+    fields:
+      appId:
+        type: UlidField
+        autoAssign: true
+        required: true
+      name:
+        type: StringField
+        required: true
+      mode:
+        type: StringField
+        required: true # "public" | "invite-only"
+      ownerId:
+        type: RelatedField
+        model: User
+        required: true
+      googleClientId:
+        type: StringField
+      googleClientSecret:
+        type: StringField
+      allowedDomains:
+        type: StringField # JSON array of allowed email domains
+      createdAt:
+        type: CreateDateField
+      modifiedAt:
+        type: ModifiedDateField
+    primaryKey:
+      partitionKey: appId
+    indexes:
+      appsForOwner:
+        partitionKey: ownerId
+        sortKey: createdAt
+        indexId: gsi1
+
+  InvitedUser:
+    modelPrefix: "inv"
+    iterable: true
+    fields:
+      appId:
+        type: RelatedField
+        model: App
+        required: true
+      email:
+        type: StringField
+        required: true
+      invitedAt:
+        type: CreateDateField
+      invitedBy:
+        type: StringField
+        required: true
+    primaryKey:
+      partitionKey: appId
+      sortKey: email
+
+  Document:
+    modelPrefix: "d"
+    iterable: true
+    fields:
+      documentId:
+        type: UlidField
+        autoAssign: true
+        required: true
+      appId:
+        type: RelatedField
+        model: App
+        required: true
+      title:
+        type: StringField
+      createdAt:
+        type: CreateDateField
+      modifiedAt:
+        type: ModifiedDateField
+      createdBy:
+        type: RelatedField
+        model: User
+        required: true
+    primaryKey:
+      partitionKey: documentId
+    indexes:
+      documentsByCreator:
+        partitionKey: createdBy
+        sortKey: modifiedAt
+        indexId: gsi1
+
+  DocumentPermission:
+    modelPrefix: "dp"
+    iterable: false
+    fields:
+      documentId:
+        type: RelatedField
+        model: Document
+        required: true
+      userId:
+        type: RelatedField
+        model: User
+        required: true
+      permission:
+        type: StringField
+        required: true # "owner" | "read-write" | "reader"
+      grantedAt:
+        type: CreateDateField
+      grantedBy:
+        type: RelatedField
+        model: User
+        required: true
+    primaryKey:
+      partitionKey: documentId
+      sortKey: userId
+    indexes:
+      permissionsForDocument: primaryKey
+      permissionsForUser:
+        partitionKey: userId
+        sortKey: grantedAt
+        indexId: gsi1
+
+  Session:
+    modelPrefix: "s"
+    iterable: false
+    fields:
+      sessionId:
+        type: UlidField
+        autoAssign: true
+        required: true
+      userId:
+        type: RelatedField
+        model: User
+        required: true
+      accessToken:
+        type: StringField
+        required: true
+      refreshToken:
+        type: StringField
+        required: true
+      expiresAt:
+        type: DateTimeField
+        required: true
+      createdAt:
+        type: CreateDateField
+      lastActivity:
+        type: DateTimeField
+      ttl:
+        type: TtlField
+    primaryKey:
+      partitionKey: sessionId
+    indexes:
+      sessionsForUser:
+        partitionKey: userId
+        sortKey: createdAt
+        indexId: gsi1
+
+  ConnectionMapping:
+    modelPrefix: "cm"
+    iterable: false
+    fields:
+      connectionId:
+        type: StringField
+        required: true
+      userId:
+        type: RelatedField
+        model: User
+        required: true
+      appId:
+        type: RelatedField
+        model: App
+        required: true
+      documentId:
+        type: RelatedField
+        model: Document
+        required: true
+      connectedAt:
+        type: CreateDateField
+      lastActivity:
+        type: DateTimeField
+      ttl:
+        type: TtlField # Auto-cleanup stale connections
+    primaryKey:
+      partitionKey: documentId
+      sortKey: connectionId
+    indexes:
+      connectionsForDocument: primaryKey
+      connectionsForUser:
+        partitionKey: userId
+        sortKey: connectedAt
+        indexId: gsi1
+
+  # Global admin models (not tenant-scoped)
+  AdminUser:
+    modelPrefix: "admin"
+    iterable: true
+    fields:
+      adminId:
+        type: UlidField
+        autoAssign: true
+        required: true
+      email:
+        type: StringField
+        required: true
+      name:
+        type: StringField
+        required: true
+      avatarUrl:
+        type: StringField
+      provider:
+        type: StringField
+        required: true
+      providerId:
+        type: StringField
+        required: true
+      role:
+        type: StringField
+        required: true # "admin" | "super-admin"
+      createdAt:
+        type: CreateDateField
+      modifiedAt:
+        type: ModifiedDateField
+    primaryKey:
+      partitionKey: adminId
+    uniqueConstraints:
+      uniqueAdminEmail:
+        field: email
+        uniqueConstraintId: uc1
+      uniqueAdminProvider:
+        field: providerId
+        uniqueConstraintId: uc2
+
+  AdminSession:
+    modelPrefix: "as"
+    iterable: false
+    fields:
+      sessionId:
+        type: UlidField
+        autoAssign: true
+        required: true
+      adminId:
+        type: RelatedField
+        model: AdminUser
+        required: true
+      accessToken:
+        type: StringField
+        required: true
+      refreshToken:
+        type: StringField
+        required: true
+      expiresAt:
+        type: DateTimeField
+        required: true
+      createdAt:
+        type: CreateDateField
+      lastActivity:
+        type: DateTimeField
+      ttl:
+        type: TtlField
+    primaryKey:
+      partitionKey: sessionId
+    indexes:
+      sessionsForAdmin:
+        partitionKey: adminId
+        sortKey: createdAt
+        indexId: gsi1

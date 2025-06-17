@@ -1,4 +1,4 @@
-// require("dotenv").config();
+// import("dotenv").then(dotenv => dotenv.config());
 
 const userConfig = require("../config");
 
@@ -48,7 +48,4 @@ class Logger {
 // Export a default logger with a generic context
 const defaultLogger = new Logger("Default");
 
-module.exports = {
-  Logger,
-  defaultLogger,
-};
+module.exports = { Logger, defaultLogger };

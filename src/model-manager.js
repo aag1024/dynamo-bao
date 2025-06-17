@@ -25,7 +25,7 @@ class ModelManager {
     return ModelManager._instances.get(key);
   }
 
-  init(config = {}) {
+  async init(config = {}) {
     // Validate tenant requirement
     const { TenantContext } = require('./tenant-context');
     TenantContext.validateTenantRequired(config);

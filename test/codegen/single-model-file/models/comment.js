@@ -5,7 +5,7 @@ const {
   BaoModel,
   PrimaryKeyConfig,
   IndexConfig
-} = require('dynamo-bao');
+} = require('../../../../src/model.js');
 
 
 const { 
@@ -14,9 +14,7 @@ const {
     StringField,
     CreateDateField,
     IntegerField
-} = require('dynamo-bao').fields;
-
-
+} = require('../../../../src/fields.js');
 
 
 

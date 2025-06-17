@@ -18,9 +18,9 @@ const {
 } = require("./mixins/batch-loading-mixin");
 
 const {
-  PrimaryKeyConfig,
-  IndexConfig,
-  UniqueConstraintConfig,
+  PrimaryKeyConfig: PrimaryKeyConfigClass,
+  IndexConfig: IndexConfigClass,
+  UniqueConstraintConfig: UniqueConstraintConfigClass,
 } = require("./model-config");
 
 const GID_SEPARATOR = "##__SK__##";
@@ -866,12 +866,16 @@ class BaoModel {
   }
 }
 
+// Factory functions to maintain compatibility
+const PrimaryKeyConfig = (pk, sk) => new PrimaryKeyConfigClass(pk, sk);
+const IndexConfig = (pk, sk, indexId) => new IndexConfigClass(pk, sk, indexId);
+const UniqueConstraintConfig = (field, constraintId) => new UniqueConstraintConfigClass(field, constraintId);
+
 module.exports = {
   BaoModel,
-  PrimaryKeyConfig: (pk, sk) => new PrimaryKeyConfig(pk, sk),
-  IndexConfig: (pk, sk, indexId) => new IndexConfig(pk, sk, indexId),
-  UniqueConstraintConfig: (field, constraintId) =>
-    new UniqueConstraintConfig(field, constraintId),
+  PrimaryKeyConfig,
+  IndexConfig,
+  UniqueConstraintConfig,
   BATCH_REQUEST_TIMEOUT,
   BATCH_REQUESTS,
 };

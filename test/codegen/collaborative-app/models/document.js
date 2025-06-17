@@ -5,12 +5,11 @@ const {
   BaoModel,
   PrimaryKeyConfig,
   IndexConfig
-} = require('dynamo-bao');
+} = require('../../../../src/model.js');
 
 const {
   GSI_INDEX_ID1
-} = require('dynamo-bao').constants;
-
+} = require('../../../../src/constants.js');
 
 const { 
     UlidField,
@@ -18,13 +17,12 @@ const {
     StringField,
     CreateDateField,
     ModifiedDateField
-} = require('dynamo-bao').fields;
+} = require('../../../../src/fields.js');
 
 
+const { DocumentPermission } = require('./document-permission.js');
+const { ConnectionMapping } = require('./connection-mapping.js');
 
-
-const { DocumentPermission } = require('./document-permission');
-const { ConnectionMapping } = require('./connection-mapping');
 
 class Document extends BaoModel {
   static modelPrefix = 'd';

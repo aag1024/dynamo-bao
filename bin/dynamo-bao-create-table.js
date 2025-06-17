@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 
-const {
+import {
   DynamoDBClient,
   CreateTableCommand,
   ListTablesCommand,
-} = require("../src/dynamodb-client");
-const readline = require("readline");
-const fs = require("fs");
-const path = require("path");
+} from "../src/dynamodb-client.js";
+import readline from "readline";
+import fs from "fs";
+import path from "path";
 
 // Create DynamoDB client at the top level
 const client = new DynamoDBClient();

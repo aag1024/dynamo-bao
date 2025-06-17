@@ -23,10 +23,12 @@ DynamoBao is the tool I wish I had when I started.
 - Built-in multi-tenancy support with complete data isolation and concurrency safety
 - Return total read/write consumed capacity (even when multiple operations were performed)
 - Easily iterate over all items in a model for batch processing or migrations
+- ESM (ECMAScript Modules) support for modern JavaScript projects
 
 ## Requirements
 
 - **Node.js 12.17.0+** (for AsyncLocalStorage support in multi-tenant features)
+  - Node.js 14+ recommended for native ESM support
 - AWS credentials configured for DynamoDB access
 
 ## Example 1: Simple model
@@ -251,6 +253,51 @@ npx bao-codegen
 ```
 
 You should now have generated models in the `models` directory.
+
+### ESM Support
+
+DynamoBao supports generating models as ESM (ECMAScript Modules) for modern JavaScript projects. To enable ESM code generation, add the `codegen` configuration to your `config.js`:
+
+```javascript
+// config.js
+module.exports = {
+  aws: {
+    region: "us-west-2",
+  },
+  db: {
+    tableName: "your-table-name",
+  },
+  codegen: {
+    moduleSystem: "esm", // Options: 'commonjs' (default) or 'esm'
+  },
+  // ... other config
+};
+```
+
+When ESM is enabled, generated models will use:
+
+- `import` / `export` syntax instead of `require` / `module.exports`
+- `.js` extensions in import paths for ESM compatibility
+
+For ESM config files, you can use `.mjs` extension:
+
+```javascript
+// dynamo-bao.config.mjs
+export default {
+  codegen: {
+    moduleSystem: "esm",
+  },
+  // ... other config
+};
+```
+
+Then use the generated ESM models:
+
+```javascript
+// With ESM enabled
+import { User } from "./models/user.js";
+import { Post } from "./models/post.js";
+```
 
 Let's try using the models. Add the following code to a file called `example.js`.
 

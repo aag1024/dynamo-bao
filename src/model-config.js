@@ -40,8 +40,4 @@ class UniqueConstraintConfig {
   }
 }
 
-module.exports = {
-  PrimaryKeyConfig,
-  IndexConfig,
-  UniqueConstraintConfig,
-};
+module.exports = { PrimaryKeyConfig, IndexConfig, UniqueConstraintConfig };

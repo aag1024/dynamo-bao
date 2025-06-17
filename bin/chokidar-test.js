@@ -1,7 +1,7 @@
-const path = require("path");
-const fs = require("fs").promises;
-const os = require("os");
-const chokidar = require("chokidar");
+import path from "path";
+import { promises as fs } from "fs";
+import os from "os";
+import chokidar from "chokidar";
 
 async function testChokidar() {
   let tempDir = path.join(os.tmpdir(), "chokidar-test-" + Date.now());

@@ -7,10 +7,13 @@ const { generateModelFiles } = require("./generators/model");
 const { generateManifestFile } = require("./generators/manifest");
 const { createLogger } = require("./utils/scriptLogger");
 const FieldResolver = require("../src/fieldResolver");
-const logger = createLogger("CodeGen");
-const config = require("../src/config");
+const { initConfig } = require("../src/config");
 
-function loadModelDefinitions(definitionsPath, fieldResolver) {
+// const __dirname = __dirname;
+
+const logger = createLogger("CodeGen");
+
+async function loadModelDefinitions(definitionsPath, fieldResolver) {
   const models = {};
 
   if (fs.statSync(definitionsPath).isDirectory()) {
@@ -97,8 +100,11 @@ function loadModelDefinitions(definitionsPath, fieldResolver) {
   return { models, fieldResolver };
 }
 
-function main() {
+async function main() {
   const args = process.argv.slice(2);
+
+  // Initialize config first
+  const config = await initConfig();
 
   // Paths should be pre-resolved by the config loader.
   let definitionsPath =
@@ -121,16 +127,20 @@ function main() {
     // Built-in fields are in fields.js
     const builtInFieldsPath = path.resolve(__dirname, "../src/fields.js");
 
+    // Load built-in fields directly for CommonJS compatibility  
+    const builtInFields = require(builtInFieldsPath);
+    
     const fieldResolver = new FieldResolver(
-      builtInFieldsPath,
+      builtInFields,
       config?.paths?.fieldsDir,
     );
 
-    const definitions = loadModelDefinitions(definitionsPath, fieldResolver);
+    const definitions = await loadModelDefinitions(definitionsPath, fieldResolver);
     generateModelFiles(
       definitions.models,
       outputDir,
       definitions.fieldResolver,
+      config?.codegen?.moduleSystem || 'commonjs',
     );
 
     // After generating models, generate the manifest file
@@ -149,10 +159,11 @@ function main() {
   }
 }
 
-function run() {
-  main();
+async function run() {
+  await main();
 }
 
+// Check if this is the main module in CommonJS
 if (require.main === module) {
   run();
 }

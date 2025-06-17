@@ -16,6 +16,8 @@ const {
   UniqueConstraintConfig,
 } = require("./model");
 
+const { TenantContext } = require("./tenant-context");
+
 function findModelFiles(dir) {
   let results = [];
   const items = fs.readdirSync(dir);
@@ -171,14 +173,12 @@ function initModels(userConfig = {}) {
 
   // Validate tenant context if tenancy enabled
   if (finalConfig.tenancy?.enabled) {
-    const { TenantContext } = require("./tenant-context");
     TenantContext.validateTenantRequired(finalConfig);
   }
 
   const modelsDir = finalConfig.paths.modelsDir;
 
   // Get/create manager instance with tenantId
-  const { TenantContext } = require("./tenant-context");
   const tenantId = TenantContext.getCurrentTenant() || finalConfig.testId;
   const manager = ModelManager.getInstance(tenantId);
 
@@ -199,8 +199,6 @@ function initModels(userConfig = {}) {
 
   return manager;
 }
-
-const { TenantContext } = require("./tenant-context");
 
 const firstExport = {
   // Initialize function

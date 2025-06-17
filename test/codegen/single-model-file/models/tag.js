@@ -4,19 +4,18 @@
 const { 
   BaoModel,
   PrimaryKeyConfig
-} = require('dynamo-bao');
+} = require('../../../../src/model.js');
 
 
 const { 
     UlidField,
     StringField,
     CreateDateField
-} = require('dynamo-bao').fields;
+} = require('../../../../src/fields.js');
 
 
+const { TaggedPost } = require('./tagged-post.js');
 
-
-const { TaggedPost } = require('./tagged-post');
 
 class Tag extends BaoModel {
   static modelPrefix = 't';

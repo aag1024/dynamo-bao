@@ -5,24 +5,22 @@ const {
   BaoModel,
   PrimaryKeyConfig,
   UniqueConstraintConfig
-} = require('dynamo-bao');
+} = require('../../../../src/model.js');
 
 const {
   UNIQUE_CONSTRAINT_ID1
-} = require('dynamo-bao').constants;
-
+} = require('../../../../src/constants.js');
 
 const { 
     UlidField,
     StringField,
     CreateDateField,
     ModifiedDateField
-} = require('dynamo-bao').fields;
+} = require('../../../../src/fields.js');
 
 
+const { Post } = require('./post.js');
 
-
-const { Post } = require('./post');
 
 class User extends BaoModel {
   static modelPrefix = 'u';

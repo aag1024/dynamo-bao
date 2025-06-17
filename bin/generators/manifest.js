@@ -44,7 +44,9 @@ function generateManifestFile(modelsDir, manifestPath) {
   const imports = modelFiles
     .map((file, index) => {
       const relativePath = path.relative(manifestDir, file).replace(/\\/g, "/");
-      return `import * as model${index} from '${relativePath}';`;
+      // Ensure .js extension for ESM imports
+      const importPath = relativePath.endsWith('.js') ? relativePath : `${relativePath}.js`;
+      return `import * as model${index} from '${importPath}';`;
     })
     .join("\n");
 

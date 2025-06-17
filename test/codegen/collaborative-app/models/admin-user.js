@@ -5,25 +5,23 @@ const {
   BaoModel,
   PrimaryKeyConfig,
   UniqueConstraintConfig
-} = require('dynamo-bao');
+} = require('../../../../src/model.js');
 
 const {
   UNIQUE_CONSTRAINT_ID1,
   UNIQUE_CONSTRAINT_ID2
-} = require('dynamo-bao').constants;
-
+} = require('../../../../src/constants.js');
 
 const { 
     UlidField,
     StringField,
     CreateDateField,
     ModifiedDateField
-} = require('dynamo-bao').fields;
+} = require('../../../../src/fields.js');
 
 
+const { AdminSession } = require('./admin-session.js');
 
-
-const { AdminSession } = require('./admin-session');
 
 class AdminUser extends BaoModel {
   static modelPrefix = 'admin';

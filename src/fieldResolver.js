@@ -2,13 +2,13 @@ const path = require("path");
 const fs = require("fs");
 
 class FieldResolver {
-  constructor(builtInFieldsPath, customFieldsPath) {
-    this.builtInFields = require(builtInFieldsPath);
+  constructor(builtInFields, customFieldsPath) {
+    this.builtInFields = builtInFields;
     this.customFieldsPath = customFieldsPath;
     this.fieldDefinitionCache = new Map();
 
     console.log("FieldResolver constructor:", {
-      builtInFieldsPath,
+      builtInFields: typeof builtInFields,
       customFieldsPath,
     });
 

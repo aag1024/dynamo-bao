@@ -1,4 +1,4 @@
-const dynamoBao = require("../src");
+const dynamoBao = require("../src/index");
 const { TenantContext } = dynamoBao;
 const testConfig = require("./config");
 const { cleanupTestDataByIteration, verifyCleanup, initTestModelsWithTenant } = require("./utils/test-utils");

@@ -1,5 +1,16 @@
 const { AsyncLocalStorage } = require('async_hooks');
 
+// Lazy getter to avoid circular dependency
+let _ModelManager = null;
+function getModelManager() {
+  if (!_ModelManager) {
+    // Use require since this is called at runtime, not module load time
+    const { ModelManager } = require('./model-manager');
+    _ModelManager = ModelManager;
+  }
+  return _ModelManager;
+}
+
 /**
  * @class TenantContext
  * @description Manages tenant context for multi-tenant applications using DynamoBao.
@@ -97,7 +108,7 @@ class TenantContext {
    * @returns {ModelManager} The ModelManager instance
    */
   static getInstance(tenantId = null) {
-    const { ModelManager } = require('./model-manager');
+    const ModelManager = getModelManager();
     const effectiveTenantId = tenantId || this.getCurrentTenant();
     const key = effectiveTenantId || "default";
     
@@ -154,7 +165,7 @@ class TenantContext {
     this.clearTenant();
     
     // Also clear ModelManager instances to ensure clean state
-    const { ModelManager } = require('./model-manager');
+    const ModelManager = getModelManager();
     if (ModelManager._instances) {
       ModelManager._instances.clear();
     }

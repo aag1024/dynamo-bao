@@ -5,13 +5,12 @@ const {
   BaoModel,
   PrimaryKeyConfig,
   IndexConfig
-} = require('dynamo-bao');
+} = require('../../../../src/model.js');
 
 const {
   GSI_INDEX_ID1,
   GSI_INDEX_ID2
-} = require('dynamo-bao').constants;
-
+} = require('../../../../src/constants.js');
 
 const { 
     UlidField,
@@ -19,13 +18,12 @@ const {
     StringField,
     CreateDateField,
     VersionField
-} = require('dynamo-bao').fields;
+} = require('../../../../src/fields.js');
 
 
+const { Comment } = require('./comment.js');
+const { TaggedPost } = require('./tagged-post.js');
 
-
-const { Comment } = require('./comment');
-const { TaggedPost } = require('./tagged-post');
 
 class Post extends BaoModel {
   static modelPrefix = 'p';

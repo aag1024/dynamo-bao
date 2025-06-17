@@ -1,0 +1,95 @@
+models:
+  User:
+    modelPrefix: u
+    iterable: true
+    iterationBuckets: 1
+    fields:
+      userId:
+        type: UlidField
+        autoAssign: true
+        required: true
+      name:
+        type: StringField
+        required: true
+      email:
+        type: StringField
+        required: true
+      createdAt:
+        type: CreateDateField
+      modifiedAt:
+        type: ModifiedDateField
+    primaryKey:
+      partitionKey: userId
+    uniqueConstraints:
+      uniqueEmail:
+        field: email
+        uniqueConstraintId: uc1
+
+  Post:
+    modelPrefix: p
+    iterable: true
+    iterationBuckets: 1
+    fields:
+      postId:
+        type: UlidField
+        autoAssign: true
+        required: true
+      title:
+        type: StringField
+        required: true
+      content:
+        type: StringField
+      userId:
+        type: RelatedField
+        model: User
+        required: true
+      createdAt:
+        type: CreateDateField
+      modifiedAt:
+        type: ModifiedDateField
+    primaryKey:
+      partitionKey: postId
+    indexes:
+      postsForUser:
+        partitionKey: userId
+        sortKey: postId
+        indexId: gsi1
+      allPosts:
+        partitionKey: modelPrefix
+        sortKey: createdAt
+        indexId: gsi2
+
+  Comment:
+    modelPrefix: c
+    iterable: true
+    iterationBuckets: 1
+    fields:
+      commentId:
+        type: UlidField
+        autoAssign: true
+        required: true
+      postId:
+        type: RelatedField
+        model: Post
+        required: true
+      authorId:
+        type: RelatedField
+        model: User
+        required: true
+      text:
+        type: StringField
+        required: true
+      numLikes:
+        type: IntegerField
+        defaultValue: 0
+      createdAt:
+        type: CreateDateField
+      modifiedAt:
+        type: ModifiedDateField
+    primaryKey:
+      partitionKey: commentId
+    indexes:
+      commentsForPost:
+        partitionKey: postId
+        sortKey: createdAt
+        indexId: gsi3

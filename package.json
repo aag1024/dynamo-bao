@@ -1,8 +1,12 @@
 {
   "name": "dynamo-bao",
-  "version": "0.2.8",
+  "version": "0.2.9",
   "description": "Simple powerful data modeling primitives for DynamoDB in JavaScript.",
   "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./package.json": "./package.json"
+  },
   "scripts": {
     "test": "LOG_LEVEL=OFF jest",
     "test:debug": "LOG_LEVEL=DEBUG jest",

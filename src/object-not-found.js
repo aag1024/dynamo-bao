@@ -39,6 +39,4 @@ class ObjectNotFound {
   }
 }
 
-module.exports = {
-  ObjectNotFound,
-};
+module.exports = { ObjectNotFound };

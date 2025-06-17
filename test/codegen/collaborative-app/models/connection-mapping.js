@@ -5,12 +5,11 @@ const {
   BaoModel,
   PrimaryKeyConfig,
   IndexConfig
-} = require('dynamo-bao');
+} = require('../../../../src/model.js');
 
 const {
   GSI_INDEX_ID1
-} = require('dynamo-bao').constants;
-
+} = require('../../../../src/constants.js');
 
 const { 
     StringField,
@@ -18,9 +17,7 @@ const {
     CreateDateField,
     DateTimeField,
     TtlField
-} = require('dynamo-bao').fields;
-
-
+} = require('../../../../src/fields.js');
 
 
 

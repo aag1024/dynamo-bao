@@ -76,8 +76,8 @@ class BaoModel {
    * prevent data from being shared between tests/tests to run in parallel.
    * However, it should not be used outside of this context. For examples,
    * showing how to use this, see the tests.
-   * 
-   * @deprecated Use TenantContext.setCurrentTenant() with the new multi-tenancy 
+   *
+   * @deprecated Use TenantContext.setCurrentTenant() with the new multi-tenancy
    * system for both testing and production tenant isolation. See tutorial 08-multi-tenancy.
    * @param {string} testId - The ID of the test.
    */
@@ -90,7 +90,7 @@ class BaoModel {
   }
 
   static get manager() {
-    const { TenantContext } = require('./tenant-context');
+    const { TenantContext } = require("./tenant-context");
     const tenantId = TenantContext.getCurrentTenant();
     return ModelManager.getInstance(tenantId || this._tenantId);
   }
@@ -192,25 +192,25 @@ class BaoModel {
     if (!this.iterable) {
       return {};
     }
-    
+
     const tenantId = this.manager.getTenantId();
     let iterPk;
-    
+
     if (this.iterationBuckets === 1) {
-      iterPk = tenantId ? 
-        `[${tenantId}]#${this.modelPrefix}#iter` : 
-        `${this.modelPrefix}#iter`;
+      iterPk = tenantId
+        ? `[${tenantId}]#${this.modelPrefix}#iter`
+        : `${this.modelPrefix}#iter`;
     } else {
       const bucketNum = this._hashObjectId(objectId) % this.iterationBuckets;
-      const bucket = bucketNum.toString().padStart(3, '0');
-      iterPk = tenantId ? 
-        `[${tenantId}]#${this.modelPrefix}#iter#${bucket}` : 
-        `${this.modelPrefix}#iter#${bucket}`;
+      const bucket = bucketNum.toString().padStart(3, "0");
+      iterPk = tenantId
+        ? `[${tenantId}]#${this.modelPrefix}#iter#${bucket}`
+        : `${this.modelPrefix}#iter#${bucket}`;
     }
-    
+
     return {
       [ITERATION_PK_FIELD]: iterPk,
-      [ITERATION_SK_FIELD]: objectId
+      [ITERATION_SK_FIELD]: objectId,
     };
   }
 
@@ -218,7 +218,7 @@ class BaoModel {
     let hash = 0;
     for (let i = 0; i < objectId.length; i++) {
       const char = objectId.charCodeAt(i);
-      hash = ((hash << 5) - hash) + char;
+      hash = (hash << 5) - hash + char;
       hash = hash & hash;
     }
     return Math.abs(hash);
@@ -228,92 +228,110 @@ class BaoModel {
     return this.iterable ? this.iterationBuckets : 1;
   }
 
-  static async* iterateAll(options = {}) {
+  static async *iterateAll(options = {}) {
     if (!this.iterable) {
       throw new Error(`Model ${this.name} is not configured as iterable`);
     }
-    
+
     const { batchSize = 100, filter = null, loaderContext = null } = options;
-    
+
     if (this.iterationBuckets === 1) {
-      yield* this._iterateSingleBucket(null, { batchSize, filter, loaderContext });
+      yield* this._iterateSingleBucket(null, {
+        batchSize,
+        filter,
+        loaderContext,
+      });
     } else {
       for (let bucket = 0; bucket < this.iterationBuckets; bucket++) {
-        yield* this._iterateSingleBucket(bucket, { batchSize, filter, loaderContext });
+        yield* this._iterateSingleBucket(bucket, {
+          batchSize,
+          filter,
+          loaderContext,
+        });
       }
     }
   }
 
-  static async* iterateBucket(bucketNum, options = {}) {
+  static async *iterateBucket(bucketNum, options = {}) {
     if (!this.iterable) {
       throw new Error(`Model ${this.name} is not configured as iterable`);
     }
-    
+
     if (bucketNum < 0 || bucketNum >= this.iterationBuckets) {
-      throw new Error(`Invalid bucket number ${bucketNum}. Must be 0-${this.iterationBuckets - 1}`);
+      throw new Error(
+        `Invalid bucket number ${bucketNum}. Must be 0-${this.iterationBuckets - 1}`,
+      );
     }
-    
+
     yield* this._iterateSingleBucket(bucketNum, options);
   }
 
-  static async* _iterateSingleBucket(bucketNum, options = {}) {
+  static async *_iterateSingleBucket(bucketNum, options = {}) {
     const { batchSize = 100, filter = null, loaderContext = null } = options;
     const tenantId = this.manager.getTenantId();
-    
+
     let iterPk;
     if (this.iterationBuckets === 1) {
-      iterPk = tenantId ? 
-        `[${tenantId}]#${this.modelPrefix}#iter` : 
-        `${this.modelPrefix}#iter`;
+      iterPk = tenantId
+        ? `[${tenantId}]#${this.modelPrefix}#iter`
+        : `${this.modelPrefix}#iter`;
     } else {
-      const bucket = bucketNum.toString().padStart(3, '0');
-      iterPk = tenantId ? 
-        `[${tenantId}]#${this.modelPrefix}#iter#${bucket}` : 
-        `${this.modelPrefix}#iter#${bucket}`;
+      const bucket = bucketNum.toString().padStart(3, "0");
+      iterPk = tenantId
+        ? `[${tenantId}]#${this.modelPrefix}#iter#${bucket}`
+        : `${this.modelPrefix}#iter#${bucket}`;
     }
-    
+
     let lastEvaluatedKey = null;
-    
+
     do {
       const { QueryCommand } = require("./dynamodb-client");
       const params = {
         TableName: this.table,
         IndexName: ITERATION_INDEX_NAME,
-        KeyConditionExpression: '#pk = :pk',
-        ExpressionAttributeNames: { '#pk': ITERATION_PK_FIELD },
-        ExpressionAttributeValues: { ':pk': iterPk },
+        KeyConditionExpression: "#pk = :pk",
+        ExpressionAttributeNames: { "#pk": ITERATION_PK_FIELD },
+        ExpressionAttributeValues: { ":pk": iterPk },
         Limit: batchSize,
-        ReturnConsumedCapacity: 'TOTAL'
+        ReturnConsumedCapacity: "TOTAL",
       };
-      
+
       if (lastEvaluatedKey) {
         params.ExclusiveStartKey = lastEvaluatedKey;
       }
-      
+
       if (filter) {
         const { FilterExpressionBuilder } = require("./filter-expression");
         const filterBuilder = new FilterExpressionBuilder();
         const filterExpression = filterBuilder.build(filter, this);
         if (filterExpression) {
           params.FilterExpression = filterExpression.FilterExpression;
-          Object.assign(params.ExpressionAttributeNames, filterExpression.ExpressionAttributeNames);
-          Object.assign(params.ExpressionAttributeValues, filterExpression.ExpressionAttributeValues);
+          Object.assign(
+            params.ExpressionAttributeNames,
+            filterExpression.ExpressionAttributeNames,
+          );
+          Object.assign(
+            params.ExpressionAttributeValues,
+            filterExpression.ExpressionAttributeValues,
+          );
         }
       }
-      
+
       const response = await this.documentClient.send(new QueryCommand(params));
-      
+
       if (response.Items && response.Items.length > 0) {
-        const objectIds = response.Items.map(item => item[ITERATION_SK_FIELD]);
-        
+        const objectIds = response.Items.map(
+          (item) => item[ITERATION_SK_FIELD],
+        );
+
         const { items } = await this.batchFind(objectIds, loaderContext);
         const batch = Object.values(items);
-        
+
         if (batch.length > 0) {
           yield batch;
         }
       }
-      
+
       lastEvaluatedKey = response.LastEvaluatedKey;
     } while (lastEvaluatedKey);
   }
@@ -392,46 +410,31 @@ class BaoModel {
     }
 
     const pkField = this._getField(this.primaryKey.pk);
-    const skField = this._getField(this.primaryKey.sk);
-
-    if (skField === undefined && this.primaryKey.sk !== "modelPrefix") {
-      throw new ConfigurationError(
-        `SK field is required for getPkSk call`,
-        this.name,
-      );
-    }
-
-    if (pkField === undefined && this.primaryKey.pk !== "modelPrefix") {
-      throw new ConfigurationError(
-        `PK field is required for getPkSk call`,
-        this.name,
-      );
-    }
-
-    // If the field is set, use the GSI value, otherwise use the raw value
     const pkValue = pkField
       ? pkField.toGsi(this._getPkValue(data))
       : this._getPkValue(data);
-    const skValue = skField
-      ? skField.toGsi(this._getSkValue(data))
-      : this._getSkValue(data);
 
-    if (
-      pkValue === undefined ||
-      skValue === undefined ||
-      pkValue === null ||
-      skValue === null
-    ) {
-      throw new ValidationError(`PK and SK must be defined to get a PkSk`);
+    if (pkValue === undefined || pkValue === null) {
+      throw new ValidationError(`PK must be defined to get a PkSk`);
     }
 
-    let key = {
-      pk: pkValue,
-      sk: skValue,
-    };
+    const key = { pk: pkValue };
+
+    if (this.primaryKey.sk) {
+      const skField = this._getField(this.primaryKey.sk);
+      const skValue = skField
+        ? skField.toGsi(this._getSkValue(data))
+        : this._getSkValue(data);
+
+      if (skValue === undefined || skValue === null) {
+        throw new ValidationError(
+          `SK must be defined for a composite primary key`,
+        );
+      }
+      key.sk = skValue;
+    }
 
     logger.debug("_getPrimaryKeyValues", key);
-
     return key;
   }
 
@@ -480,8 +483,17 @@ class BaoModel {
   }
 
   static _parsePrimaryId(primaryId) {
-    if (!primaryId) {
-      throw new DataFormatError("Primary ID is required to parse");
+    if (typeof primaryId === "object" && primaryId !== null) {
+      if (primaryId.pk !== undefined) {
+        return primaryId;
+      }
+      return this._getPrimaryKeyValues(primaryId);
+    }
+
+    if (typeof primaryId !== "string") {
+      throw new ValidationError(
+        `primaryId must be a string or an object. Got ${typeof primaryId}`,
+      );
     }
 
     if (primaryId.indexOf(GID_SEPARATOR) !== -1) {
@@ -492,9 +504,8 @@ class BaoModel {
         return { pk: this.modelPrefix, sk: primaryId };
       } else if (this.primaryKey.sk === "modelPrefix") {
         return { pk: primaryId, sk: this.modelPrefix };
-      } else {
-        throw new DataFormatError(`Invalid primary ID: ${primaryId}`);
       }
+      return { pk: primaryId };
     }
   }
 
@@ -739,7 +750,7 @@ class BaoModel {
           _sk: UNIQUE_CONSTRAINT_KEY,
         },
         ReturnConsumedCapacity: "TOTAL",
-      })
+      }),
     );
 
     if (!result.Item) {
@@ -869,7 +880,8 @@ class BaoModel {
 // Factory functions to maintain compatibility
 const PrimaryKeyConfig = (pk, sk) => new PrimaryKeyConfigClass(pk, sk);
 const IndexConfig = (pk, sk, indexId) => new IndexConfigClass(pk, sk, indexId);
-const UniqueConstraintConfig = (field, constraintId) => new UniqueConstraintConfigClass(field, constraintId);
+const UniqueConstraintConfig = (field, constraintId) =>
+  new UniqueConstraintConfigClass(field, constraintId);
 
 module.exports = {
   BaoModel,

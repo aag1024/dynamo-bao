@@ -8,7 +8,11 @@ const {
 } = require("../src/model");
 const { StringField, IntegerField } = require("../src/fields");
 const { ConditionalError } = require("../src/exceptions");
-const { cleanupTestDataByIteration, verifyCleanup, initTestModelsWithTenant } = require("./utils/test-utils");
+const {
+  cleanupTestDataByIteration,
+  verifyCleanup,
+  initTestModelsWithTenant,
+} = require("./utils/test-utils");
 const { ulid } = require("ulid");
 const { UNIQUE_CONSTRAINT_ID1 } = require("../src/constants");
 
@@ -26,6 +30,20 @@ class SimpleUser extends BaoModel {
     age: IntegerField(),
   };
   static primaryKey = PrimaryKeyConfig("userId");
+}
+
+// Model with a composite primary key
+class CompositeKeyModel extends BaoModel {
+  static modelPrefix = "ckm";
+  static iterable = true;
+  static iterationBuckets = 1;
+
+  static fields = {
+    appId: StringField({ required: true }),
+    entityId: StringField({ required: true }),
+    data: StringField(),
+  };
+  static primaryKey = PrimaryKeyConfig("appId", "entityId");
 }
 
 // Model with unique constraints - should use transaction path
@@ -51,18 +69,35 @@ describe("Delete Operation Tests", () => {
     const manager = initTestModelsWithTenant(testConfig, testId);
     manager.registerModel(SimpleUser);
     manager.registerModel(UserWithUnique);
+    manager.registerModel(CompositeKeyModel);
 
     if (testId) {
-      await cleanupTestDataByIteration(testId, [SimpleUser, UserWithUnique]);
-      await verifyCleanup(testId, [SimpleUser, UserWithUnique]);
+      await cleanupTestDataByIteration(testId, [
+        SimpleUser,
+        UserWithUnique,
+        CompositeKeyModel,
+      ]);
+      await verifyCleanup(testId, [
+        SimpleUser,
+        UserWithUnique,
+        CompositeKeyModel,
+      ]);
     }
   });
 
   afterEach(async () => {
     TenantContext.clearTenant();
     if (testId) {
-      await cleanupTestDataByIteration(testId, [SimpleUser, UserWithUnique]);
-      await verifyCleanup(testId, [SimpleUser, UserWithUnique]);
+      await cleanupTestDataByIteration(testId, [
+        SimpleUser,
+        UserWithUnique,
+        CompositeKeyModel,
+      ]);
+      await verifyCleanup(testId, [
+        SimpleUser,
+        UserWithUnique,
+        CompositeKeyModel,
+      ]);
     }
   });
 
@@ -166,6 +201,30 @@ describe("Delete Operation Tests", () => {
           condition: { name: "Wrong Name" },
         }),
       ).rejects.toThrow(ConditionalError);
+    });
+  });
+
+  describe("Composite Key (PK and SK)", () => {
+    let compositeItem;
+
+    beforeEach(async () => {
+      compositeItem = await CompositeKeyModel.create({
+        appId: "my-app",
+        entityId: "entity-123",
+        data: "some data",
+      });
+    });
+
+    test("should delete item with composite key", async () => {
+      const primaryId = compositeItem.getPrimaryId();
+      const deleted = await CompositeKeyModel.delete(primaryId);
+      expect(deleted.exists()).toBe(true);
+
+      const found = await CompositeKeyModel.find({
+        appId: compositeItem.appId,
+        entityId: compositeItem.entityId,
+      });
+      expect(found.exists()).toBe(false);
     });
   });
 });

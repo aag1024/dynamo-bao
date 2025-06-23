@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 
-import {
+const {
   DynamoDBClient,
   CreateTableCommand,
   ListTablesCommand,
-} from "../src/dynamodb-client.js";
-import readline from "readline";
-import fs from "fs";
-import path from "path";
+} = require("../src/dynamodb-client.js");
+const readline = require("readline");
+const fs = require("fs");
+const path = require("path");
 
 // Create DynamoDB client at the top level
 const client = new DynamoDBClient();
@@ -51,7 +51,7 @@ const prompt = (query) => {
 };
 
 async function writeConfigFile(tableName) {
-  const region = client.region || process.env.AWS_REGION || 'us-east-1';
+  const region = client.region || process.env.AWS_REGION || "us-east-1";
   const configContent = `const path = require("path");
 
 const config = {

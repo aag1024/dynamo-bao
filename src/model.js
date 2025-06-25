@@ -233,20 +233,18 @@ class BaoModel {
       throw new Error(`Model ${this.name} is not configured as iterable`);
     }
 
-    const { batchSize = 100, filter = null, loaderContext = null } = options;
+    const { batchSize = 100, filter = null } = options;
 
     if (this.iterationBuckets === 1) {
       yield* this._iterateSingleBucket(null, {
         batchSize,
         filter,
-        loaderContext,
       });
     } else {
       for (let bucket = 0; bucket < this.iterationBuckets; bucket++) {
         yield* this._iterateSingleBucket(bucket, {
           batchSize,
           filter,
-          loaderContext,
         });
       }
     }
@@ -267,7 +265,7 @@ class BaoModel {
   }
 
   static async *_iterateSingleBucket(bucketNum, options = {}) {
-    const { batchSize = 100, filter = null, loaderContext = null } = options;
+    const { batchSize = 100, filter = null } = options;
     const tenantId = this.manager.getTenantId();
 
     let iterPk;
@@ -324,7 +322,7 @@ class BaoModel {
           (item) => item[ITERATION_SK_FIELD],
         );
 
-        const { items } = await this.batchFind(objectIds, loaderContext);
+        const { items } = await this.batchFind(objectIds);
         const batch = Object.values(items);
 
         if (batch.length > 0) {
@@ -619,7 +617,7 @@ class BaoModel {
    * @param {Object} [loaderContext] - Cache context for storing and retrieving items across requests.
    * @returns {Promise<Object>} Returns a promise that resolves to the loaded item.
    */
-  async getOrLoadRelatedField(fieldName, loaderContext = null) {
+  async getOrLoadRelatedField(fieldName) {
     if (this._relatedObjects[fieldName]) {
       return this._relatedObjects[fieldName];
     }
@@ -636,9 +634,7 @@ class BaoModel {
     if (!value) return null;
 
     const ModelClass = this.constructor.manager.getModel(field.modelName);
-    this._relatedObjects[fieldName] = await ModelClass.find(value, {
-      loaderContext,
-    });
+    this._relatedObjects[fieldName] = await ModelClass.find(value);
     return this._relatedObjects[fieldName];
   }
 
@@ -646,10 +642,9 @@ class BaoModel {
    * @description
    * Load objects for RelatedField's on the current model instance.
    * @param {string[]} [fieldNames] - The names of the fields to load. If not provided, all related fields will be loaded.
-   * @param {Object} [loaderContext] - Cache context for storing and retrieving items across requests.
    * @returns {Promise<Object>} Returns a promise that resolves to the loaded items and their consumed capacity
    */
-  async loadRelatedData(fieldNames = null, loaderContext = null) {
+  async loadRelatedData(fieldNames = null) {
     const promises = [];
 
     for (const [fieldName, field] of Object.entries(this.constructor.fields)) {
@@ -659,11 +654,9 @@ class BaoModel {
 
       if (field instanceof RelatedFieldClass && this[fieldName]) {
         promises.push(
-          this._loadRelatedField(fieldName, field, loaderContext).then(
-            (instance) => {
-              this._relatedObjects[fieldName] = instance;
-            },
-          ),
+          this._loadRelatedField(fieldName, field).then((instance) => {
+            this._relatedObjects[fieldName] = instance;
+          }),
         );
       }
     }
@@ -672,7 +665,7 @@ class BaoModel {
     return this;
   }
 
-  async _loadRelatedField(fieldName, field, loaderContext = null) {
+  async _loadRelatedField(fieldName, field) {
     const value = this[fieldName];
     if (!value) return null;
 
@@ -683,7 +676,7 @@ class BaoModel {
     }
 
     // Load the instance and track its capacity
-    const relatedInstance = await ModelClass.find(value, { loaderContext });
+    const relatedInstance = await ModelClass.find(value);
 
     return relatedInstance;
   }
@@ -711,14 +704,9 @@ class BaoModel {
    * to find an object.
    * @param {string} constraintName - The name of the unique constraint to use.
    * @param {string} value - The value of the unique constraint.
-   * @param {Object} [loaderContext] - Cache context for storing and retrieving items across requests.
    * @returns {Promise<Object>} Returns a promise that resolves to the found item.
    */
-  static async findByUniqueConstraint(
-    constraintName,
-    value,
-    loaderContext = null,
-  ) {
+  static async findByUniqueConstraint(constraintName, value) {
     const constraint = this.uniqueConstraints[constraintName];
     if (!constraint) {
       throw new ConfigurationError(
@@ -757,7 +745,7 @@ class BaoModel {
       return new ObjectNotFound(result.ConsumedCapacity);
     }
 
-    const item = await this.find(result.Item.relatedId, { loaderContext });
+    const item = await this.find(result.Item.relatedId);
 
     if (item.exists()) {
       item._addConsumedCapacity(result.ConsumedCapacity, "read");

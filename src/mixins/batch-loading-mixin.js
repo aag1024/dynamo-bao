@@ -15,15 +15,12 @@ try {
 // Request-scoped batch context
 const batchContext = AsyncLocalStorage ? new AsyncLocalStorage() : null;
 
-// Fallback global state for environments without AsyncLocalStorage (primarily for testing)
-const FALLBACK_BATCH_REQUESTS = new Map(); // testId -> { modelName-delay -> batch }
-
 const DEFAULT_BATCH_DELAY_MS = 5;
 const BATCH_REQUEST_TIMEOUT = 10000; // 10 seconds max lifetime for a batch
 
 const BatchLoadingMethods = {
   _getBatchRequests() {
-    // Try AsyncLocalStorage first, but only if context is already set
+    // AsyncLocalStorage is required - check for context
     if (batchContext) {
       const context = batchContext.getStore();
       if (context && context.batchRequests) {
@@ -31,25 +28,11 @@ const BatchLoadingMethods = {
       }
     }
 
-    // Fallback to testId-based isolation
-    const tenantId = this._tenantId;
-    if (tenantId) {
-      // Test environment: use tenantId for isolation
-      if (!FALLBACK_BATCH_REQUESTS.has(tenantId)) {
-        FALLBACK_BATCH_REQUESTS.set(tenantId, new Map());
-      }
-      return FALLBACK_BATCH_REQUESTS.get(tenantId);
-    }
-
-    // Production without proper context: disable batching for safety
-    // This prevents cross-request interference at the cost of batching efficiency
-    logger.warn(
-      "No batch context found. Batching is disabled for safety. " +
-        "Use runWithBatchContext() in Cloudflare Workers for optimal performance.",
+    // No batch context found - operations must be within runWithBatchContext
+    throw new Error(
+      "Batch operations must be executed within runWithBatchContext(). " +
+        "Wrap your database operations in runWithBatchContext() to enable batching and caching.",
     );
-
-    // Return a new Map for each call - no batching, but safe
-    return new Map();
   },
 
   /**
@@ -59,10 +42,9 @@ const BatchLoadingMethods = {
    * This function should only be used when {@link BaoModel.find} or {@link BaoModel#loadRelatedData} is not sufficient.
    *
    * @param {string[]} primaryIds - The primary IDs of the items to load
-   * @param {Object} [loaderContext] - Cache context for storing and retrieving items across requests.
    * @returns {Promise<Object>} Returns a promise that resolves to the loaded items and their consumed capacity
    */
-  async batchFind(primaryIds, loaderContext = null) {
+  async batchFind(primaryIds) {
     if (!primaryIds?.length) return { items: {}, ConsumedCapacity: [] };
 
     // Add retry wrapper function
@@ -89,6 +71,15 @@ const BatchLoadingMethods = {
       }
     };
 
+    // Get automatic loaderContext from batch context
+    let loaderContext = null;
+    if (batchContext) {
+      const context = batchContext.getStore();
+      if (context?.loaderContext) {
+        loaderContext = context.loaderContext;
+      }
+    }
+
     // Initialize results object
     const results = {};
     let idsToLoad = [];
@@ -96,8 +87,10 @@ const BatchLoadingMethods = {
     // First check loaderContext for existing items
     if (loaderContext) {
       primaryIds.forEach((id) => {
-        if (loaderContext[id]) {
-          const instance = this._createFromDyItem(loaderContext[id]._dyData);
+        if (loaderContext.has(id)) {
+          const instance = this._createFromDyItem(
+            loaderContext.get(id)._dyData,
+          );
           results[id] = instance;
         } else {
           idsToLoad.push(id);
@@ -153,7 +146,7 @@ const BatchLoadingMethods = {
 
             // Add to loader context if provided
             if (loaderContext) {
-              loaderContext[primaryId] = instance;
+              loaderContext.set(primaryId, instance);
             }
           });
         }
@@ -203,23 +196,40 @@ const BatchLoadingMethods = {
    * @param {Object} [options={}] - Optional configuration for the find operation
    * @param {number} [options.batchDelay=5] - Delay in milliseconds before executing batch request.
    *                                         Set to 0 for immediate individual requests
-   * @param {Object} [options.loaderContext] - Cache context for storing and retrieving items across requests.
-   *                                          If provided, results will be stored in and retrieved from this context
+   * @param {boolean} [options.bypassCache=false] - If true, bypasses both batching and caching entirely
    * @returns {Promise<Object>} Returns a promise that resolves to the found item instance or ObjectNotFound
    * @throws {Error} If the batch request times out or other errors occur during the operation
    */
   async find(primaryId, options = {}) {
     const batchDelay = options.batchDelay ?? DEFAULT_BATCH_DELAY_MS;
-    const loaderContext = options.loaderContext;
+    const bypassCache = options.bypassCache ?? false;
 
-    // Check loader context first
-    if (loaderContext && loaderContext[primaryId]) {
-      const cachedItem = loaderContext[primaryId];
-      const instance = this._createFromDyItem(cachedItem._dyData);
-      const consumedCapacity =
-        cachedItem.getConsumedCapacity().consumedCapacity;
-      instance._addConsumedCapacity(consumedCapacity, "read", true);
-      return instance;
+    // Ensure we're within a batch context (unless bypassing everything for AsyncLocalStorage availability check)
+    if (!batchContext) {
+      throw new Error(
+        "AsyncLocalStorage is not available. Dynamo-bao requires Node.js with AsyncLocalStorage support.",
+      );
+    }
+
+    const context = batchContext.getStore();
+    if (!context) {
+      throw new Error(
+        "Batch operations must be executed within runWithBatchContext(). " +
+          "Wrap your database operations in runWithBatchContext() to enable batching and caching.",
+      );
+    }
+
+    // Get automatic loaderContext from batch context
+    let loaderContext = null;
+    if (!bypassCache && context?.loaderContext) {
+      loaderContext = context.loaderContext;
+    }
+
+    // Check loader context first (unless bypassing cache)
+    if (!bypassCache && loaderContext && loaderContext.has(primaryId)) {
+      const cachedItem = loaderContext.get(primaryId);
+      // Return the exact same cached object instance for true caching
+      return cachedItem;
     }
 
     if (batchDelay === 0) {
@@ -242,9 +252,9 @@ const BatchLoadingMethods = {
         instance._addConsumedCapacity(result.ConsumedCapacity, "read", false);
       }
 
-      // Add to loader context if provided
-      if (loaderContext) {
-        loaderContext[primaryId] = instance;
+      // Add to loader context if provided (unless bypassing cache)
+      if (!bypassCache && loaderContext) {
+        loaderContext.set(primaryId, instance);
       }
 
       return instance;
@@ -264,7 +274,7 @@ const BatchLoadingMethods = {
           timeoutTimer: null,
           delay: batchDelay,
           createdAt: Date.now(),
-          loaderContext,
+          loaderContext: bypassCache ? null : loaderContext,
         };
         batchRequests.set(batchKey, batchRequest);
 
@@ -378,6 +388,7 @@ function runWithBatchContext(fn) {
   const context = {
     requestId: Date.now().toString(36) + Math.random().toString(36).substr(2),
     batchRequests: new Map(),
+    loaderContext: new Map(), // Add automatic loaderContext
     timers: new Set(),
     startTime: Date.now(),
   };
@@ -388,7 +399,6 @@ function runWithBatchContext(fn) {
 module.exports = {
   BatchLoadingMethods,
   runWithBatchContext,
-  FALLBACK_BATCH_REQUESTS,
   DEFAULT_BATCH_DELAY_MS,
   BATCH_REQUEST_TIMEOUT,
 };

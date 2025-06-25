@@ -63,48 +63,52 @@ describe("AsyncLocalStorage Batch Context Tests", () => {
     manager.registerModel(Organization);
     manager.registerModel(User);
 
-    await cleanupTestDataByIteration(testId, [Organization, User]);
-    await verifyCleanup(testId, [Organization, User]);
+    await runWithBatchContext(async () => {
+      await cleanupTestDataByIteration(testId, [Organization, User]);
+      await verifyCleanup(testId, [Organization, User]);
 
-    // Create test organizations
-    testOrgs = await Promise.all(
-      Array(NUM_ORGS)
-        .fill()
-        .map((_, i) =>
-          Organization.create({
-            organizationId: ulid(),
-            name: `Test Org ${i}`,
-            status: "active",
-          }),
-        ),
-    );
-
-    // Create test users for each org
-    testUsers = [];
-    for (const org of testOrgs) {
-      const orgUsers = await Promise.all(
-        Array(USERS_PER_ORG)
+      // Create test organizations
+      testOrgs = await Promise.all(
+        Array(NUM_ORGS)
           .fill()
           .map((_, i) =>
-            User.create({
-              userId: ulid(),
-              organizationId: org.organizationId,
-              name: `Test User ${i}`,
-              email: `test${Date.now()}-${i}@example.com`,
-              role: "user",
+            Organization.create({
+              organizationId: ulid(),
+              name: `Test Org ${i}`,
               status: "active",
             }),
           ),
       );
-      testUsers.push(...orgUsers);
-    }
+
+      // Create test users for each org
+      testUsers = [];
+      for (const org of testOrgs) {
+        const orgUsers = await Promise.all(
+          Array(USERS_PER_ORG)
+            .fill()
+            .map((_, i) =>
+              User.create({
+                userId: ulid(),
+                organizationId: org.organizationId,
+                name: `Test User ${i}`,
+                email: `test${Date.now()}-${i}@example.com`,
+                role: "user",
+                status: "active",
+              }),
+            ),
+        );
+        testUsers.push(...orgUsers);
+      }
+    });
   });
 
   afterEach(async () => {
     TenantContext.clearTenant();
     if (testId) {
-      await cleanupTestDataByIteration(testId, [Organization, User]);
-      await verifyCleanup(testId, [Organization, User]);
+      await runWithBatchContext(async () => {
+        await cleanupTestDataByIteration(testId, [Organization, User]);
+        await verifyCleanup(testId, [Organization, User]);
+      });
     }
   });
 
@@ -214,52 +218,42 @@ describe("AsyncLocalStorage Batch Context Tests", () => {
     const userIds = testUsers.slice(0, 3).map((u) => u.userId);
 
     const result = await runWithBatchContext(async () => {
-      const loaderContext = {};
-
       // First load - should hit DynamoDB
       const firstLoad = await Promise.all([
-        User.find(userIds[0], { batchDelay: 10, loaderContext }),
-        User.find(userIds[1], { batchDelay: 10, loaderContext }),
-        User.find(userIds[2], { batchDelay: 10, loaderContext }),
+        User.find(userIds[0], { batchDelay: 10 }),
+        User.find(userIds[1], { batchDelay: 10 }),
+        User.find(userIds[2], { batchDelay: 10 }),
       ]);
 
-      const firstLoadCapacity = firstLoad.reduce((sum, user) => {
-        return sum + user.getNumericConsumedCapacity("read", true);
-      }, 0);
-
-      // Second load - should use loader context
+      // Second load - should use automatic loader context (cached)
       const secondLoad = await Promise.all([
-        User.find(userIds[0], { batchDelay: 10, loaderContext }),
-        User.find(userIds[1], { batchDelay: 10, loaderContext }),
-        User.find(userIds[2], { batchDelay: 10, loaderContext }),
+        User.find(userIds[0], { batchDelay: 10 }),
+        User.find(userIds[1], { batchDelay: 10 }),
+        User.find(userIds[2], { batchDelay: 10 }),
       ]);
-
-      const secondLoadCapacity = secondLoad.reduce((sum, user) => {
-        return sum + user.getNumericConsumedCapacity("read", true);
-      }, 0);
 
       return {
         firstLoad,
         secondLoad,
-        firstLoadCapacity,
-        secondLoadCapacity,
-        loaderContext,
+        // Verify that second load returned same object instances (cached)
+        sameInstances: firstLoad.every((user, i) => user === secondLoad[i]),
       };
     });
 
-    // Verify loader context worked
-    expect(Object.keys(result.loaderContext).length).toBe(3);
-
-    // Second load should have much lower capacity (cached)
-    expect(result.secondLoadCapacity).toBeLessThan(
-      result.firstLoadCapacity * 0.1,
-    );
-
-    // Verify same users returned
+    // Verify same users returned and they are the same object instances (main cache benefit)
     expect(result.firstLoad.length).toBe(3);
     expect(result.secondLoad.length).toBe(3);
+    expect(result.sameInstances).toBe(true);
+
     result.firstLoad.forEach((user, index) => {
       expect(user.userId).toBe(result.secondLoad[index].userId);
+    });
+
+    // Test that cache works across different batches in same context
+    await runWithBatchContext(async () => {
+      const user1 = await User.find(userIds[0]);
+      const user2 = await User.find(userIds[0]); // Same ID
+      expect(user1 === user2).toBe(true); // Should be same object reference
     });
   });
 
@@ -293,23 +287,19 @@ describe("AsyncLocalStorage Batch Context Tests", () => {
 
   test("should work with related data loading", async () => {
     const result = await runWithBatchContext(async () => {
-      const loaderContext = {};
-
       // Find users and load their related organization data
       const users = await Promise.all([
-        User.find(testUsers[0].userId, { batchDelay: 20, loaderContext }),
-        User.find(testUsers[1].userId, { batchDelay: 20, loaderContext }),
-        User.find(testUsers[2].userId, { batchDelay: 20, loaderContext }),
+        User.find(testUsers[0].userId, { batchDelay: 20 }),
+        User.find(testUsers[1].userId, { batchDelay: 20 }),
+        User.find(testUsers[2].userId, { batchDelay: 20 }),
       ]);
 
-      // Load related organization data (should also be batched)
+      // Load related organization data (should also be batched automatically)
       await Promise.all(
-        users.map((user) =>
-          user.loadRelatedData(["organizationId"], loaderContext),
-        ),
+        users.map((user) => user.loadRelatedData(["organizationId"])),
       );
 
-      return { users, loaderContext };
+      return { users };
     });
 
     // Verify users and their related data
@@ -320,9 +310,13 @@ describe("AsyncLocalStorage Batch Context Tests", () => {
       expect(org.organizationId).toBe(user.organizationId);
     });
 
-    // Verify loader context contains both users and organizations
-    const contextKeys = Object.keys(result.loaderContext);
-    expect(contextKeys.length).toBeGreaterThan(3); // Should have users + orgs
+    // Test that related data loading worked by verifying in a separate context
+    await runWithBatchContext(async () => {
+      const userAgain = await User.find(testUsers[0].userId);
+      await userAgain.loadRelatedData(["organizationId"]);
+      const org = userAgain.getRelated("organizationId");
+      expect(org).toBeDefined();
+    });
   });
 
   test("should prevent cross-context interference", async () => {
@@ -370,23 +364,20 @@ describe("AsyncLocalStorage Batch Context Tests", () => {
     expect(context2Data[0]).toBe(`context2-${sharedUserId}`);
   });
 
-  test("should fall back gracefully when not using runWithBatchContext", async () => {
-    // Capture console warnings
-    const originalWarn = console.warn;
-    const warnings = [];
-    console.warn = (...args) => warnings.push(args.join(" "));
+  test("should require runWithBatchContext for all operations", async () => {
+    // Since we made runWithBatchContext mandatory, this test verifies the error message
+    await expect(async () => {
+      await User.find(testUsers[0].userId);
+    }).rejects.toThrow(
+      "Batch operations must be executed within runWithBatchContext()",
+    );
 
-    try {
-      // This should work but may show warnings about missing context
-      const user = await User.find(testUsers[0].userId, { batchDelay: 0 }); // Use delay=0 to avoid batching
-
+    // But it should work when properly wrapped
+    await runWithBatchContext(async () => {
+      const user = await User.find(testUsers[0].userId);
       expect(user).toBeDefined();
       expect(user.userId).toBe(testUsers[0].userId);
-
-      // Should still work even without proper context
-    } finally {
-      console.warn = originalWarn;
-    }
+    });
   });
 
   test("should simulate Cloudflare Workers fetch handler pattern", async () => {
@@ -398,22 +389,28 @@ describe("AsyncLocalStorage Batch Context Tests", () => {
           userIds.map((id) => User.find(id, { batchDelay: 25 })),
         );
 
-        // Simulate additional processing within the request
-        const loaderContext = {};
+        // Simulate additional processing within the request (automatic loader context)
         await Promise.all(
-          users.map((user) =>
-            user.loadRelatedData(["organizationId"], loaderContext),
-          ),
+          users.map((user) => user.loadRelatedData(["organizationId"])),
         );
+
+        // Calculate total capacity from related organizations too
+        const orgCapacity = users.reduce((sum, user) => {
+          const org = user.getRelated("organizationId");
+          return sum + (org ? org.getNumericConsumedCapacity("read", true) : 0);
+        }, 0);
 
         return {
           requestId,
           users: users.map((u) => ({ id: u.userId, name: u.name })),
-          totalCapacity: users.reduce(
-            (sum, u) => sum + u.getNumericConsumedCapacity("read", true),
-            0,
+          totalCapacity:
+            users.reduce(
+              (sum, u) => sum + u.getNumericConsumedCapacity("read", true),
+              0,
+            ) + orgCapacity,
+          hasRelatedData: users.every(
+            (u) => u.getRelated("organizationId") !== null,
           ),
-          cacheSize: Object.keys(loaderContext).length,
         };
       });
     };
@@ -450,13 +447,13 @@ describe("AsyncLocalStorage Batch Context Tests", () => {
 
     // Each request should have used batching efficiently (low capacity per user)
     // Allow for some overhead since we're also loading related data
-    expect(result1.totalCapacity / result1.users.length).toBeLessThan(2.0);
-    expect(result2.totalCapacity / result2.users.length).toBeLessThan(2.0);
-    expect(result3.totalCapacity / result3.users.length).toBeLessThan(2.0);
+    expect(result1.totalCapacity / result1.users.length).toBeLessThan(4.0);
+    expect(result2.totalCapacity / result2.users.length).toBeLessThan(4.0);
+    expect(result3.totalCapacity / result3.users.length).toBeLessThan(4.0);
 
-    // Each request should have built its own cache (at least the users)
-    expect(result1.cacheSize).toBeGreaterThan(0);
-    expect(result2.cacheSize).toBeGreaterThan(0);
-    expect(result3.cacheSize).toBeGreaterThan(0);
+    // Each request should have successfully loaded related data
+    expect(result1.hasRelatedData).toBe(true);
+    expect(result2.hasRelatedData).toBe(true);
+    expect(result3.hasRelatedData).toBe(true);
   });
 });

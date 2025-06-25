@@ -1,6 +1,7 @@
 const testConfig = require("../config");
 const { ModelManager } = require("../../src/model-manager");
 const { TenantContext } = require("../../src/tenant-context");
+const { runWithBatchContext } = require("../../src/mixins/batch-loading-mixin");
 const { defaultLogger: logger } = require("../../src/utils/logger");
 const { ulid } = require("ulid");
 
@@ -17,40 +18,50 @@ async function cleanupTestDataByIteration(tenantId, modelClasses) {
 
   try {
     TenantContext.setCurrentTenant(tenantId);
-    
-    for (const ModelClass of modelClasses) {
-      // All test models should be iterable, but add safety check
-      if (ModelClass.iterable) {
-        logger.debug(`Cleaning up ${ModelClass.name} for tenant ${tenantId}`);
-        
-        for await (const batch of ModelClass.iterateAll({ batchSize: 50 })) {
-          const deletePromises = batch.map(async item => {
-            try {
-              logger.debug(`Deleting ${ModelClass.name} item: ${item.getPrimaryId()}`);
-              return await ModelClass.delete(item.getPrimaryId());
-            } catch (error) {
-              // Ignore TransactionCanceledException and ConditionalCheckFailed during cleanup
-              if (error.name === 'TransactionCanceledException' || 
-                  error.message?.includes('ConditionalCheckFailed') ||
-                  error.message?.includes('Transaction cancelled')) {
-                logger.debug(`Ignoring delete error for ${ModelClass.name} item ${item.getPrimaryId()}: ${error.message}`);
-                return;
+
+    await runWithBatchContext(async () => {
+      for (const ModelClass of modelClasses) {
+        // All test models should be iterable, but add safety check
+        if (ModelClass.iterable) {
+          logger.debug(`Cleaning up ${ModelClass.name} for tenant ${tenantId}`);
+
+          for await (const batch of ModelClass.iterateAll({ batchSize: 50 })) {
+            const deletePromises = batch.map(async (item) => {
+              try {
+                logger.debug(
+                  `Deleting ${ModelClass.name} item: ${item.getPrimaryId()}`,
+                );
+                return await ModelClass.delete(item.getPrimaryId());
+              } catch (error) {
+                // Ignore TransactionCanceledException and ConditionalCheckFailed during cleanup
+                if (
+                  error.name === "TransactionCanceledException" ||
+                  error.message?.includes("ConditionalCheckFailed") ||
+                  error.message?.includes("Transaction cancelled")
+                ) {
+                  logger.debug(
+                    `Ignoring delete error for ${ModelClass.name} item ${item.getPrimaryId()}: ${error.message}`,
+                  );
+                  return;
+                }
+                throw error;
               }
-              throw error;
-            }
-          });
-          await Promise.all(deletePromises);
+            });
+            await Promise.all(deletePromises);
+          }
+
+          logger.debug(`Completed cleanup for ${ModelClass.name}`);
+        } else {
+          logger.warn(
+            `Model ${ModelClass.name} is not iterable - consider adding iterable: true for easier test cleanup`,
+          );
         }
-        
-        logger.debug(`Completed cleanup for ${ModelClass.name}`);
-      } else {
-        logger.warn(`Model ${ModelClass.name} is not iterable - consider adding iterable: true for easier test cleanup`);
       }
-    }
-    
+    });
+
     TenantContext.clearTenant();
     logger.debug("Cleanup complete for tenant:", tenantId);
-    
+
     // Small delay to ensure DynamoDB consistency
     await new Promise((resolve) => setTimeout(resolve, 100));
   } catch (err) {
@@ -70,24 +81,29 @@ async function cleanupTestDataByIds(tenantId, trackedItems) {
   if (!tenantId) {
     throw new Error("tenantId is required for cleanup");
   }
-  
+
   try {
     TenantContext.setCurrentTenant(tenantId);
-    
-    const deletePromises = trackedItems.map(async ({ modelClass, id }) => {
-      try {
-        const item = await modelClass.find(id);
-        if (item.exists()) {
-          logger.debug(`Deleting tracked ${modelClass.name} item: ${id}`);
-          await modelClass.delete(id);
+
+    await runWithBatchContext(async () => {
+      const deletePromises = trackedItems.map(async ({ modelClass, id }) => {
+        try {
+          const item = await modelClass.find(id);
+          if (item.exists()) {
+            logger.debug(`Deleting tracked ${modelClass.name} item: ${id}`);
+            await modelClass.delete(id);
+          }
+        } catch (error) {
+          // Continue if item doesn't exist
+          logger.debug(
+            `Item not found or already deleted: ${modelClass.name}:${id}`,
+          );
         }
-      } catch (error) {
-        // Continue if item doesn't exist
-        logger.debug(`Item not found or already deleted: ${modelClass.name}:${id}`);
-      }
+      });
+
+      await Promise.all(deletePromises);
     });
-    
-    await Promise.all(deletePromises);
+
     TenantContext.clearTenant();
     logger.debug("Tracked items cleanup complete for tenant:", tenantId);
   } catch (err) {
@@ -106,7 +122,7 @@ async function cleanupTestDataByIds(tenantId, trackedItems) {
 function trackCreatedItem(item, trackedItems) {
   trackedItems.push({
     modelClass: item.constructor,
-    id: item.getPrimaryId()
+    id: item.getPrimaryId(),
   });
   return item;
 }
@@ -133,25 +149,33 @@ async function verifyCleanup(tenantId, modelClasses = []) {
 
   try {
     TenantContext.setCurrentTenant(tenantId);
-    
-    for (const ModelClass of modelClasses) {
-      if (ModelClass.iterable) {
-        let itemCount = 0;
-        for await (const batch of ModelClass.iterateAll({ batchSize: 10 })) {
-          itemCount += batch.length;
-          if (itemCount > 0) {
-            logger.warn(`Warning: Found ${itemCount} items of ${ModelClass.name} after cleanup for tenant ${tenantId}`);
-            // Attempt cleanup again
-            for await (const batch of ModelClass.iterateAll({ batchSize: 50 })) {
-              const deletePromises = batch.map(item => ModelClass.delete(item.getPrimaryId()));
-              await Promise.all(deletePromises);
+
+    await runWithBatchContext(async () => {
+      for (const ModelClass of modelClasses) {
+        if (ModelClass.iterable) {
+          let itemCount = 0;
+          for await (const batch of ModelClass.iterateAll({ batchSize: 10 })) {
+            itemCount += batch.length;
+            if (itemCount > 0) {
+              logger.warn(
+                `Warning: Found ${itemCount} items of ${ModelClass.name} after cleanup for tenant ${tenantId}`,
+              );
+              // Attempt cleanup again
+              for await (const batch of ModelClass.iterateAll({
+                batchSize: 50,
+              })) {
+                const deletePromises = batch.map((item) =>
+                  ModelClass.delete(item.getPrimaryId()),
+                );
+                await Promise.all(deletePromises);
+              }
+              break;
             }
-            break;
           }
         }
       }
-    }
-    
+    });
+
     TenantContext.clearTenant();
     return true;
   } catch (err) {
@@ -185,38 +209,50 @@ async function cleanupTestData(tenantIdOrTestId) {
   // Get all common test models - add models as needed
   const manager = ModelManager.getInstance(tenantIdOrTestId);
   const modelClasses = [];
-  
+
   // Try to get common test models
   try {
     const User = manager.getModel("User");
     if (User) modelClasses.push(User);
-  } catch (e) { /* Model not registered */ }
-  
+  } catch (e) {
+    /* Model not registered */
+  }
+
   try {
     const Post = manager.getModel("Post");
     if (Post) modelClasses.push(Post);
-  } catch (e) { /* Model not registered */ }
-  
+  } catch (e) {
+    /* Model not registered */
+  }
+
   try {
     const Comment = manager.getModel("Comment");
     if (Comment) modelClasses.push(Comment);
-  } catch (e) { /* Model not registered */ }
-  
+  } catch (e) {
+    /* Model not registered */
+  }
+
   try {
     const Tag = manager.getModel("Tag");
     if (Tag) modelClasses.push(Tag);
-  } catch (e) { /* Model not registered */ }
-  
+  } catch (e) {
+    /* Model not registered */
+  }
+
   try {
     const TaggedPost = manager.getModel("TaggedPost");
     if (TaggedPost) modelClasses.push(TaggedPost);
-  } catch (e) { /* Model not registered */ }
-  
+  } catch (e) {
+    /* Model not registered */
+  }
+
   try {
     const CommentLike = manager.getModel("CommentLike");
     if (CommentLike) modelClasses.push(CommentLike);
-  } catch (e) { /* Model not registered */ }
-  
+  } catch (e) {
+    /* Model not registered */
+  }
+
   if (modelClasses.length > 0) {
     await cleanupTestDataByIteration(tenantIdOrTestId, modelClasses);
   } else {
@@ -231,7 +267,7 @@ module.exports = {
   trackCreatedItem,
   generateTestTenant,
   initTestModelsWithTenant,
-  
+
   // Legacy functions for backward compatibility
   cleanupTestData,
   verifyCleanup,

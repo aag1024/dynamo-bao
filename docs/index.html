@@ -102,7 +102,25 @@ async function testUserModel() {
 }
 
 testUserModel();
-</code></pre><h3 id="iterating-over-all-items">Iterating over all items</h3><p>DynamoBao makes it easy to iterate over all items in a model, which is useful for tasks like data migration, backfills, or reporting.</p><p>By default, all models are created with <code>iterable: true</code>. This automatically sets up a dedicated index that allows you to use the <code>iterateAll()</code> method on the model class.</p><pre class="prettyprint source lang-javascript"><code>// Iterate over all posts, 100 at a time
+</code></pre><h3 id="cloudflare-workers-support">Cloudflare Workers Support</h3><p>DynamoBao supports Cloudflare Workers with request-scoped batching to ensure proper isolation between concurrent requests. To use DynamoBao in Cloudflare Workers, you'll need to enable Node.js compatibility and wrap your request handlers with the batch context:</p><pre class="prettyprint source lang-javascript"><code>// wrangler.toml
+compatibility_flags = [&quot;nodejs_compat&quot;];
+compatibility_date = &quot;2024-09-23&quot;;
+
+// worker.js
+import { runWithBatchContext } from &quot;dynamo-bao&quot;;
+import { User } from &quot;./models/user.js&quot;;
+
+export default {
+  async fetch(request, env, ctx) {
+    return runWithBatchContext(async () => {
+      // All batching operations are now request-scoped
+      const user = await User.find(userId);
+      // Additional database operations...
+      return new Response(JSON.stringify(user));
+    });
+  },
+};
+</code></pre><p><strong>Request Isolation</strong>:</p><ul><li><strong>With <code>runWithBatchContext</code></strong>: Each request gets its own isolated batch context with optimal batching performance</li><li><strong>Without <code>runWithBatchContext</code></strong>: Batching is automatically disabled for safety to prevent cross-request interference, with a warning logged. While this ensures request isolation, you'll lose batching efficiency benefits.</li></ul><p>For production Cloudflare Workers deployments, always use <code>runWithBatchContext</code> to get both safety and performance.</p><h3 id="iterating-over-all-items">Iterating over all items</h3><p>DynamoBao makes it easy to iterate over all items in a model, which is useful for tasks like data migration, backfills, or reporting.</p><p>By default, all models are created with <code>iterable: true</code>. This automatically sets up a dedicated index that allows you to use the <code>iterateAll()</code> method on the model class.</p><pre class="prettyprint source lang-javascript"><code>// Iterate over all posts, 100 at a time
 for await (const batch of Post.iterateAll({ batchSize: 100 })) {
   for (const post of batch) {
     console.log(post.title);

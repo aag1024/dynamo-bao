@@ -17,6 +17,7 @@ const {
 } = require("./model");
 
 const { TenantContext } = require("./tenant-context");
+const { runWithBatchContext } = require("./mixins/batch-loading-mixin");
 
 function findModelFiles(dir) {
   let results = [];
@@ -64,9 +65,7 @@ function _registerModelsFromDirectory(manager, modelsDir) {
     );
   }
   if (!fs.existsSync(modelsDir)) {
-    throw new ConfigurationError(
-      `modelsDir does not exist: ${modelsDir}`,
-    );
+    throw new ConfigurationError(`modelsDir does not exist: ${modelsDir}`);
   }
   const modelFiles = findModelFiles(modelsDir);
   const models = {};
@@ -83,7 +82,7 @@ function _registerModelsFromDirectory(manager, modelsDir) {
 }
 
 function _registerModelsFromDirectImports(manager, modelsObject) {
-  if (!modelsObject || typeof modelsObject !== 'object') {
+  if (!modelsObject || typeof modelsObject !== "object") {
     throw new ConfigurationError(
       "models must be an object containing model classes",
     );
@@ -91,15 +90,13 @@ function _registerModelsFromDirectImports(manager, modelsObject) {
 
   const models = {};
   Object.entries(modelsObject).forEach(([name, ModelClass]) => {
-    if (!ModelClass || typeof ModelClass !== 'function') {
+    if (!ModelClass || typeof ModelClass !== "function") {
       throw new ConfigurationError(
         `Invalid model "${name}": must be a constructor function`,
       );
     }
     if (!(ModelClass.prototype instanceof BaoModel)) {
-      throw new ConfigurationError(
-        `Model "${name}" must extend BaoModel`,
-      );
+      throw new ConfigurationError(`Model "${name}" must extend BaoModel`);
     }
     manager.registerModel(ModelClass);
     models[name] = ModelClass;
@@ -114,8 +111,8 @@ function _registerModels(manager, config) {
   }
 
   // Check if filesystem is available
-  const fsAvailable = typeof fs !== 'undefined' && fs.existsSync;
-  
+  const fsAvailable = typeof fs !== "undefined" && fs.existsSync;
+
   if (!fsAvailable) {
     throw new ConfigurationError(
       "Filesystem not available. Please provide models directly using the 'models' config option.",
@@ -211,6 +208,9 @@ const firstExport = {
 
   // Tenant management
   TenantContext,
+
+  // Batch context for Cloudflare Workers
+  runWithBatchContext,
 
   // Configurations
   PrimaryKeyConfig,

@@ -3,7 +3,11 @@ const { TenantContext } = dynamoBao;
 const testConfig = require("./config");
 const { BaoModel, PrimaryKeyConfig } = require("../src/model");
 const { StringField } = require("../src/fields");
-const { cleanupTestDataByIteration, verifyCleanup, initTestModelsWithTenant } = require("./utils/test-utils");
+const {
+  cleanupTestDataByIteration,
+  verifyCleanup,
+  initTestModelsWithTenant,
+} = require("./utils/test-utils");
 const { ulid } = require("ulid");
 
 let testId;
@@ -195,7 +199,11 @@ describe("Batch Delay Tests", () => {
   });
 
   test("should handle request timeouts", async () => {
-    // Create a request that will timeout
+    let batchRequests;
+    let batchKey;
+    let batch;
+
+    // Create a request that will timeout and capture the batch info
     const promise = TestBatchModel.find(testItems[0].getPrimaryId(), {
       batchDelay: 50, // Small delay to ensure the batch is created
       loaderContext: {}, // Use new loader context to force DynamoDB request
@@ -205,10 +213,11 @@ describe("Batch Delay Tests", () => {
     await new Promise((resolve) => setTimeout(resolve, 10));
 
     // Force cleanup of the batch using the test-scoped batch requests
-    const batchRequests = TestBatchModel._getBatchRequests();
-    const batchKey = `TestBatchModel-50`;
-    const batch = batchRequests.get(batchKey);
+    batchRequests = TestBatchModel._getBatchRequests();
+    batchKey = `TestBatchModel-50`;
+    batch = batchRequests.get(batchKey);
 
+    // The batch should exist since we're in the same context
     expect(batch).toBeDefined();
     if (batch) {
       // Clear all timers before forcing the timeout

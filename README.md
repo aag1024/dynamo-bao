@@ -153,6 +153,38 @@ async function testUserModel() {
 testUserModel();
 ```
 
+### Cloudflare Workers Support
+
+DynamoBao supports Cloudflare Workers with request-scoped batching to ensure proper isolation between concurrent requests. To use DynamoBao in Cloudflare Workers, you'll need to enable Node.js compatibility and wrap your request handlers with the batch context:
+
+```javascript
+// wrangler.toml
+compatibility_flags = ["nodejs_compat"];
+compatibility_date = "2024-09-23";
+
+// worker.js
+import { runWithBatchContext } from "dynamo-bao";
+import { User } from "./models/user.js";
+
+export default {
+  async fetch(request, env, ctx) {
+    return runWithBatchContext(async () => {
+      // All batching operations are now request-scoped
+      const user = await User.find(userId);
+      // Additional database operations...
+      return new Response(JSON.stringify(user));
+    });
+  },
+};
+```
+
+**Request Isolation**:
+
+- **With `runWithBatchContext`**: Each request gets its own isolated batch context with optimal batching performance
+- **Without `runWithBatchContext`**: Batching is automatically disabled for safety to prevent cross-request interference, with a warning logged. While this ensures request isolation, you'll lose batching efficiency benefits.
+
+For production Cloudflare Workers deployments, always use `runWithBatchContext` to get both safety and performance.
+
 ### Iterating over all items
 
 DynamoBao makes it easy to iterate over all items in a model, which is useful for tasks like data migration, backfills, or reporting.

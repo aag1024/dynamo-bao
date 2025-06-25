@@ -3,18 +3,53 @@ const { ObjectNotFound } = require("../object-not-found");
 const { pluginManager } = require("../plugin-manager");
 const { BatchGetCommand, GetCommand } = require("../dynamodb-client");
 
-// Move these constants from model.js to here
-const BATCH_REQUESTS = new Map(); // testId -> { modelName-delay -> batch }
+// Import AsyncLocalStorage for request-scoped batching
+let AsyncLocalStorage;
+try {
+  AsyncLocalStorage = require("node:async_hooks").AsyncLocalStorage;
+} catch (e) {
+  // Fallback for environments without AsyncLocalStorage
+  AsyncLocalStorage = null;
+}
+
+// Request-scoped batch context
+const batchContext = AsyncLocalStorage ? new AsyncLocalStorage() : null;
+
+// Fallback global state for environments without AsyncLocalStorage (primarily for testing)
+const FALLBACK_BATCH_REQUESTS = new Map(); // testId -> { modelName-delay -> batch }
+
 const DEFAULT_BATCH_DELAY_MS = 5;
 const BATCH_REQUEST_TIMEOUT = 10000; // 10 seconds max lifetime for a batch
 
 const BatchLoadingMethods = {
   _getBatchRequests() {
-    const testId = this._testId || "default";
-    if (!BATCH_REQUESTS.has(testId)) {
-      BATCH_REQUESTS.set(testId, new Map());
+    // Try AsyncLocalStorage first, but only if context is already set
+    if (batchContext) {
+      const context = batchContext.getStore();
+      if (context && context.batchRequests) {
+        return context.batchRequests;
+      }
     }
-    return BATCH_REQUESTS.get(testId);
+
+    // Fallback to testId-based isolation
+    const tenantId = this._tenantId;
+    if (tenantId) {
+      // Test environment: use tenantId for isolation
+      if (!FALLBACK_BATCH_REQUESTS.has(tenantId)) {
+        FALLBACK_BATCH_REQUESTS.set(tenantId, new Map());
+      }
+      return FALLBACK_BATCH_REQUESTS.get(tenantId);
+    }
+
+    // Production without proper context: disable batching for safety
+    // This prevents cross-request interference at the cost of batching efficiency
+    logger.warn(
+      "No batch context found. Batching is disabled for safety. " +
+        "Use runWithBatchContext() in Cloudflare Workers for optimal performance.",
+    );
+
+    // Return a new Map for each call - no batching, but safe
+    return new Map();
   },
 
   /**
@@ -328,9 +363,32 @@ const BatchLoadingMethods = {
   },
 };
 
+/**
+ * Initialize batch context for request-scoped batching.
+ * This should be called at the beginning of each request in Cloudflare Workers.
+ * @param {Function} fn - Function to run within the batch context
+ * @returns {*} Result of the function
+ */
+function runWithBatchContext(fn) {
+  if (!batchContext) {
+    // No AsyncLocalStorage available, just run the function
+    return fn();
+  }
+
+  const context = {
+    requestId: Date.now().toString(36) + Math.random().toString(36).substr(2),
+    batchRequests: new Map(),
+    timers: new Set(),
+    startTime: Date.now(),
+  };
+
+  return batchContext.run(context, fn);
+}
+
 module.exports = {
   BatchLoadingMethods,
-  BATCH_REQUESTS,
+  runWithBatchContext,
+  FALLBACK_BATCH_REQUESTS,
   DEFAULT_BATCH_DELAY_MS,
   BATCH_REQUEST_TIMEOUT,
 };

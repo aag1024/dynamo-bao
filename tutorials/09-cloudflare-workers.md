@@ -2,14 +2,18 @@
 
 dynamo-bao supports running in Cloudflare Workers environments where filesystem access is not available. This is achieved by importing models directly instead of relying on directory scanning. dynamo-bao uses `aws4fetch` for lightweight AWS API calls, making it perfect for edge environments.
 
+Additionally, dynamo-bao provides **request-scoped batching** through `runWithBatchContext` to ensure proper isolation between concurrent requests in the Workers environment.
+
 ## Key Differences in Cloudflare Workers
 
 Cloudflare Workers have several limitations compared to Node.js environments:
+
 - No filesystem access (`fs` module not available)
 - No ability to dynamically scan directories for model files
 - Models must be imported explicitly
 
 However, you can still use **all the dynamo-bao features** including:
+
 - Code generation from YAML definitions
 - Generated manifest files for easy imports
 - All model functionality (queries, mutations, relationships, etc.)
@@ -23,6 +27,7 @@ The recommended approach is to use dynamo-bao's code generation during your buil
 #### Step 1: Create YAML Model Definitions
 
 **models.yaml**
+
 ```yaml
 models:
   User:
@@ -76,16 +81,18 @@ npx bao-codegen models.yaml ./models
 ```
 
 This creates:
+
 - `./models/user.js` - Generated User model
-- `./models/post.js` - Generated Post model  
+- `./models/post.js` - Generated Post model
 - `./.bao/models.js` - Generated manifest file
 
 #### Step 3: Use Generated Manifest in Worker
 
 **worker.js**
+
 ```javascript
-import { initModels } from 'dynamo-bao';
-import generatedModels from './.bao/models.js';
+import { initModels } from "dynamo-bao";
+import generatedModels from "./.bao/models.js";
 
 let models;
 
@@ -94,29 +101,29 @@ export default {
     if (!models) {
       models = initModels({
         models: generatedModels, // Use generated manifest
-        aws: { 
+        aws: {
           region: env.AWS_REGION,
           credentials: {
             accessKeyId: env.AWS_ACCESS_KEY_ID,
             secretAccessKey: env.AWS_SECRET_ACCESS_KEY,
-          }
+          },
         },
-        db: { 
-          tableName: env.TABLE_NAME 
-        }
+        db: {
+          tableName: env.TABLE_NAME,
+        },
       });
     }
-    
+
     const { User, Post } = models.models;
-    
+
     // Your API logic here
     const user = await User.create({
-      name: 'John Doe',
-      email: 'john@example.com'
+      name: "John Doe",
+      email: "john@example.com",
     });
-    
+
     return new Response(JSON.stringify(user));
-  }
+  },
 };
 ```
 
@@ -125,20 +132,21 @@ export default {
 If you prefer not to use code generation, you can define models manually:
 
 **models/user.js**
+
 ```javascript
-const { BaoModel, PrimaryKeyConfig, fields } = require('dynamo-bao');
+const { BaoModel, PrimaryKeyConfig, fields } = require("dynamo-bao");
 const { StringField, UlidField, CreateDateField } = fields;
 
 class User extends BaoModel {
   static modelPrefix = "u";
-  
+
   static fields = {
     userId: UlidField({ autoAssign: true }),
     name: StringField({ required: true }),
     email: StringField({ required: true }),
     createdAt: CreateDateField(),
   };
-  
+
   static primaryKey = PrimaryKeyConfig("userId");
 }
 
@@ -146,14 +154,20 @@ module.exports = { User };
 ```
 
 **models/post.js**
+
 ```javascript
-const { BaoModel, PrimaryKeyConfig, IndexConfig, fields } = require('dynamo-bao');
+const {
+  BaoModel,
+  PrimaryKeyConfig,
+  IndexConfig,
+  fields,
+} = require("dynamo-bao");
 const { StringField, UlidField, CreateDateField } = fields;
-const { GSI_INDEX_ID1 } = require('dynamo-bao').constants;
+const { GSI_INDEX_ID1 } = require("dynamo-bao").constants;
 
 class Post extends BaoModel {
   static modelPrefix = "p";
-  
+
   static fields = {
     postId: UlidField({ autoAssign: true }),
     userId: StringField({ required: true }),
@@ -161,9 +175,9 @@ class Post extends BaoModel {
     content: StringField(),
     createdAt: CreateDateField(),
   };
-  
+
   static primaryKey = PrimaryKeyConfig("postId");
-  
+
   static indexes = {
     byUser: IndexConfig("userId", "createdAt", GSI_INDEX_ID1),
   };
@@ -177,44 +191,212 @@ module.exports = { Post };
 In your Cloudflare Worker, import the models directly and pass them to `initModels`:
 
 **worker.js**
+
 ```javascript
-import { initModels } from 'dynamo-bao';
-import { User } from './models/user.js';
-import { Post } from './models/post.js';
+import { initModels } from "dynamo-bao";
+import { User } from "./models/user.js";
+import { Post } from "./models/post.js";
 
 // Initialize models with direct imports
 const models = initModels({
   models: { User, Post }, // Direct model imports
-  aws: { 
-    region: 'us-west-2' 
+  aws: {
+    region: "us-west-2",
   },
-  db: { 
-    tableName: 'my-app-table' 
-  }
+  db: {
+    tableName: "my-app-table",
+  },
 });
 
 export default {
   async fetch(request, env) {
     // Your worker logic here
     const { User, Post } = models.models;
-    
+
     // Use models normally
     const user = await User.create({
-      name: 'John Doe',
-      email: 'john@example.com'
+      name: "John Doe",
+      email: "john@example.com",
     });
-    
+
     const post = await Post.create({
       userId: user.userId,
-      title: 'My First Post',
-      content: 'Hello, World!'
+      title: "My First Post",
+      content: "Hello, World!",
     });
-    
+
     return new Response(JSON.stringify({ user, post }), {
-      headers: { 'Content-Type': 'application/json' }
+      headers: { "Content-Type": "application/json" },
     });
-  }
+  },
 };
+```
+
+## Request Isolation with runWithBatchContext
+
+**Important**: In Cloudflare Workers, you should wrap your request handlers with `runWithBatchContext` to ensure proper isolation between concurrent requests. This enables efficient batching while preventing cross-request interference.
+
+### Why Request Isolation Matters
+
+Cloudflare Workers can handle multiple concurrent requests within the same isolate. Without proper isolation, batch operations from different requests could interfere with each other, leading to:
+
+- Data leakage between requests
+- Inconsistent batching behavior
+- Potential race conditions
+
+### Basic Usage
+
+```javascript
+import { initModels, runWithBatchContext } from "dynamo-bao";
+import { User } from "./models/user.js";
+
+let models;
+
+export default {
+  async fetch(request, env) {
+    // Initialize models once
+    if (!models) {
+      models = initModels({
+        models: { User },
+        aws: {
+          region: env.AWS_REGION,
+          credentials: {
+            accessKeyId: env.AWS_ACCESS_KEY_ID,
+            secretAccessKey: env.AWS_SECRET_ACCESS_KEY,
+          },
+        },
+        db: {
+          tableName: env.TABLE_NAME,
+        },
+      });
+    }
+
+    // Wrap your request handler with runWithBatchContext
+    return runWithBatchContext(async () => {
+      const { User } = models.models;
+
+      // All database operations within this context are properly isolated
+      const users = await Promise.all([
+        User.find("user1"),
+        User.find("user2"),
+        User.find("user3"),
+      ]);
+      // These finds will be automatically batched together
+
+      return new Response(JSON.stringify(users), {
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+  },
+};
+```
+
+### Advanced Usage with Related Data
+
+```javascript
+export default {
+  async fetch(request, env) {
+    return runWithBatchContext(async () => {
+      const { User, Post } = models.models;
+      const url = new URL(request.url);
+
+      if (url.pathname === "/dashboard" && request.method === "GET") {
+        const userId = url.searchParams.get("userId");
+
+        // Create a loader context for caching within this request
+        const loaderContext = {};
+
+        // Find user and their posts efficiently
+        const user = await User.find(userId, { loaderContext });
+        const posts = await user.queryPosts(null, {
+          loadRelated: true,
+          loaderContext,
+        });
+
+        // Load additional related data
+        await Promise.all(
+          posts.items.map((post) =>
+            post.loadRelatedData(["userId"], loaderContext),
+          ),
+        );
+
+        return new Response(
+          JSON.stringify({
+            user,
+            posts: posts.items,
+            totalPosts: posts.count,
+          }),
+          {
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+    });
+  },
+};
+```
+
+### Without runWithBatchContext (Not Recommended)
+
+If you don't use `runWithBatchContext`, dynamo-bao will automatically disable batching for safety:
+
+```javascript
+// This will work but won't benefit from batching
+export default {
+  async fetch(request, env) {
+    const { User } = models.models;
+
+    // These will be individual requests (less efficient)
+    const users = await Promise.all([
+      User.find("user1"), // Individual DynamoDB call
+      User.find("user2"), // Individual DynamoDB call
+      User.find("user3"), // Individual DynamoDB call
+    ]);
+
+    return new Response(JSON.stringify(users));
+  },
+};
+```
+
+### Performance Benefits
+
+Using `runWithBatchContext` provides significant performance benefits:
+
+```javascript
+// ✅ With runWithBatchContext - efficient batching
+return runWithBatchContext(async () => {
+  const users = await Promise.all([
+    User.find("user1"),
+    User.find("user2"),
+    User.find("user3"),
+  ]);
+  // Result: 1 DynamoDB BatchGet operation
+});
+
+// ❌ Without runWithBatchContext - individual requests
+const users = await Promise.all([
+  User.find("user1"),
+  User.find("user2"),
+  User.find("user3"),
+]);
+// Result: 3 separate DynamoDB Get operations
+```
+
+### Node.js Compatibility
+
+The `runWithBatchContext` function requires Node.js compatibility to be enabled in your Cloudflare Worker:
+
+**wrangler.toml**
+
+```toml
+name = "my-worker"
+main = "worker.js"
+compatibility_date = "2024-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+AWS_REGION = "us-west-2"
+TABLE_NAME = "my-table"
 ```
 
 ## Environment Variables
@@ -245,11 +427,11 @@ const models = initModels({
     credentials: {
       accessKeyId: env.AWS_ACCESS_KEY_ID,
       secretAccessKey: env.AWS_SECRET_ACCESS_KEY,
-    }
+    },
   },
   db: {
-    tableName: env.TABLE_NAME
-  }
+    tableName: env.TABLE_NAME,
+  },
 });
 ```
 
@@ -258,6 +440,7 @@ const models = initModels({
 Here's a complete example of a Cloudflare Worker using dynamo-bao:
 
 **package.json**
+
 ```json
 {
   "name": "my-worker",
@@ -273,6 +456,7 @@ Here's a complete example of a Cloudflare Worker using dynamo-bao:
 ```
 
 **wrangler.toml**
+
 ```toml
 name = "my-worker"
 main = "worker.js"
@@ -287,20 +471,21 @@ TABLE_NAME = "my-production-table"
 ```
 
 **models/user.js**
+
 ```javascript
-const { BaoModel, PrimaryKeyConfig, fields } = require('dynamo-bao');
+const { BaoModel, PrimaryKeyConfig, fields } = require("dynamo-bao");
 const { StringField, UlidField, CreateDateField } = fields;
 
 class User extends BaoModel {
   static modelPrefix = "u";
-  
+
   static fields = {
     userId: UlidField({ autoAssign: true }),
     name: StringField({ required: true }),
     email: StringField({ required: true }),
     createdAt: CreateDateField(),
   };
-  
+
   static primaryKey = PrimaryKeyConfig("userId");
 }
 
@@ -308,9 +493,10 @@ module.exports = { User };
 ```
 
 **worker.js**
+
 ```javascript
-import { initModels } from 'dynamo-bao';
-import { User } from './models/user.js';
+import { initModels, runWithBatchContext } from "dynamo-bao";
+import { User } from "./models/user.js";
 
 let models;
 
@@ -320,40 +506,43 @@ export default {
     if (!models) {
       models = initModels({
         models: { User },
-        aws: { 
+        aws: {
           region: env.AWS_REGION,
           credentials: {
             accessKeyId: env.AWS_ACCESS_KEY_ID,
             secretAccessKey: env.AWS_SECRET_ACCESS_KEY,
-          }
+          },
         },
-        db: { 
-          tableName: env.TABLE_NAME 
-        }
+        db: {
+          tableName: env.TABLE_NAME,
+        },
       });
     }
-    
-    const { User } = models.models;
-    const url = new URL(request.url);
-    
-    if (url.pathname === '/users' && request.method === 'POST') {
-      const userData = await request.json();
-      const user = await User.create(userData);
-      return new Response(JSON.stringify(user), {
-        headers: { 'Content-Type': 'application/json' }
-      });
-    }
-    
-    if (url.pathname.startsWith('/users/') && request.method === 'GET') {
-      const userId = url.pathname.split('/')[2];
-      const user = await User.findByPrimaryKey(userId);
-      return new Response(JSON.stringify(user), {
-        headers: { 'Content-Type': 'application/json' }
-      });
-    }
-    
-    return new Response('Not Found', { status: 404 });
-  }
+
+    // Wrap request handling with batch context for proper isolation
+    return runWithBatchContext(async () => {
+      const { User } = models.models;
+      const url = new URL(request.url);
+
+      if (url.pathname === "/users" && request.method === "POST") {
+        const userData = await request.json();
+        const user = await User.create(userData);
+        return new Response(JSON.stringify(user), {
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.pathname.startsWith("/users/") && request.method === "GET") {
+        const userId = url.pathname.split("/")[2];
+        const user = await User.findByPrimaryKey(userId);
+        return new Response(JSON.stringify(user), {
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      return new Response("Not Found", { status: 404 });
+    });
+  },
 };
 ```
 
@@ -364,6 +553,7 @@ export default {
 Add model generation to your build pipeline:
 
 **package.json**
+
 ```json
 {
   "scripts": {
@@ -375,6 +565,7 @@ Add model generation to your build pipeline:
 ```
 
 **GitHub Actions Example**
+
 ```yaml
 name: Deploy Worker
 on:
@@ -386,18 +577,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      
+
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: '18'
-          
+          node-version: "18"
+
       - name: Install dependencies
         run: npm ci
-        
+
       - name: Generate models
         run: npm run generate-models
-        
+
       - name: Deploy to Cloudflare Workers
         run: npx wrangler publish
         env:
@@ -432,8 +623,8 @@ dynamo-bao provides helpful error messages when running in environments without 
 ```javascript
 // This will throw an error in Cloudflare Workers
 const models = initModels({
-  aws: { region: 'us-west-2' },
-  db: { tableName: 'my-table' }
+  aws: { region: "us-west-2" },
+  db: { tableName: "my-table" },
   // Missing models config - will fail
 });
 // Error: "Filesystem not available. Please provide models directly using the 'models' config option."
@@ -449,34 +640,39 @@ If you're migrating an existing dynamo-bao application to Cloudflare Workers:
 4. **Test thoroughly**: Verify all functionality works in the Workers environment
 
 ### Before (Node.js with filesystem)
+
 ```javascript
 const models = initModels({
   paths: {
-    modelsDir: './models'
+    modelsDir: "./models",
   },
-  aws: { region: 'us-west-2' },
-  db: { tableName: 'my-table' }
+  aws: { region: "us-west-2" },
+  db: { tableName: "my-table" },
 });
 ```
 
 ### After (Cloudflare Workers)
+
 ```javascript
-import { User, Post, Comment } from './models/index.js';
+import { User, Post, Comment } from "./models/index.js";
 
 const models = initModels({
   models: { User, Post, Comment },
-  aws: { region: 'us-west-2' },
-  db: { tableName: 'my-table' }
+  aws: { region: "us-west-2" },
+  db: { tableName: "my-table" },
 });
 ```
 
 ## Best Practices
 
-1. **Initialize once**: Initialize models once and reuse the instance across requests
-2. **Environment variables**: Use environment variables for configuration
-3. **Error handling**: Implement proper error handling for DynamoDB operations
-4. **Caching**: Consider implementing response caching for read-heavy operations
-5. **Bundle size**: Only import the models you need to keep bundle size small
+1. **Always use runWithBatchContext**: Wrap your request handlers with `runWithBatchContext` for proper isolation and efficient batching
+2. **Initialize once**: Initialize models once and reuse the instance across requests
+3. **Environment variables**: Use environment variables for configuration
+4. **Enable Node.js compatibility**: Add `compatibility_flags = ["nodejs_compat"]` to your `wrangler.toml`
+5. **Error handling**: Implement proper error handling for DynamoDB operations
+6. **Caching**: Consider implementing response caching for read-heavy operations
+7. **Bundle size**: Only import the models you need to keep bundle size small
+8. **Loader context**: Use loader context within requests to cache related data and reduce DynamoDB calls
 
 ## Limitations
 

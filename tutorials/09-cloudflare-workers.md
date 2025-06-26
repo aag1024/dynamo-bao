@@ -338,15 +338,15 @@ export default {
 
 ### Without runWithBatchContext (Not Recommended)
 
-If you don't use `runWithBatchContext`, dynamo-bao will automatically disable batching for safety:
+If you don't use `runWithBatchContext`, dynamo-bao will automatically fall back to direct execution (no batching or caching) to ensure request isolation:
 
 ```javascript
-// This will work but won't benefit from batching
+// This will work but won't benefit from batching or caching
 export default {
   async fetch(request, env) {
     const { User } = models.models;
 
-    // These will be individual requests (less efficient)
+    // These will be individual requests (less efficient, no caching)
     const users = await Promise.all([
       User.find("user1"), // Individual DynamoDB call
       User.find("user2"), // Individual DynamoDB call
@@ -398,6 +398,114 @@ compatibility_flags = ["nodejs_compat"]
 AWS_REGION = "us-west-2"
 TABLE_NAME = "my-table"
 ```
+
+## Batch Context Configuration
+
+You can configure how dynamo-bao handles operations outside of `runWithBatchContext` using the `batchContext` configuration:
+
+### Default Mode (Recommended for Production)
+
+```javascript
+const models = initModels({
+  models: { User, Post },
+  batchContext: {
+    requireBatchContext: false, // Default: allow fallback behavior
+  },
+  aws: {
+    region: env.AWS_REGION,
+  },
+  db: {
+    tableName: env.TABLE_NAME,
+  },
+});
+```
+
+**Behavior**:
+
+- Operations inside `runWithBatchContext`: Full batching and caching enabled
+- Operations outside `runWithBatchContext`: Direct execution (no batching/caching)
+- Provides maximum flexibility for gradual migration
+
+### Strict Mode (Recommended for Development)
+
+```javascript
+const models = initModels({
+  models: { User, Post },
+  batchContext: {
+    requireBatchContext: true, // Strict mode: require batch context
+  },
+  aws: {
+    region: env.AWS_REGION,
+  },
+  db: {
+    tableName: env.TABLE_NAME,
+  },
+});
+```
+
+**Behavior**:
+
+- Operations inside `runWithBatchContext`: Full batching and caching enabled
+- Operations outside `runWithBatchContext`: Throws an error
+- Ensures all database operations use proper batch context
+
+### Context Detection
+
+You can check if your code is running within a batch context:
+
+```javascript
+export default {
+  async fetch(request, env) {
+    const { User } = models.models;
+
+    // Check if inside batch context
+    const isInBatchContext = User.isInsideBatchContext();
+
+    if (isInBatchContext) {
+      // Full batching and caching available
+      console.log("Running with optimal batching");
+    } else {
+      // Direct execution mode
+      console.log("Running in direct execution mode");
+    }
+
+    // Your logic here...
+  },
+};
+```
+
+### Environment-Based Configuration
+
+Configure batch context behavior via environment variables:
+
+```toml
+# wrangler.toml
+[vars]
+AWS_REGION = "us-west-2"
+TABLE_NAME = "my-table"
+DYNAMO_BAO_REQUIRE_BATCH_CONTEXT = "false" # or "true" for strict mode
+```
+
+```javascript
+const models = initModels({
+  models: { User, Post },
+  // Will use environment variable or default to false
+  aws: {
+    region: env.AWS_REGION,
+  },
+  db: {
+    tableName: env.TABLE_NAME,
+  },
+});
+```
+
+### Recommended Approach
+
+For Cloudflare Workers, we recommend:
+
+1. **Development**: Use `requireBatchContext: true` to catch missing batch contexts early
+2. **Production**: Use `requireBatchContext: false` (default) for maximum flexibility
+3. **Always wrap handlers**: Use `runWithBatchContext` for optimal performance regardless of mode
 
 ## Environment Variables
 

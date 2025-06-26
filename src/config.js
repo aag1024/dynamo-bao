@@ -52,7 +52,7 @@ async function findConfig() {
       tableName: process.env.TABLE_NAME || "dynamo-bao-dev",
     },
     codegen: {
-      moduleSystem: 'commonjs',
+      moduleSystem: "commonjs",
     },
     logging: {
       level: process.env.LOG_LEVEL || "ERROR",
@@ -65,16 +65,20 @@ async function findConfig() {
     tenancy: {
       enabled: process.env.DYNAMO_BAO_TENANCY_ENABLED === "true" || false,
     },
+    batchContext: {
+      requireBatchContext:
+        process.env.DYNAMO_BAO_REQUIRE_BATCH_CONTEXT === "true" || false,
+    },
   };
 }
 
 async function loadConfigFile(configPath) {
-  if (configPath.endsWith('.cjs')) {
+  if (configPath.endsWith(".cjs")) {
     // Use require for CommonJS files
     return require(configPath);
-  } else if (configPath.endsWith('.mjs') || configPath.endsWith('.js')) {
+  } else if (configPath.endsWith(".mjs") || configPath.endsWith(".js")) {
     // Use dynamic import for ESM files
-    const fileUrl = 'file://' + configPath;
+    const fileUrl = "file://" + configPath;
     const module = await import(fileUrl);
     return module.default || module;
   } else {
@@ -83,13 +87,12 @@ async function loadConfigFile(configPath) {
   }
 }
 
-
 function normalizeConfig(rawConfig, configDir) {
   return {
     ...rawConfig,
     models: rawConfig.models || null,
     codegen: {
-      moduleSystem: 'commonjs',
+      moduleSystem: "commonjs",
       ...(rawConfig.codegen || {}),
     },
     paths: {
@@ -116,6 +119,10 @@ function normalizeConfig(rawConfig, configDir) {
       enabled: false,
       ...rawConfig.tenancy,
     },
+    batchContext: {
+      requireBatchContext: false,
+      ...rawConfig.batchContext,
+    },
   };
 }
 
@@ -124,7 +131,7 @@ let config = null;
 
 function getConfig() {
   if (!config) {
-    throw new Error('Config not initialized. Call initConfig() first.');
+    throw new Error("Config not initialized. Call initConfig() first.");
   }
   return config;
 }
@@ -146,7 +153,7 @@ try {
       tableName: process.env.TABLE_NAME || "dynamo-bao-dev",
     },
     codegen: {
-      moduleSystem: 'commonjs',
+      moduleSystem: "commonjs",
     },
     logging: {
       level: process.env.LOG_LEVEL || "ERROR",
@@ -159,18 +166,23 @@ try {
     tenancy: {
       enabled: process.env.DYNAMO_BAO_TENANCY_ENABLED === "true" || false,
     },
+    batchContext: {
+      requireBatchContext:
+        process.env.DYNAMO_BAO_REQUIRE_BATCH_CONTEXT === "true" || false,
+    },
   };
 } catch (err) {
-  console.error('Error loading config:', err);
+  console.error("Error loading config:", err);
 }
 
 module.exports = config || {
   aws: { region: "us-west-2" },
   db: { tableName: "dynamo-bao-dev" },
-  codegen: { moduleSystem: 'commonjs' },
+  codegen: { moduleSystem: "commonjs" },
   logging: { level: "ERROR" },
   paths: { modelsDir: null },
-  tenancy: { enabled: false }
+  tenancy: { enabled: false },
+  batchContext: { requireBatchContext: false },
 };
 
 module.exports.initConfig = initConfig;

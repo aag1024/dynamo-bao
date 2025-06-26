@@ -13,6 +13,7 @@ class ModelManager {
     this._tenantId = null; // Changed from _testId
     this._tenancyEnabled = false;
     this._models = new Map();
+    this._config = null; // Store config for models to access
   }
 
   static getInstance(tenantId = null) {
@@ -27,8 +28,11 @@ class ModelManager {
 
   async init(config = {}) {
     // Validate tenant requirement
-    const { TenantContext } = require('./tenant-context');
+    const { TenantContext } = require("./tenant-context");
     TenantContext.validateTenantRequired(config);
+
+    // Store config for models to access
+    this._config = config;
 
     const client = new DynamoDBClient({
       region: config.aws.region,
@@ -36,7 +40,7 @@ class ModelManager {
     this._docClient = DynamoDBDocumentClient.from(client);
     this._tableName = config.db.tableName;
     this._tenancyEnabled = config.tenancy?.enabled || false;
-    
+
     // Support both tenantId and testId for backward compatibility
     this._tenantId = config.tenantId || config.testId || this._tenantId;
 
@@ -46,6 +50,7 @@ class ModelManager {
       ModelClass._testId = this._tenantId; // Backward compatibility
       ModelClass.documentClient = this._docClient;
       ModelClass.table = this._tableName;
+      ModelClass._config = config; // Pass config to models
       ModelClass._validateConfiguration();
     }
 
@@ -88,6 +93,7 @@ class ModelManager {
     if (this._initialized) {
       ModelClass.documentClient = this._docClient;
       ModelClass.table = this._tableName;
+      ModelClass._config = this._config; // Pass config to newly registered models
       ModelClass._validateConfiguration();
     }
 

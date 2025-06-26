@@ -165,6 +165,10 @@ function initModels(userConfig = {}) {
       ...config.tenancy,
       ...(userConfig.tenancy || {}),
     },
+    batchContext: {
+      ...config.batchContext,
+      ...(userConfig.batchContext || {}),
+    },
     models: userConfig.models || config.models || null,
   };
 

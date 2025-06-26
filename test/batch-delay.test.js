@@ -240,11 +240,49 @@ describe("Batch Delay Tests", () => {
   });
 
   test("should throw error when not within runWithBatchContext", async () => {
-    // This should throw an error since we're not in a batch context
+    // Test with requireBatchContext: true configuration
+    const strictManager = initTestModelsWithTenant(
+      {
+        ...testConfig,
+        batchContext: { requireBatchContext: true },
+      },
+      testId,
+    );
+    const StrictTestBatchModel = strictManager.getModel("TestBatchModel");
+
+    // This should throw an error since we're not in a batch context with strict mode
     await expect(
-      TestBatchModel.find(testItems[0].getPrimaryId(), { batchDelay: 0 }),
+      StrictTestBatchModel.find(testItems[0].getPrimaryId(), { batchDelay: 0 }),
     ).rejects.toThrow(
       "Batch operations must be executed within runWithBatchContext()",
     );
+  });
+
+  test("should work outside runWithBatchContext with default configuration (fallback mode)", async () => {
+    // Test with default requireBatchContext: false (fallback behavior)
+    const fallbackManager = initTestModelsWithTenant(
+      {
+        ...testConfig,
+        batchContext: { requireBatchContext: false },
+      },
+      testId,
+    );
+    const FallbackTestBatchModel = fallbackManager.getModel("TestBatchModel");
+
+    // This should work with direct execution (no batching/caching)
+    const item = await FallbackTestBatchModel.find(
+      testItems[0].getPrimaryId(),
+      { batchDelay: 0 },
+    );
+    expect(item.name).toBe("Test Item 1");
+    expect(item.exists()).toBe(true);
+
+    // Second call should get a different object instance (no caching)
+    const item2 = await FallbackTestBatchModel.find(
+      testItems[0].getPrimaryId(),
+      { batchDelay: 0 },
+    );
+    expect(item2.name).toBe("Test Item 1");
+    expect(item2).not.toBe(item); // Different object instances
   });
 });

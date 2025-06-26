@@ -25,5 +25,8 @@
   },
   "09-cloudflare-workers": {
     "title": "Cloudflare Workers"
+  },
+  "10-batch-context-configuration": {
+    "title": "Batch Context Configuration"
   }
 }

@@ -365,19 +365,22 @@ describe("AsyncLocalStorage Batch Context Tests", () => {
   });
 
   test("should require runWithBatchContext for all operations", async () => {
-    // Since we made runWithBatchContext mandatory, this test verifies the error message
+    // Test with requireBatchContext: true configuration
+    const strictManager = initTestModelsWithTenant(
+      {
+        ...testConfig,
+        batchContext: { requireBatchContext: true },
+      },
+      testId,
+    );
+    const StrictUser = strictManager.getModel("User");
+
+    // Since we made runWithBatchContext mandatory with requireBatchContext: true, this test verifies the error message
     await expect(async () => {
-      await User.find(testUsers[0].userId);
+      await StrictUser.find(testUsers[0].userId);
     }).rejects.toThrow(
       "Batch operations must be executed within runWithBatchContext()",
     );
-
-    // But it should work when properly wrapped
-    await runWithBatchContext(async () => {
-      const user = await User.find(testUsers[0].userId);
-      expect(user).toBeDefined();
-      expect(user.userId).toBe(testUsers[0].userId);
-    });
   });
 
   test("should simulate Cloudflare Workers fetch handler pattern", async () => {

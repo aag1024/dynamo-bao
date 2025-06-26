@@ -2,6 +2,7 @@ const { defaultLogger: logger } = require("../utils/logger");
 const { ObjectNotFound } = require("../object-not-found");
 const { pluginManager } = require("../plugin-manager");
 const { BatchGetCommand, GetCommand } = require("../dynamodb-client");
+const defaultConfig = require("../config");
 
 // Import AsyncLocalStorage for request-scoped batching
 let AsyncLocalStorage;
@@ -28,11 +29,34 @@ const BatchLoadingMethods = {
       }
     }
 
-    // No batch context found - operations must be within runWithBatchContext
-    throw new Error(
-      "Batch operations must be executed within runWithBatchContext(). " +
-        "Wrap your database operations in runWithBatchContext() to enable batching and caching.",
-    );
+    // Check if we should require batch context
+    const modelConfig = this._config || {};
+    const batchContextConfig = modelConfig.batchContext || {
+      requireBatchContext: false,
+    };
+    if (batchContextConfig.requireBatchContext) {
+      // No batch context found - operations must be within runWithBatchContext
+      throw new Error(
+        "Batch operations must be executed within runWithBatchContext(). " +
+          "Wrap your database operations in runWithBatchContext() to enable batching and caching.",
+      );
+    }
+
+    // Fallback: Return null to indicate no batch context available
+    return null;
+  },
+
+  /**
+   * Check if currently executing within a batch context
+   * @returns {boolean} True if inside a batch context, false otherwise
+   */
+  isInsideBatchContext() {
+    if (!batchContext) {
+      return false;
+    }
+
+    const context = batchContext.getStore();
+    return !!(context && context.batchRequests);
   },
 
   /**
@@ -46,6 +70,11 @@ const BatchLoadingMethods = {
    */
   async batchFind(primaryIds) {
     if (!primaryIds?.length) return { items: {}, ConsumedCapacity: [] };
+
+    // Get batch context and loader context - will be null if not in batch context
+    const batchRequests = this._getBatchRequests();
+    const context = batchContext?.getStore();
+    const loaderContext = context?.loaderContext;
 
     // Add retry wrapper function
     const retryOperation = async (operation, maxRetries = 3) => {
@@ -70,15 +99,6 @@ const BatchLoadingMethods = {
         }
       }
     };
-
-    // Get automatic loaderContext from batch context
-    let loaderContext = null;
-    if (batchContext) {
-      const context = batchContext.getStore();
-      if (context?.loaderContext) {
-        loaderContext = context.loaderContext;
-      }
-    }
 
     // Initialize results object
     const results = {};
@@ -213,10 +233,20 @@ const BatchLoadingMethods = {
 
     const context = batchContext.getStore();
     if (!context) {
-      throw new Error(
-        "Batch operations must be executed within runWithBatchContext(). " +
-          "Wrap your database operations in runWithBatchContext() to enable batching and caching.",
-      );
+      // Check if we should require batch context
+      const modelConfig = this._config || {};
+      const batchContextConfig = modelConfig.batchContext || {
+        requireBatchContext: false,
+      };
+      if (batchContextConfig.requireBatchContext) {
+        throw new Error(
+          "Batch operations must be executed within runWithBatchContext(). " +
+            "Wrap your database operations in runWithBatchContext() to enable batching and caching.",
+        );
+      }
+
+      // Fallback behavior: direct execution without batching or caching
+      return this._executeFindDirect(primaryId);
     }
 
     // Get automatic loaderContext from batch context
@@ -370,6 +400,31 @@ const BatchLoadingMethods = {
         });
       }
     });
+  },
+
+  /**
+   * Execute find operation directly without batching or caching
+   * @param {string} primaryId - The primary ID to find
+   * @returns {Promise<Object>} The found item or ObjectNotFound
+   */
+  async _executeFindDirect(primaryId) {
+    const pkSk = this._parsePrimaryId(primaryId);
+    const dyKey = this._getDyKeyForPkSk(pkSk);
+    const result = await this.documentClient.send(
+      new GetCommand({
+        TableName: this.table,
+        Key: dyKey,
+        ReturnConsumedCapacity: "TOTAL",
+      }),
+    );
+
+    if (!result.Item) {
+      return new ObjectNotFound(result.ConsumedCapacity);
+    } else {
+      const instance = this._createFromDyItem(result.Item);
+      instance._addConsumedCapacity(result.ConsumedCapacity, "read", false);
+      return instance;
+    }
   },
 };
 

@@ -181,9 +181,109 @@ export default {
 **Request Isolation**:
 
 - **With `runWithBatchContext`**: Each request gets its own isolated batch context with optimal batching performance
-- **Without `runWithBatchContext`**: Batching is automatically disabled for safety to prevent cross-request interference, with a warning logged. While this ensures request isolation, you'll lose batching efficiency benefits.
+- **Without `runWithBatchContext`**: Operations automatically fall back to direct execution (no batching/caching) to ensure request isolation
 
-For production Cloudflare Workers deployments, always use `runWithBatchContext` to get both safety and performance.
+For production Cloudflare Workers deployments, always use `runWithBatchContext` to get both safety and optimal performance.
+
+### Batch Context Configuration
+
+DynamoBao provides flexible batch context behavior that can be configured based on your application's needs:
+
+#### Configuration Options
+
+Add the `batchContext` configuration to your config file:
+
+```javascript
+// config.js or dynamo-bao.config.js
+module.exports = {
+  aws: {
+    region: "us-west-2",
+  },
+  db: {
+    tableName: "your-table-name",
+  },
+  batchContext: {
+    requireBatchContext: false, // Default: allow fallback behavior
+  },
+  // ... other config
+};
+```
+
+#### Behavior Modes
+
+**Default Mode (`requireBatchContext: false`)**:
+
+- Operations inside `runWithBatchContext`: Full batching and caching enabled
+- Operations outside `runWithBatchContext`: Direct execution without batching or caching
+- Provides maximum flexibility and backward compatibility
+
+```javascript
+// Works with direct execution (no batching/caching)
+const user = await User.find("user123");
+
+// Also works with batching + caching
+await runWithBatchContext(async () => {
+  const user = await User.find("user123");
+});
+```
+
+**Strict Mode (`requireBatchContext: true`)**:
+
+- Operations inside `runWithBatchContext`: Full batching and caching enabled
+- Operations outside `runWithBatchContext`: Throws an error
+- Ensures all database operations use proper batch context
+
+```javascript
+// Configure strict mode
+const manager = initModels({
+  batchContext: { requireBatchContext: true },
+});
+
+// This throws an error
+await User.find("user123"); // Error: Batch operations must be executed within runWithBatchContext()
+
+// This works
+await runWithBatchContext(async () => {
+  const user = await User.find("user123"); // ✅
+});
+```
+
+#### Context Detection API
+
+You can check if code is currently running within a batch context:
+
+```javascript
+const { User } = require("./models/user");
+
+// Check if inside batch context
+const isInBatchContext = User.isInsideBatchContext();
+
+if (isInBatchContext) {
+  // Full batching and caching available
+  console.log("Running with batching enabled");
+} else {
+  // Direct execution mode
+  console.log("Running in direct execution mode");
+}
+```
+
+#### Environment Variable Support
+
+You can also configure batch context behavior via environment variables:
+
+```bash
+# Enable strict mode globally
+export DYNAMO_BAO_REQUIRE_BATCH_CONTEXT=true
+
+# Your application will now require runWithBatchContext for all operations
+node your-app.js
+```
+
+This is particularly useful for:
+
+- **Development/Testing**: Use strict mode to catch missing batch contexts early
+- **Production**: Use default mode for maximum flexibility
+- **Migration**: Gradually migrate from direct calls to batch context usage
 
 ### Iterating over all items
 

@@ -41,26 +41,26 @@ class FilterExpressionBuilder {
   // Build expression for a single comparison
   buildComparison(fieldName, operator, value, model) {
     const nameKey = this.generateName(fieldName);
-    const convertedValue = this.convertValue(value, model, fieldName);
 
     switch (operator) {
       case "$eq":
+        const convertedValue = this.convertValue(value, model, fieldName);
         const valueKey = this.generateValue(convertedValue);
         return `${nameKey} = ${valueKey}`;
       case "$ne":
-        return `${nameKey} <> ${this.generateValue(convertedValue)}`;
+        return `${nameKey} <> ${this.generateValue(this.convertValue(value, model, fieldName))}`;
       case "$gt":
-        return `${nameKey} > ${this.generateValue(convertedValue)}`;
+        return `${nameKey} > ${this.generateValue(this.convertValue(value, model, fieldName))}`;
       case "$gte":
-        return `${nameKey} >= ${this.generateValue(convertedValue)}`;
+        return `${nameKey} >= ${this.generateValue(this.convertValue(value, model, fieldName))}`;
       case "$lt":
-        return `${nameKey} < ${this.generateValue(convertedValue)}`;
+        return `${nameKey} < ${this.generateValue(this.convertValue(value, model, fieldName))}`;
       case "$lte":
-        return `${nameKey} <= ${this.generateValue(convertedValue)}`;
+        return `${nameKey} <= ${this.generateValue(this.convertValue(value, model, fieldName))}`;
       case "$contains":
-        return `contains(${nameKey}, ${this.generateValue(convertedValue)})`;
+        return `contains(${nameKey}, ${this.generateValue(this.convertValue(value, model, fieldName))})`;
       case "$beginsWith":
-        return `begins_with(${nameKey}, ${this.generateValue(convertedValue)})`;
+        return `begins_with(${nameKey}, ${this.generateValue(this.convertValue(value, model, fieldName))})`;
       case "$in":
         if (!Array.isArray(value)) {
           throw new ValidationError("$in operator requires an array value");
@@ -76,6 +76,51 @@ class FilterExpressionBuilder {
         return value
           ? `attribute_exists(${nameKey})`
           : `attribute_not_exists(${nameKey})`;
+      case "$size":
+        // Handle size comparisons: { $size: 5 } or { $size: { $gt: 2 } }
+        if (typeof value === "number") {
+          // Direct size comparison
+          return `size(${nameKey}) = ${this.generateValue(value)}`;
+        } else if (typeof value === "object" && value !== null) {
+          // Size comparison with operators
+          const sizeOperators = Object.keys(value);
+          if (sizeOperators.length !== 1) {
+            throw new ValidationError(
+              "$size operator with object value must have exactly one comparison operator",
+            );
+          }
+          const sizeOp = sizeOperators[0];
+          const sizeValue = value[sizeOp];
+
+          if (typeof sizeValue !== "number") {
+            throw new ValidationError(
+              "$size operator requires a numeric value",
+            );
+          }
+
+          switch (sizeOp) {
+            case "$eq":
+              return `size(${nameKey}) = ${this.generateValue(sizeValue)}`;
+            case "$ne":
+              return `size(${nameKey}) <> ${this.generateValue(sizeValue)}`;
+            case "$gt":
+              return `size(${nameKey}) > ${this.generateValue(sizeValue)}`;
+            case "$gte":
+              return `size(${nameKey}) >= ${this.generateValue(sizeValue)}`;
+            case "$lt":
+              return `size(${nameKey}) < ${this.generateValue(sizeValue)}`;
+            case "$lte":
+              return `size(${nameKey}) <= ${this.generateValue(sizeValue)}`;
+            default:
+              throw new ValidationError(
+                `Unsupported size comparison operator: ${sizeOp}`,
+              );
+          }
+        } else {
+          throw new ValidationError(
+            "$size operator requires a number or object with comparison operators",
+          );
+        }
       default:
         throw new QueryError(`Unsupported operator: ${operator}`);
     }
@@ -151,6 +196,7 @@ class FilterExpressionBuilder {
    *   - Simple field comparisons: { fieldName: value } for exact matches
    *   - Comparison operators: { fieldName: { $eq: value, $ne: value, $gt: value, $gte: value, $lt: value, $lte: value } }
    *   - String operators: { fieldName: { $beginsWith: value, $contains: value } }
+   *   - Collection operators: { fieldName: { $size: value } } for sets, lists, or maps
    *   - Logical operators:
    *     - $and: [{condition1}, {condition2}] - All conditions must match
    *     - $or: [{condition1}, {condition2}] - At least one condition must match
@@ -170,6 +216,10 @@ class FilterExpressionBuilder {
    * }
    *
    * filterExp4 = {
+   *     tags: { $size: { $gt: 2 } }, // Set/list size greater than 2
+   * }
+   *
+   * filterExp5 = {
    *     // OR condition
    *     $or: [
    *       { type: 'user' },
@@ -238,6 +288,7 @@ class FilterExpressionBuilder {
               "$contains",
               "$beginsWith",
               "$exists",
+              "$size",
             ];
             if (!validOperators.includes(op)) {
               throw new QueryError(`Invalid operator ${op} for field ${key}`);

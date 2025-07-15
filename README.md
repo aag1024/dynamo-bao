@@ -24,6 +24,7 @@ DynamoBao is the tool I wish I had when I started.
 - Return total read/write consumed capacity (even when multiple operations were performed)
 - Easily iterate over all items in a model for batch processing or migrations
 - ESM (ECMAScript Modules) support for modern JavaScript projects
+- StringSetField for storing sets of strings with efficient diffing on save
 
 ## Requirements
 
@@ -291,12 +292,86 @@ DynamoBao makes it easy to iterate over all items in a model, which is useful fo
 
 By default, all models are created with `iterable: true`. This automatically sets up a dedicated index that allows you to use the `iterateAll()` method on the model class.
 
+#### Basic Usage
+
 ```javascript
 // Iterate over all posts, 100 at a time
 for await (const batch of Post.iterateAll({ batchSize: 100 })) {
   for (const post of batch) {
     console.log(post.title);
   }
+}
+```
+
+#### Processing Items in Batches
+
+```javascript
+// Process users in smaller batches for better memory management
+for await (const batch of User.iterateAll({ batchSize: 50 })) {
+  // Process each batch
+  const activeUsers = batch.filter((user) => user.status === "active");
+
+  // Perform batch operations
+  await Promise.all(
+    activeUsers.map(async (user) => {
+      // Update user or perform other operations
+      console.log(`Processing user: ${user.name}`);
+    }),
+  );
+}
+```
+
+#### Data Migration Example
+
+```javascript
+// Migrate all users to add a new field
+let processedCount = 0;
+for await (const batch of User.iterateAll({ batchSize: 25 })) {
+  const updates = batch.map(async (user) => {
+    // Only update if the field is missing
+    if (!user.hasOwnProperty("newField")) {
+      user.newField = "default_value";
+      await user.save();
+      processedCount++;
+    }
+  });
+
+  await Promise.all(updates);
+  console.log(`Processed ${processedCount} users so far...`);
+}
+console.log(`Migration complete! Updated ${processedCount} users`);
+```
+
+#### Collecting Results
+
+```javascript
+// Collect all items into an array (be careful with large datasets)
+const allUsers = [];
+for await (const batch of User.iterateAll({ batchSize: 100 })) {
+  allUsers.push(...batch);
+}
+
+console.log(`Found ${allUsers.length} total users`);
+```
+
+#### Error Handling
+
+```javascript
+// Handle errors when iterating over large datasets
+try {
+  for await (const batch of User.iterateAll({ batchSize: 50 })) {
+    for (const user of batch) {
+      try {
+        // Process individual user
+        await processUser(user);
+      } catch (error) {
+        console.error(`Error processing user ${user.userId}:`, error);
+        // Continue with other users
+      }
+    }
+  }
+} catch (error) {
+  console.error("Critical error during iteration:", error);
 }
 ```
 
@@ -318,6 +393,13 @@ models:
     fields:
       # ...
 ```
+
+**Important Notes**
+
+- Models must have `iterable: true` (the default) to use `iterateAll()`
+- Iteration respects tenant context in multi-tenant applications
+- The method returns an async iterator, so you must use `for await` loops
+- If a model is not iterable, calling `iterateAll()` will throw an error
 
 ## Installation / Quick Start
 
@@ -521,3 +603,141 @@ It's worth noting that you didn't have to:
 - Install a database (either locally or on a server)
 - Understand how to generate keys and indexes using single table design princples
 - Manually configure transactions and items to support unique constraints
+
+## Finding Objects with the find Method
+
+The `find` method is used to retrieve objects by their primary key. It's important to understand that `find` always returns an object, and you must use the `exists()` method to check if the object was actually found.
+
+### Basic Usage (Single Primary Key)
+
+For models with a single primary key field:
+
+```javascript
+const user = await User.find("user123");
+
+// Always check if the object exists
+if (user.exists()) {
+  console.log("User found:", user.name);
+} else {
+  console.log("User not found");
+}
+```
+
+### Composite Primary Keys
+
+For models with composite primary keys (partition key + sort key), you have several options:
+
+#### Option 1: Using makePrimaryId (Recommended)
+
+```javascript
+// Model with composite key: appId (partition) + entityId (sort)
+const primaryId = CompositeModel.makePrimaryId("my-app", "entity-123");
+const item = await CompositeModel.find(primaryId);
+
+if (item.exists()) {
+  console.log("Item found:", item.data);
+} else {
+  console.log("Item not found");
+}
+```
+
+#### Option 2: Using Object Notation
+
+```javascript
+// Alternative: pass an object with the key fields
+const item = await CompositeModel.find({
+  appId: "my-app",
+  entityId: "entity-123",
+});
+
+if (item.exists()) {
+  console.log("Item found:", item.data);
+} else {
+  console.log("Item not found");
+}
+```
+
+### Working with getPrimaryId()
+
+Once you have an object, you can get its primary ID to use with other operations:
+
+```javascript
+const user = await User.create({
+  name: "John Doe",
+  email: "john@example.com",
+});
+
+// Get the primary ID
+const primaryId = user.getPrimaryId();
+console.log("Primary ID:", primaryId);
+
+// Use it to find the same object later
+const foundUser = await User.find(primaryId);
+if (foundUser.exists()) {
+  console.log("Found user:", foundUser.name);
+}
+```
+
+### Error Handling Patterns
+
+```javascript
+// Good: Always check exists() before using the object
+const user = await User.find("user123");
+if (user.exists()) {
+  console.log("User email:", user.email);
+  // Safe to access properties
+} else {
+  console.log("User not found - handle appropriately");
+}
+
+// Bad: Don't assume the object exists
+const user = await User.find("user123");
+console.log(user.email); // This could be undefined!
+```
+
+### Batch Finding
+
+For loading multiple objects efficiently:
+
+```javascript
+// Load multiple users at once
+const userIds = ["user1", "user2", "user3"];
+const result = await User.batchFind(userIds);
+
+// Check each result
+Object.entries(result.items).forEach(([id, user]) => {
+  if (user.exists()) {
+    console.log(`User ${id}: ${user.name}`);
+  } else {
+    console.log(`User ${id}: not found`);
+  }
+});
+```
+
+### Using find with Unique Constraints
+
+For unique constraint lookups, use the generated methods:
+
+```javascript
+// Find by unique email constraint
+const user = await User.findByEmail("john@example.com");
+if (user.exists()) {
+  console.log("User found by email:", user.name);
+} else {
+  console.log("No user with that email");
+}
+
+// Or use the generic method
+const user = await User.findByUniqueConstraint(
+  "uniqueEmail",
+  "john@example.com",
+);
+```
+
+### Key Points to Remember
+
+1. **Always use `exists()`**: The `find` method returns an object even when nothing is found
+2. **Composite keys**: Use `makePrimaryId()` for composite primary keys
+3. **Primary IDs**: Use `getPrimaryId()` to get the correct identifier for an object
+4. **Batch operations**: Use `batchFind()` for loading multiple objects efficiently
+5. **Unique constraints**: Use the generated `findByX()` methods for unique constraint lookups

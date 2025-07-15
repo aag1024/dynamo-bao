@@ -413,24 +413,32 @@ const MutationMethods = {
 
       // Add iteration keys if model is iterable
       if (this.iterable) {
-        const iterationKeys = this._getIterationKeys(primaryId, dyUpdatesToSave);
+        const iterationKeys = this._getIterationKeys(
+          primaryId,
+          dyUpdatesToSave,
+        );
         Object.assign(dyUpdatesToSave, iterationKeys);
       }
 
       // Build the update expression first
-      const { updateExpression, names, values } =
-        this._buildUpdateExpression(dyUpdatesToSave);
+      const { updateExpression, names, values } = this._buildUpdateExpression(
+        dyUpdatesToSave,
+        currentItem,
+      );
 
       // Create the base update params
       const updateParams = {
         TableName: this.table,
         Key: this._getDyKeyForPkSk(this._parsePrimaryId(primaryId)),
         UpdateExpression: updateExpression,
-        ExpressionAttributeNames: {
-          ...names,
-        },
         ReturnValues: "ALL_NEW",
       };
+
+      if (Object.keys(names).length > 0) {
+        updateParams.ExpressionAttributeNames = {
+          ...names,
+        };
+      }
 
       if (Object.keys(values).length > 0) {
         updateParams.ExpressionAttributeValues = {
@@ -580,7 +588,7 @@ const MutationMethods = {
     }
   },
 
-  _buildUpdateExpression(dyUpdatesToSave) {
+  _buildUpdateExpression(dyUpdatesToSave, currentItem = null) {
     const names = {};
     const values = {};
     const expressions = [];
@@ -604,7 +612,28 @@ const MutationMethods = {
           fieldValue: null,
         });
       } else {
-        expressions.push(field.getUpdateExpression(fieldName, value));
+        // For StringSetField, pass the original value for diffing
+        const { StringSetFieldClass } = require("../fields");
+        if (field instanceof StringSetFieldClass && currentItem) {
+          const originalValue = currentItem._loadedDyData[fieldName];
+          const updateExpression = field.getUpdateExpression(
+            fieldName,
+            value,
+            originalValue,
+          );
+
+          // Handle ADD_DELETE operations (multiple operations for the same field)
+          if (updateExpression && updateExpression.type === "ADD_DELETE") {
+            expressions.push(...updateExpression.operations);
+          } else if (updateExpression) {
+            expressions.push(updateExpression);
+          }
+        } else {
+          const updateExpression = field.getUpdateExpression(fieldName, value);
+          if (updateExpression) {
+            expressions.push(updateExpression);
+          }
+        }
       }
     }
 
@@ -612,6 +641,7 @@ const MutationMethods = {
     const setExpressions = [];
     const addExpressions = [];
     const removeExpressions = [];
+    const deleteExpressions = [];
 
     expressions.forEach((expression) => {
       if (expression.type === "SET") {
@@ -620,11 +650,15 @@ const MutationMethods = {
         addExpressions.push(expression.expression);
       } else if (expression.type === "REMOVE") {
         removeExpressions.push(expression.expression);
+      } else if (expression.type === "DELETE") {
+        deleteExpressions.push(expression.expression);
       }
 
-      names[expression.attrNameKey] = expression.fieldName;
+      if (expression.attrNameKey) {
+        names[expression.attrNameKey] = expression.fieldName;
+      }
 
-      if (expression.fieldValue !== null) {
+      if (expression.fieldValue !== null && expression.attrValueKey) {
         values[expression.attrValueKey] = expression.fieldValue;
       }
     });
@@ -635,6 +669,8 @@ const MutationMethods = {
       parts.push(`ADD ${addExpressions.join(", ")}`);
     if (removeExpressions.length > 0)
       parts.push(`REMOVE ${removeExpressions.join(", ")}`);
+    if (deleteExpressions.length > 0)
+      parts.push(`DELETE ${deleteExpressions.join(", ")}`);
 
     return {
       updateExpression: parts.join(" "),

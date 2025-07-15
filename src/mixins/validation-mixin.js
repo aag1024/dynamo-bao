@@ -1,5 +1,5 @@
 const { defaultLogger: logger } = require("../utils/logger");
-const { TtlFieldClass } = require("../fields");
+const { TtlFieldClass, StringSetFieldClass } = require("../fields");
 const { PrimaryKeyConfig } = require("../model-config");
 const { ConfigurationError } = require("../exceptions");
 const {
@@ -141,27 +141,43 @@ const ValidationMethods = {
       // These will throw errors if the fields don't exist
       const idxPkField = this._getField(index.pk);
       const idxSkField = this._getField(index.sk);
+
+      // StringSetField cannot be indexed
+      if (idxPkField instanceof StringSetFieldClass) {
+        throw new ConfigurationError(
+          `StringSetField '${index.pk}' cannot be used as partition key in index '${indexName}' in ${this.name}`,
+          this.name,
+        );
+      }
+      if (idxSkField instanceof StringSetFieldClass) {
+        throw new ConfigurationError(
+          `StringSetField '${index.sk}' cannot be used as sort key in index '${indexName}' in ${this.name}`,
+          this.name,
+        );
+      }
     });
 
     // Validate iteration configuration
-    if (this.hasOwnProperty('iterable')) {
-      if (typeof this.iterable !== 'boolean') {
+    if (this.hasOwnProperty("iterable")) {
+      if (typeof this.iterable !== "boolean") {
         throw new ConfigurationError(
           `iterable must be a boolean in ${this.name}`,
-          this.name
+          this.name,
         );
       }
-      
+
       if (this.iterable) {
-        if (!this.hasOwnProperty('iterationBuckets')) {
+        if (!this.hasOwnProperty("iterationBuckets")) {
           this.iterationBuckets = 100; // Set default
         } else {
-          if (!Number.isInteger(this.iterationBuckets) || 
-              this.iterationBuckets < 1 || 
-              this.iterationBuckets > 1000) {
+          if (
+            !Number.isInteger(this.iterationBuckets) ||
+            this.iterationBuckets < 1 ||
+            this.iterationBuckets > 1000
+          ) {
             throw new ConfigurationError(
               `iterationBuckets must be an integer between 1 and 1000 in ${this.name}`,
-              this.name
+              this.name,
             );
           }
         }

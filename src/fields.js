@@ -776,6 +776,230 @@ class TtlField extends DateTimeField {
   }
 }
 
+/**
+ * @class StringSetField
+ * @memberof BaoFields
+ * @description
+ * A field that stores a set of string values. Behind the scenes this is backed by a DynamoDB string set.
+ * This field cannot be indexed but can be used in filter expressions.
+ */
+class StringSetField extends BaoBaseField {
+  constructor(options = {}) {
+    super(options);
+    this.maxStringLength = options.maxStringLength;
+    this.maxMemberCount = options.maxMemberCount;
+  }
+
+  validate(value) {
+    super.validate(value);
+
+    if (value === null || value === undefined) {
+      return true; // Allow null/undefined
+    }
+
+    // Accept both Set and Array, but prefer Set
+    let setToValidate;
+    if (value instanceof Set) {
+      setToValidate = value;
+    } else if (Array.isArray(value)) {
+      setToValidate = new Set(value);
+    } else {
+      throw new ValidationError(
+        "StringSetField value must be a Set or Array",
+        null,
+        value,
+      );
+    }
+
+    // Validate member count
+    if (this.maxMemberCount && setToValidate.size > this.maxMemberCount) {
+      throw new ValidationError(
+        `StringSet exceeds maximum member count of ${this.maxMemberCount}`,
+        null,
+        value,
+      );
+    }
+
+    // Validate each string in the set
+    for (const item of setToValidate) {
+      if (typeof item !== "string") {
+        throw new ValidationError(
+          "StringSetField can only contain string values",
+          null,
+          value,
+        );
+      }
+
+      if (this.maxStringLength && item.length > this.maxStringLength) {
+        throw new ValidationError(
+          `String in set exceeds maximum length of ${this.maxStringLength}`,
+          null,
+          value,
+        );
+      }
+    }
+
+    return true;
+  }
+
+  getInitialValue() {
+    return new Set();
+  }
+
+  toDy(value) {
+    if (value === undefined) return undefined;
+    if (value === null) return null;
+
+    // Handle filter values (strings, numbers, objects) - pass through as-is
+    if (
+      typeof value === "string" ||
+      typeof value === "number" ||
+      (typeof value === "object" &&
+        !Array.isArray(value) &&
+        !(value instanceof Set))
+    ) {
+      return value;
+    }
+
+    // Convert Set or Array to array for DynamoDB
+    let arrayValue;
+    if (value instanceof Set) {
+      arrayValue = Array.from(value);
+    } else if (Array.isArray(value)) {
+      arrayValue = [...new Set(value)]; // Remove duplicates
+    } else {
+      throw new ValidationError(
+        "StringSetField value must be a Set or Array",
+        null,
+        value,
+      );
+    }
+
+    // Empty sets are stored as null in DynamoDB
+    if (arrayValue.length === 0) {
+      return null;
+    }
+
+    return arrayValue;
+  }
+
+  fromDy(value) {
+    if (value === undefined || value === null) {
+      return new Set(); // Return empty Set for missing or null values
+    }
+
+    if (Array.isArray(value)) {
+      return new Set(value);
+    }
+
+    return new Set();
+  }
+
+  toGsi(value) {
+    throw new ValidationError(
+      "StringSetField does not support GSI conversion (sets cannot be indexed)",
+      null,
+      value,
+    );
+  }
+
+  getUpdateExpression(fieldName, value, originalValue) {
+    if (value === undefined) return null;
+
+    const attributeName = `#${fieldName}`;
+    const valueAttributeKey = `:${fieldName}`;
+
+    // Handle null case (remove entire field)
+    if (value === null) {
+      return {
+        type: "REMOVE",
+        expression: `${attributeName}`,
+        attrNameKey: attributeName,
+        attrValueKey: null,
+        fieldName: fieldName,
+        fieldValue: null,
+      };
+    }
+
+    // Convert values to Arrays for DynamoDB (value is already in DynamoDB format from toDy)
+    const newArray = Array.isArray(value) ? value : [value];
+    const oldArray =
+      originalValue && Array.isArray(originalValue) ? originalValue : [];
+
+    // If no original value or original was empty, use SET
+    if (!originalValue || oldArray.length === 0) {
+      return {
+        type: "SET",
+        expression: `${attributeName} = ${valueAttributeKey}`,
+        attrNameKey: attributeName,
+        attrValueKey: valueAttributeKey,
+        fieldName: fieldName,
+        fieldValue: newArray,
+      };
+    }
+
+    // Convert to Sets for efficient comparison
+    const newSet = new Set(newArray);
+    const oldSet = new Set(oldArray);
+
+    // Find items to add and delete
+    const toAdd = newArray.filter((item) => !oldSet.has(item));
+    const toDelete = oldArray.filter((item) => !newSet.has(item));
+
+    // If no changes, return null
+    if (toAdd.length === 0 && toDelete.length === 0) {
+      return null;
+    }
+
+    // Handle mixed ADD and DELETE operations
+    // For mixed operations, we use SET which replaces the entire set
+    if (toAdd.length > 0 && toDelete.length > 0) {
+      return {
+        type: "SET",
+        expression: `${attributeName} = ${valueAttributeKey}`,
+        attrNameKey: attributeName,
+        attrValueKey: valueAttributeKey,
+        fieldName: fieldName,
+        fieldValue: newArray,
+      };
+    }
+
+    // If only additions, use ADD
+    if (toAdd.length > 0 && toDelete.length === 0) {
+      return {
+        type: "ADD",
+        expression: `${attributeName} ${valueAttributeKey}`,
+        attrNameKey: attributeName,
+        attrValueKey: valueAttributeKey,
+        fieldName: fieldName,
+        fieldValue: toAdd,
+      };
+    }
+
+    // If only deletions, use DELETE
+    if (toDelete.length > 0 && toAdd.length === 0) {
+      return {
+        type: "DELETE",
+        expression: `${attributeName} ${valueAttributeKey}`,
+        attrNameKey: attributeName,
+        attrValueKey: valueAttributeKey,
+        fieldName: fieldName,
+        fieldValue: toDelete,
+      };
+    }
+
+    // This shouldn't happen, but fallback to SET for safety
+    return {
+      type: "SET",
+      expression: `${attributeName} = ${valueAttributeKey}`,
+      attrNameKey: attributeName,
+      attrValueKey: valueAttributeKey,
+      fieldName: fieldName,
+      fieldValue: newArray,
+    };
+  }
+}
+
 // Factory functions for creating field instances
 const createStringField = (options) => new StringField(options);
 const createDateTimeField = (options) => new DateTimeField(options);
@@ -791,6 +1015,7 @@ const createBinaryField = (options) => new BinaryField(options);
 const createVersionField = (options) => new VersionField(options);
 const createBooleanField = (options) => new BooleanField(options);
 const createTtlField = (options) => new TtlField(options);
+const createStringSetField = (options) => new StringSetField(options);
 
 // Export both the factory functions and the classes
 module.exports = {
@@ -808,6 +1033,7 @@ module.exports = {
   VersionField: createVersionField,
   BooleanField: createBooleanField,
   TtlField: createTtlField,
+  StringSetField: createStringSetField,
 
   // Classes (for instanceof checks)
   StringFieldClass: StringField,
@@ -823,4 +1049,5 @@ module.exports = {
   VersionFieldClass: VersionField,
   BooleanFieldClass: BooleanField,
   TtlFieldClass: TtlField,
+  StringSetFieldClass: StringSetField,
 };

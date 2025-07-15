@@ -40,6 +40,11 @@ fields:
 
   binaryField:
     type: BinaryField # Stores Buffer or Uint8Array data
+
+  stringSetField:
+    type: StringSetField # Stores a set of string values
+    maxStringLength: 100 # Optional: maximum length of individual strings
+    maxMemberCount: 20 # Optional: maximum number of items in the set
 ```
 
 ### Date and Time Fields
@@ -73,6 +78,53 @@ fields:
 ULIDs are 128-bit values that are lexicographically sortable and can be generated in parallel. They are designed to be collision resistant and are compatible with the UUID format.
 
 They are especially useful for dynamo since they can be used as sort keys and sort by the date they were created. This makes the default sort order when an id is used feel more natural than being purely random or requiring a secondary index to sort by creation date.
+
+### StringSetField
+
+The `StringSetField` stores a set of unique string values. In JavaScript, this field works with `Set` objects and is backed by DynamoDB's string set type.
+
+```yaml
+fields:
+  tags:
+    type: StringSetField
+    maxStringLength: 50 # Optional: maximum length of individual strings
+    maxMemberCount: 10 # Optional: maximum number of items in the set
+```
+
+**Important notes:**
+
+- StringSetField cannot be used in indexes (partition key, sort key, or GSI)
+- Empty sets are stored as `null` in DynamoDB
+- When loading from DynamoDB, missing or null values return an empty `Set()`
+- Can be used in filter expressions with `$contains` and `$size` operations
+
+**Usage example:**
+
+```javascript
+const user = new User({
+  name: "John Doe",
+  tags: new Set(["admin", "premium", "beta"]),
+});
+
+// You can also set with an array (duplicates will be removed)
+user.tags = ["admin", "premium", "beta"];
+
+// The field will always return a Set object
+console.log(user.tags instanceof Set); // true
+
+// Filter examples
+const premiumUsers = await User.scan({
+  filter: {
+    tags: { $contains: "premium" },
+  },
+});
+
+const usersWithManyTags = await User.scan({
+  filter: {
+    tags: { $size: { $gt: 3 } },
+  },
+});
+```
 
 ### VersionField
 

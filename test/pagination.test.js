@@ -12,7 +12,11 @@ const {
   DateTimeField,
   UlidField,
 } = require("../src/fields");
-const { cleanupTestDataByIteration, verifyCleanup, initTestModelsWithTenant } = require("./utils/test-utils");
+const {
+  cleanupTestDataByIteration,
+  verifyCleanup,
+  initTestModelsWithTenant,
+} = require("./utils/test-utils");
 const { ulid } = require("ulid");
 
 let testId;
@@ -57,13 +61,23 @@ describe("Pagination Tests", () => {
     }
 
     // Create more test users for pagination
-    users = await Promise.all([
-      TestUser.create({ name: "User 1", status: "active", score: 100 }),
-      TestUser.create({ name: "User 2", status: "active", score: 200 }),
-      TestUser.create({ name: "User 3", status: "active", score: 300 }),
-      TestUser.create({ name: "User 4", status: "active", score: 400 }),
-      TestUser.create({ name: "User 5", status: "active", score: 500 }),
-    ]);
+    // Create sequentially to ensure ULID order is predictable
+    users = [];
+    users.push(
+      await TestUser.create({ name: "User 1", status: "active", score: 100 }),
+    );
+    users.push(
+      await TestUser.create({ name: "User 2", status: "active", score: 200 }),
+    );
+    users.push(
+      await TestUser.create({ name: "User 3", status: "active", score: 300 }),
+    );
+    users.push(
+      await TestUser.create({ name: "User 4", status: "active", score: 400 }),
+    );
+    users.push(
+      await TestUser.create({ name: "User 5", status: "active", score: 500 }),
+    );
   });
 
   afterEach(async () => {
@@ -108,13 +122,13 @@ describe("Pagination Tests", () => {
 
   test("should paginate with ascending sort", async () => {
     const allUsers = await TestUser.queryByIndex("byStatus", "active", null, {
-      sort: "ASC",
+      direction: "ASC",
     });
 
     // First page
     const page1 = await TestUser.queryByIndex("byStatus", "active", null, {
       limit: 2,
-      sort: "ASC",
+      direction: "ASC",
     });
 
     expect(page1.items).toHaveLength(2);
@@ -124,7 +138,7 @@ describe("Pagination Tests", () => {
     // Second page
     const page2 = await TestUser.queryByIndex("byStatus", "active", null, {
       limit: 2,
-      sort: "ASC",
+      direction: "ASC",
       startKey: page1.lastEvaluatedKey,
     });
 
@@ -135,13 +149,13 @@ describe("Pagination Tests", () => {
 
   test("should paginate with descending sort", async () => {
     const allUsers = await TestUser.queryByIndex("byStatus", "active", null, {
-      sort: "DESC",
+      direction: "DESC",
     });
 
     // First page
     const page1 = await TestUser.queryByIndex("byStatus", "active", null, {
       limit: 3,
-      sort: "DESC",
+      direction: "DESC",
     });
 
     expect(page1.items).toHaveLength(3);
@@ -151,7 +165,7 @@ describe("Pagination Tests", () => {
     // Second page
     const page2 = await TestUser.queryByIndex("byStatus", "active", null, {
       limit: 3,
-      sort: "DESC",
+      direction: "DESC",
       startKey: page1.lastEvaluatedKey,
     });
 
@@ -163,7 +177,7 @@ describe("Pagination Tests", () => {
   test("should maintain consistent order across pages", async () => {
     // Get all items sorted by score
     const allUsers = await TestUser.queryByIndex("byStatus", "active", null, {
-      sort: "ASC",
+      direction: "ASC",
     });
 
     const pageSize = 2;
@@ -175,7 +189,7 @@ describe("Pagination Tests", () => {
     while (true) {
       const page = await TestUser.queryByIndex("byStatus", "active", null, {
         limit: pageSize,
-        sort: "ASC",
+        direction: "ASC",
         startKey,
       });
 

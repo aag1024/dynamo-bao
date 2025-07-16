@@ -3,7 +3,11 @@
  * This module contains the core functionality for models in Bao.
  */
 
-const { RelatedFieldClass, StringField } = require("./fields");
+const {
+  RelatedFieldClass,
+  StringField,
+  StringSetFieldClass,
+} = require("./fields");
 const { ModelManager } = require("./model-manager");
 const { defaultLogger: logger } = require("./utils/logger");
 const { ObjectNotFound } = require("./object-not-found");
@@ -363,7 +367,13 @@ class BaoModel {
 
       // Define property getter/setter that always works with _dyData
       Object.defineProperty(this, fieldName, {
-        get: () => field.fromDy(this._dyData[fieldName]),
+        get: () => {
+          // For StringSetField, pass model context to enable proxy
+          if (field instanceof StringSetFieldClass) {
+            return field.fromDy(this._dyData[fieldName], this, fieldName);
+          }
+          return field.fromDy(this._dyData[fieldName]);
+        },
         set: (newValue) => {
           const oldDyValue = this._dyData[fieldName];
           const newDyValue = field.toDy(newValue);

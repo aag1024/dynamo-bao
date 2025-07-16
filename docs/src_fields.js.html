@@ -784,6 +784,35 @@ class TtlField extends DateTimeField {
  * @description
  * A field that stores a set of string values. Behind the scenes this is backed by a DynamoDB string set.
  * This field cannot be indexed but can be used in filter expressions.
+ *
+ * Supports direct mutation operations that automatically track changes:
+ * - `add(value)` - Add a string to the set
+ * - `delete(value)` - Remove a string from the set
+ * - `clear()` - Remove all strings from the set
+ *
+ * @example
+ * // Creating with initial values
+ * const doc = new MyModel({
+ *   tags: new Set(["javascript", "web", "tutorial"])
+ * });
+ *
+ * // Direct mutations (recommended - changes are auto-tracked)
+ * doc.tags.add("advanced");        // Add a tag
+ * doc.tags.delete("tutorial");     // Remove a tag
+ * doc.tags.clear();                // Clear all tags
+ * await doc.save();                // Changes are saved automatically
+ *
+ * // Alternative: Replace entire set
+ * doc.tags = new Set(["new", "tags"]);
+ * await doc.save();
+ *
+ * // Filter expressions
+ * const results = await MyModel.scan({
+ *   filter: {
+ *     tags: { $contains: "javascript" },    // Contains specific value
+ *     tags: { $size: { $gt: 2 } }          // Set size greater than 2
+ *   }
+ * });
  */
 class StringSetField extends BaoBaseField {
   constructor(options = {}) {
@@ -885,7 +914,26 @@ class StringSetField extends BaoBaseField {
     return arrayValue;
   }
 
-  fromDy(value) {
+  fromDy(value, modelInstance = null, fieldName = null) {
+    const baseSet = this._createBaseSet(value);
+
+    // If no model context, return plain Set (for non-property usage)
+    if (!modelInstance || !fieldName) {
+      return baseSet;
+    }
+
+    // Return proxied Set that tracks changes
+    return this._createTrackedSet(baseSet, modelInstance, fieldName);
+  }
+
+  /**
+   * @private
+   * @description
+   * Creates a plain Set from DynamoDB data without any tracking.
+   * @param {any} value - The value from DynamoDB (array, null, or undefined)
+   * @returns {Set} A plain Set object
+   */
+  _createBaseSet(value) {
     if (value === undefined || value === null) {
       return new Set(); // Return empty Set for missing or null values
     }
@@ -895,6 +943,47 @@ class StringSetField extends BaoBaseField {
     }
 
     return new Set();
+  }
+
+  /**
+   * @private
+   * @description
+   * Creates a proxied Set that automatically tracks mutations and updates the model's underlying data.
+   * The proxy intercepts add(), delete(), and clear() operations to mark the field as dirty
+   * and update the model's _dyData immediately.
+   * @param {Set} baseSet - The base Set to proxy
+   * @param {BaoModel} modelInstance - The model instance that owns this field
+   * @param {string} fieldName - The name of the field in the model
+   * @returns {Proxy} A proxied Set that tracks changes
+   */
+  _createTrackedSet(baseSet, modelInstance, fieldName) {
+    return new Proxy(baseSet, {
+      get(target, prop) {
+        const original = target[prop];
+
+        // Handle functions/methods
+        if (typeof original === "function") {
+          // For mutating methods, track changes and update underlying data
+          if (["add", "delete", "clear"].includes(prop)) {
+            return function (...args) {
+              const result = original.apply(target, args);
+              // Mark field as dirty in existing change tracking
+              modelInstance._changes.add(fieldName);
+              // Update the underlying _dyData with the mutated set
+              const field = modelInstance.constructor._getField(fieldName);
+              modelInstance._dyData[fieldName] = field.toDy(target);
+              return result;
+            };
+          }
+
+          // For all other methods, bind them properly to maintain context
+          return original.bind(target);
+        }
+
+        // For non-function properties, return as-is
+        return original;
+      },
+    });
   }
 
   toGsi(value) {

@@ -324,11 +324,9 @@ describe("StringSetField Tests", () => {
     test("should handle adding items to existing set", async () => {
       const doc = documents[0]; // JavaScript Guide
 
-      // Add new tags (correct way: get, modify, set)
-      const currentTags = doc.tags;
-      currentTags.add("advanced");
-      currentTags.add("guide");
-      doc.tags = currentTags;
+      // Add new tags (direct mutation)
+      doc.tags.add("advanced");
+      doc.tags.add("guide");
 
       await doc.save();
 
@@ -345,10 +343,8 @@ describe("StringSetField Tests", () => {
     test("should handle removing items from existing set", async () => {
       const doc = documents[1]; // React Tutorial
 
-      // Remove a tag (correct way: get, modify, set)
-      const currentTags = doc.tags;
-      currentTags.delete("frontend");
-      doc.tags = currentTags;
+      // Remove a tag (direct mutation)
+      doc.tags.delete("frontend");
 
       await doc.save();
 
@@ -394,14 +390,12 @@ describe("StringSetField Tests", () => {
     test("should handle mixed add and delete operations (uses ADD/DELETE)", async () => {
       const doc = documents[0]; // JavaScript Guide with ["javascript", "programming", "web"]
 
-      // Make a complex change: remove some, add some
-      const currentTags = doc.tags;
-      currentTags.delete("programming"); // Remove
-      currentTags.delete("web"); // Remove
-      currentTags.add("frontend"); // Add
-      currentTags.add("tutorial"); // Add
-      currentTags.add("beginner"); // Add
-      doc.tags = currentTags;
+      // Make a complex change: remove some, add some (direct mutations)
+      doc.tags.delete("programming"); // Remove
+      doc.tags.delete("web"); // Remove
+      doc.tags.add("frontend"); // Add
+      doc.tags.add("tutorial"); // Add
+      doc.tags.add("beginner"); // Add
 
       await doc.save();
 
@@ -414,6 +408,62 @@ describe("StringSetField Tests", () => {
       expect(reloaded.tags.has("tutorial")).toBe(true); // Added
       expect(reloaded.tags.has("beginner")).toBe(true); // Added
       expect(reloaded.tags.size).toBe(4);
+    });
+
+    test("should handle direct mutations without get/set", async () => {
+      const doc = documents[0]; // JavaScript Guide
+
+      // Verify direct mutations work
+      doc.tags.add("newTag1");
+      doc.tags.add("newTag2");
+      doc.tags.delete("programming");
+
+      // Verify changes are tracked
+      expect(doc.hasChanges()).toBe(true);
+      expect(doc._changes.has("tags")).toBe(true);
+
+      await doc.save();
+
+      // Reload and verify
+      const reloaded = await TestDocument.find(doc.docId);
+      expect(reloaded.tags.has("javascript")).toBe(true); // Original kept
+      expect(reloaded.tags.has("programming")).toBe(false); // Removed
+      expect(reloaded.tags.has("web")).toBe(true); // Original kept
+      expect(reloaded.tags.has("newTag1")).toBe(true); // Added
+      expect(reloaded.tags.has("newTag2")).toBe(true); // Added
+      expect(reloaded.tags.size).toBe(4);
+    });
+
+    test("should handle clear operation", async () => {
+      const doc = documents[0]; // JavaScript Guide
+
+      // Clear all tags using direct mutation
+      doc.tags.clear();
+
+      // Verify changes are tracked
+      expect(doc.hasChanges()).toBe(true);
+      expect(doc._changes.has("tags")).toBe(true);
+
+      await doc.save();
+
+      // Reload and verify
+      const reloaded = await TestDocument.find(doc.docId);
+      expect(reloaded.tags.size).toBe(0);
+    });
+
+    test("should maintain backward compatibility with get/set pattern", async () => {
+      const doc = documents[0]; // JavaScript Guide
+
+      // Old pattern should still work
+      const currentTags = doc.tags;
+      currentTags.add("backwardCompatible");
+      doc.tags = currentTags;
+
+      await doc.save();
+
+      // Reload and verify
+      const reloaded = await TestDocument.find(doc.docId);
+      expect(reloaded.tags.has("backwardCompatible")).toBe(true);
     });
   });
 

@@ -112,6 +112,13 @@ user.tags = ["admin", "premium", "beta"];
 // The field will always return a Set object
 console.log(user.tags instanceof Set); // true
 
+// Direct mutation operations (recommended)
+user.tags.add("vip"); // Add a tag
+user.tags.delete("beta"); // Remove a tag
+user.tags.clear(); // Clear all tags
+
+await user.save(); // Changes are automatically tracked and saved
+
 // Filter examples
 const premiumUsers = await User.scan({
   filter: {

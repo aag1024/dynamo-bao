@@ -77,7 +77,7 @@ const ValidationMethods = {
     }
 
     const skField = this._getField(this.primaryKey.sk);
-    if (!skField.required) {
+    if (!skField.required && skField.name !== "modelPrefix") {
       logger.warn(
         `Warning: Sort key field '${this.primaryKey.sk}' in ${this.name} was not explicitly marked as required. Marking as required automatically.`,
       );

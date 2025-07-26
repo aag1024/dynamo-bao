@@ -55,7 +55,7 @@ async function findConfig() {
       moduleSystem: "commonjs",
     },
     logging: {
-      level: process.env.LOG_LEVEL || "ERROR",
+      level: process.env.DYNAMO_BAO_LOG_LEVEL || "ERROR",
     },
     paths: {
       modelsDir: process.env.MODELS_DIR
@@ -113,7 +113,8 @@ function normalizeConfig(rawConfig, configDir) {
     logging: {
       ...(rawConfig.logging || {}),
       // Allow environment variable to override config file
-      level: process.env.LOG_LEVEL || rawConfig.logging?.level || "ERROR",
+      level:
+        process.env.DYNAMO_BAO_LOG_LEVEL || rawConfig.logging?.level || "ERROR",
     },
     tenancy: {
       enabled: false,
@@ -156,7 +157,7 @@ try {
       moduleSystem: "commonjs",
     },
     logging: {
-      level: process.env.LOG_LEVEL || "ERROR",
+      level: process.env.DYNAMO_BAO_LOG_LEVEL || "ERROR",
     },
     paths: {
       modelsDir: process.env.MODELS_DIR

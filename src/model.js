@@ -585,17 +585,24 @@ class BaoModel {
    * @param {string[]} [options.constraints.fieldMatches=[]] - An array of field names that must match
    * the current item's loaded state. This is often used for optimistic locking in conjunction
    * with a {@link BaoFields.VersionField} field.
+   * @param {boolean} [options.forceReindex=false] - When true, repopulates all index attributes even if no tracked changes exist.
    * @returns {Promise<Object>} Returns a promise that resolves to the updated item.
    */
   async save(options = {}) {
-    if (!this.hasChanges() && this.isLoaded()) {
+    const { forceReindex = false, ...otherOptions } = options;
+
+    if (!forceReindex && !this.hasChanges() && this.isLoaded()) {
       logger.debug("save() - no changes to save");
       return this; // No changes to save
     }
 
     let changes = null;
+    const updateOptions = { ...otherOptions, instanceObj: this };
+
     if (!this.isLoaded()) {
-      options.isNew = true;
+      updateOptions.isNew = true;
+      changes = this._getAllData();
+    } else if (forceReindex) {
       changes = this._getAllData();
     } else {
       changes = this._getChanges();
@@ -605,7 +612,7 @@ class BaoModel {
     const updatedObj = await this.constructor.update(
       this.getPrimaryId(),
       changes,
-      { instanceObj: this, ...options },
+      { ...updateOptions, forceReindex },
     );
 
     logger.debug("save() - updatedObj", updatedObj);

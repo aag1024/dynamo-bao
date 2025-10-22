@@ -548,6 +548,9 @@ async function testUserModel() {
   const foundUser = await User.findByEmail("test@example.com");
   console.log("Found user by email:", foundUser.getPrimaryId());
 
+  // Force reindex on save (useful after manual data fixes)
+  await foundUser.save({ forceReindex: true });
+
   // Create some test posts for the user
   const post1 = new Post({
     userId: user.userId,

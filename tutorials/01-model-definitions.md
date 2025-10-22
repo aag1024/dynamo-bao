@@ -119,6 +119,9 @@ user.tags.clear(); // Clear all tags
 
 await user.save(); // Changes are automatically tracked and saved
 
+// Need to refresh index projections after manual data fixes?
+await user.save({ forceReindex: true });
+
 // Filter examples
 const premiumUsers = await User.scan({
   filter: {

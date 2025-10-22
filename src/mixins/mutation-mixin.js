@@ -49,6 +49,7 @@ const MutationMethods = {
    *   - String operators: { fieldName: { $beginsWith: value, $contains: value } }
    *   - Existence check: { fieldName: { $exists: true|false } }
    *   - Logical operators: $and, $or, $not
+   * @param {boolean} [options.forceReindex=false] - When true, repopulates all index attributes even if the source fields are unchanged.
    * @returns {Promise<Object>} Returns a promise that resolves to the updated item.
    * @throws {Error} "Item not found" if the item doesn't exist
    * @throws {Error} "Condition check failed" if the condition isn't satisfied
@@ -285,7 +286,11 @@ const MutationMethods = {
    */
   async _saveItem(primaryId, jsUpdates, options = {}) {
     try {
-      const { isNew = false, instanceObj = null } = options;
+      const {
+        isNew = false,
+        instanceObj = null,
+        forceReindex = false,
+      } = options;
 
       logger.debug("saveItem", primaryId, isNew, instanceObj);
       let consumedCapacity = [];
@@ -311,6 +316,7 @@ const MutationMethods = {
 
       const transactItems = [];
       const dyUpdatesToSave = {};
+      const indexComputationData = {};
       let hasUniqueConstraintChanges = false;
 
       logger.debug("jsUpdates", jsUpdates);
@@ -327,15 +333,28 @@ const MutationMethods = {
 
         if (jsUpdates[key] !== undefined) {
           field.validate(jsUpdates[key]);
-          dyUpdatesToSave[key] = field.toDy(jsUpdates[key]);
+          const dyValue = field.toDy(jsUpdates[key]);
+          dyUpdatesToSave[key] = dyValue;
+          indexComputationData[key] = dyValue;
         } else {
           if (typeof field.updateBeforeSave === "function") {
             const newValue = field.updateBeforeSave(jsUpdates[key]);
             if (newValue !== jsUpdates[key]) {
-              dyUpdatesToSave[key] = field.toDy(newValue);
+              const dyValue = field.toDy(newValue);
+              dyUpdatesToSave[key] = dyValue;
+              indexComputationData[key] = dyValue;
             }
           }
         }
+      }
+
+      if (forceReindex && currentItem) {
+        Object.keys(this.fields).forEach((fieldName) => {
+          const currentValue = currentItem._dyData[fieldName];
+          if (currentValue !== undefined) {
+            indexComputationData[fieldName] = currentValue;
+          }
+        });
       }
 
       if (isNew) {
@@ -407,7 +426,12 @@ const MutationMethods = {
       }
 
       // Add GSI keys
-      const indexKeys = this._getIndexKeys(dyUpdatesToSave);
+      const indexSourceData =
+        forceReindex && Object.keys(indexComputationData).length
+          ? indexComputationData
+          : dyUpdatesToSave;
+
+      const indexKeys = this._getIndexKeys(indexSourceData);
       logger.debug("indexKeys", indexKeys);
       Object.assign(dyUpdatesToSave, indexKeys);
 

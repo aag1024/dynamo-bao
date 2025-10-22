@@ -6,6 +6,7 @@ const {
   verifyCleanup,
   initTestModelsWithTenant,
 } = require("./utils/test-utils");
+const { UpdateCommand, GetCommand } = require("../src/dynamodb-client");
 const { ulid } = require("ulid");
 const { ConditionalError } = require("../src/exceptions");
 
@@ -142,6 +143,75 @@ describe("Instance Methods", () => {
       expect(updateSpy).not.toHaveBeenCalled();
 
       updateSpy.mockRestore();
+    });
+  });
+
+  test("should force reindex when requested even without field changes", async () => {
+    await runWithBatchContext(async () => {
+      const user = await User.find(testUser.userId);
+
+      // Ensure no changes are tracked initially
+      expect(user.hasChanges()).toBeFalsy();
+
+      const docClient = User.documentClient;
+
+      // Remove existing index attributes to simulate a drifted item
+      await docClient.send(
+        new UpdateCommand({
+          TableName: User.table,
+          Key: {
+            _pk: user._dyData._pk,
+            _sk: user._dyData._sk,
+          },
+          UpdateExpression: "REMOVE #g1pk, #g1sk, #g2pk, #g2sk, #g3pk, #g3sk",
+          ExpressionAttributeNames: {
+            "#g1pk": "_gsi1_pk",
+            "#g1sk": "_gsi1_sk",
+            "#g2pk": "_gsi2_pk",
+            "#g2sk": "_gsi2_sk",
+            "#g3pk": "_gsi3_pk",
+            "#g3sk": "_gsi3_sk",
+          },
+          ReturnValues: "ALL_NEW",
+        }),
+      );
+
+      const itemWithoutIndexes = await docClient.send(
+        new GetCommand({
+          TableName: User.table,
+          Key: {
+            _pk: user._dyData._pk,
+            _sk: user._dyData._sk,
+          },
+        }),
+      );
+
+      expect(itemWithoutIndexes.Item._gsi1_pk).toBeUndefined();
+      expect(itemWithoutIndexes.Item._gsi2_pk).toBeUndefined();
+      expect(itemWithoutIndexes.Item._gsi3_pk).toBeUndefined();
+
+      // Force reindex without mutating fields
+      await user.save({ forceReindex: true });
+
+      const savedUser = await User.find(user.getPrimaryId(), {
+        bypassCache: true,
+      });
+      expect(savedUser.exists()).toBeTruthy();
+
+      const tableItem = await docClient.send(
+        new GetCommand({
+          TableName: User.table,
+          Key: {
+            _pk: savedUser._dyData._pk,
+            _sk: savedUser._dyData._sk,
+          },
+          ReturnConsumedCapacity: "TOTAL",
+        }),
+      );
+
+      expect(tableItem.Item._gsi1_pk).toBeDefined();
+      expect(tableItem.Item._gsi2_pk).toBeDefined();
+      expect(tableItem.Item._gsi3_pk).toBeDefined();
     });
   });
 

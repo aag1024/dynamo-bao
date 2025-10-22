@@ -62,3 +62,5 @@ In most cases, option 1 is the best choice, but does require understanding how t
 Making changes to indexes is similar to making changes to fields. In most cases, it is better to add a new index and copy the data from the old index to the new index. This ensures you are able to continue to access the old data while you make the change, and that any constraints related to the new index are enforced.
 
 If you delete all the data for a particular index, you can reuse that index id (e.g. gsi1, gsi2, etc). However, you should be very careful about this, as if there is any old data in the index, it will be included in the new index and lead to unexpected behavior. At the very least, you should confirm that there is no old data in the index before reusing the index id.
+
+If you do manual fixes (for example, removing or backfilling the `_gsi*_pk` attributes directly in DynamoDB), call `await instance.save({ forceReindex: true })` afterwards to repopulate the index keys from the model definition.

@@ -528,12 +528,18 @@ const MutationMethods = {
           // Fetch the item since transactWrite doesn't return values
           const savedItem = await this.find(primaryId, { batchDelay: 0 });
 
+          // if the item doesn't exist, sleep for 200ms and try again
+          if (!savedItem.exists()) {
+            await new Promise((resolve) => setTimeout(resolve, 200));
+            savedItem = await this.find(primaryId, { batchDelay: 0 });
+          }
+
           logger.debug("savedItem", savedItem);
-          logger.debug("savedItem.getPrimaryId()", savedItem.getPrimaryId());
 
           if (!savedItem.exists()) {
             throw new ConditionalError("Failed to fetch saved item", "update");
           }
+          logger.debug("savedItem.getPrimaryId()", savedItem.getPrimaryId());
 
           // Set the consumed capacity from the transaction
           savedItem._addConsumedCapacity(

@@ -130,6 +130,38 @@ describe("User Unique Constraints", () => {
     });
   });
 
+  test("should drop unique constraint when field is cleared", async () => {
+    let user;
+    const externalId = `ext-${Date.now()}`;
+
+    await runWithBatchContext(async () => {
+      user = await User.create({
+        name: "User With ExternalId",
+        email: `unique-clear-${Date.now()}@example.com`,
+        externalId,
+      });
+    });
+
+    await runWithBatchContext(async () => {
+      await User.update(user.userId, { externalId: null });
+
+      // Reload bypassing cache to ensure the attribute was removed
+      const refreshed = await User.find(user.userId, {
+        batchDelay: 0,
+        bypassCache: true,
+      });
+      expect(refreshed.externalId == null).toBe(true);
+
+      const reused = await User.create({
+        name: "User Reusing ExternalId",
+        email: `unique-clear-reuse-${Date.now()}@example.com`,
+        externalId,
+      });
+
+      expect(reused.externalId).toBe(externalId);
+    });
+  });
+
   test("should prevent updating user with existing email", async () => {
     await runWithBatchContext(async () => {
       const user1 = await User.create({

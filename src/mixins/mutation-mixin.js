@@ -413,15 +413,17 @@ const MutationMethods = {
             );
           }
 
-          // Add new constraint
-          transactItems.push(
-            await this._createUniqueConstraint(
-              fieldName,
-              dyNewValue,
-              primaryId,
-              constraint.constraintId,
-            ),
-          );
+          // Add new constraint unless value is null (clearing field removes constraint)
+          if (dyNewValue !== null) {
+            transactItems.push(
+              await this._createUniqueConstraint(
+                fieldName,
+                dyNewValue,
+                primaryId,
+                constraint.constraintId,
+              ),
+            );
+          }
         }
       }
 

@@ -528,7 +528,7 @@ const MutationMethods = {
           logger.debug("primaryId to load", primaryId);
 
           // Fetch the item since transactWrite doesn't return values
-          const savedItem = await this.find(primaryId, { batchDelay: 0 });
+          let savedItem = await this.find(primaryId, { batchDelay: 0 });
 
           // if the item doesn't exist, sleep for 200ms and try again
           if (!savedItem.exists()) {

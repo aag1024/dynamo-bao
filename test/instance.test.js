@@ -269,6 +269,46 @@ describe("Instance Methods", () => {
     });
   });
 
+  test("should not create unique constraint when optional field is undefined", async () => {
+    let userIdA, userIdB;
+    const emailA = `no-ext-${ulid()}@example.com`;
+    const emailB = `no-ext-${ulid()}@example.com`;
+
+    await runWithBatchContext(async () => {
+      const createdA = await User.create({
+        name: "No External Id",
+        email: emailA,
+        status: "active",
+        role: "user",
+      });
+      userIdA = createdA.userId;
+
+      // Creating another user without externalId should also succeed
+      const createdB = await User.create({
+        name: "No External Id 2",
+        email: emailB,
+        status: "active",
+        role: "user",
+      });
+      userIdB = createdB.userId;
+    });
+
+    // Allow async writes to settle before reloading
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    await runWithBatchContext(async () => {
+      const reloadedA = await User.find(userIdA, { bypassCache: true });
+      expect(reloadedA.exists()).toBe(true);
+      expect(reloadedA.email).toBe(emailA);
+      expect(reloadedA.externalId).toBeUndefined();
+
+      const reloadedB = await User.find(userIdB, { bypassCache: true });
+      expect(reloadedB.exists()).toBe(true);
+      expect(reloadedB.email).toBe(emailB);
+      expect(reloadedB.externalId).toBeUndefined();
+    });
+  });
+
   test("should handle concurrent updates correctly", async () => {
     await runWithBatchContext(async () => {
       // Get two instances of the same user

@@ -17,7 +17,10 @@ const {
 } = require("./model");
 
 const { TenantContext } = require("./tenant-context");
-const { runWithBatchContext } = require("./mixins/batch-loading-mixin");
+const {
+  runWithBatchContext,
+  getBatchContextCapacity,
+} = require("./mixins/batch-loading-mixin");
 
 function findModelFiles(dir) {
   let results = [];
@@ -215,6 +218,7 @@ const firstExport = {
 
   // Batch context for Cloudflare Workers
   runWithBatchContext,
+  getBatchContextCapacity,
 
   // Configurations
   PrimaryKeyConfig,

@@ -415,15 +415,17 @@ const MutationMethods = {
             );
           }
 
-          // Add new constraint
-          transactItems.push(
-            await this._createUniqueConstraint(
-              fieldName,
-              dyNewValue,
-              primaryId,
-              constraint.constraintId,
-            ),
-          );
+          // Add new constraint unless value is null (clearing field removes constraint)
+          if (dyNewValue !== null) {
+            transactItems.push(
+              await this._createUniqueConstraint(
+                fieldName,
+                dyNewValue,
+                primaryId,
+                constraint.constraintId,
+              ),
+            );
+          }
         }
       }
 
@@ -528,14 +530,20 @@ const MutationMethods = {
           logger.debug("primaryId to load", primaryId);
 
           // Fetch the item since transactWrite doesn't return values
-          const savedItem = await this.find(primaryId, { batchDelay: 0 });
+          let savedItem = await this.find(primaryId, { batchDelay: 0 });
+
+          // if the item doesn't exist, sleep for 200ms and try again
+          if (!savedItem.exists()) {
+            await new Promise((resolve) => setTimeout(resolve, 200));
+            savedItem = await this.find(primaryId, { batchDelay: 0 });
+          }
 
           logger.debug("savedItem", savedItem);
-          logger.debug("savedItem.getPrimaryId()", savedItem.getPrimaryId());
 
           if (!savedItem.exists()) {
             throw new ConditionalError("Failed to fetch saved item", "update");
           }
+          logger.debug("savedItem.getPrimaryId()", savedItem.getPrimaryId());
 
           // Set the consumed capacity from the transaction
           savedItem._addConsumedCapacity(

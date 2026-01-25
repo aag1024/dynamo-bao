@@ -22,6 +22,7 @@ DynamoBao is the tool I wish I had when I started.
 - Enforce unique constraints and use them for lookups
 - Built-in multi-tenancy support with complete data isolation and concurrency safety
 - Return total read/write consumed capacity (even when multiple operations were performed)
+- Request-scoped capacity aggregation for usage metering and billing
 - Easily iterate over all items in a model for batch processing or migrations
 - ESM (ECMAScript Modules) support for modern JavaScript projects
 - StringSetField for storing sets of strings with efficient diffing on save
@@ -285,6 +286,34 @@ This is particularly useful for:
 - **Development/Testing**: Use strict mode to catch missing batch contexts early
 - **Production**: Use default mode for maximum flexibility
 - **Migration**: Gradually migrate from direct calls to batch context usage
+
+### Request-Scoped Capacity Tracking
+
+DynamoBao provides `getBatchContextCapacity()` to retrieve the total DynamoDB consumed capacity (RCUs/WCUs) for all operations within the current `runWithBatchContext` scope. This is useful for usage metering and billing in multi-tenant applications.
+
+```javascript
+import { runWithBatchContext, getBatchContextCapacity } from "dynamo-bao";
+
+app.use(async (req, res, next) => {
+  await runWithBatchContext(async () => {
+    await next();
+
+    // Get total capacity consumed during this request
+    const capacity = getBatchContextCapacity();
+    // Returns: { read: 2.5, write: 1.0 }
+
+    // Record for billing/metering
+    usageTracker.record(req.tenantId, capacity);
+  });
+});
+```
+
+**Key features:**
+
+- Tracks all operations: `find`, `batchFind`, `query`, `create`, `update`, `delete`
+- Automatically accumulates capacity across multiple models
+- Returns `{ read: 0, write: 0 }` when called outside a batch context
+- Each batch context has isolated capacity tracking
 
 ### Iterating over all items
 

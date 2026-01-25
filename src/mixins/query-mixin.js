@@ -7,6 +7,9 @@ const assert = require("assert");
 const { retryOperation } = require("../utils/retry-helper");
 const { QueryCommand } = require("../dynamodb-client");
 const { QueryError } = require("../exceptions");
+const {
+  _accumulateCapacityToContext,
+} = require("./batch-loading-mixin");
 
 const QueryMethods = {
   /**
@@ -296,6 +299,10 @@ const QueryMethods = {
   },
 
   async _processQueryResponse(response, options = {}) {
+    // Accumulate query capacity to batch context
+    const capacityUnits = response.ConsumedCapacity?.CapacityUnits || 0;
+    _accumulateCapacityToContext(capacityUnits, "read");
+
     if (options.countOnly) {
       return {
         count: response.Count,

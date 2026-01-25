@@ -19,6 +19,7 @@ const {
   BatchLoadingMethods,
   BATCH_REQUESTS,
   BATCH_REQUEST_TIMEOUT,
+  _accumulateCapacityToContext,
 } = require("./mixins/batch-loading-mixin");
 
 const {
@@ -788,7 +789,12 @@ class BaoModel {
     this._addConsumedCapacity(capacity, type, fromContext);
   }
 
-  _addConsumedCapacity(consumedCapacity, type, isRelated = false) {
+  _addConsumedCapacity(
+    consumedCapacity,
+    type,
+    isRelated = false,
+    skipContextAccumulation = false,
+  ) {
     if (!["read", "write"].includes(type)) {
       throw new ValidationError(`Invalid consumed capacity type: ${type}`);
     }
@@ -799,7 +805,7 @@ class BaoModel {
 
     if (Array.isArray(consumedCapacity)) {
       consumedCapacity.forEach((item) =>
-        this._addConsumedCapacity(item, type, isRelated),
+        this._addConsumedCapacity(item, type, isRelated, skipContextAccumulation),
       );
     } else {
       if (consumedCapacity.consumedCapacity) {
@@ -808,12 +814,22 @@ class BaoModel {
           fromContext: consumedCapacity.fromContext || isRelated,
           type: consumedCapacity.type || type,
         });
+        // Accumulate to batch context (only for non-related to avoid double counting)
+        if (!isRelated && !consumedCapacity.fromContext && !skipContextAccumulation) {
+          const units = consumedCapacity.consumedCapacity?.CapacityUnits || 0;
+          _accumulateCapacityToContext(units, consumedCapacity.type || type);
+        }
       } else {
         this._consumedCapacity.push({
           consumedCapacity: consumedCapacity,
           fromContext: isRelated,
           type: type,
         });
+        // Accumulate to batch context (only for non-related to avoid double counting)
+        if (!isRelated && !skipContextAccumulation) {
+          const units = consumedCapacity?.CapacityUnits || 0;
+          _accumulateCapacityToContext(units, type);
+        }
       }
     }
   }

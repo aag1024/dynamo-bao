@@ -19,6 +19,49 @@ const batchContext = AsyncLocalStorage ? new AsyncLocalStorage() : null;
 const DEFAULT_BATCH_DELAY_MS = 5;
 const BATCH_REQUEST_TIMEOUT = 10000; // 10 seconds max lifetime for a batch
 
+/**
+ * Accumulate capacity units to the current batch context.
+ * This is called internally by model operations to track total capacity consumed.
+ * @param {number} capacityUnits - The capacity units to accumulate
+ * @param {string} type - Either "read" or "write"
+ */
+function _accumulateCapacityToContext(capacityUnits, type) {
+  if (!batchContext) return;
+  const context = batchContext.getStore();
+  if (context?.capacityAccumulator && typeof capacityUnits === "number") {
+    context.capacityAccumulator[type] += capacityUnits;
+  }
+}
+
+/**
+ * Get the total consumed capacity for the current batch context.
+ * Returns the accumulated RCUs and WCUs for all operations within the current
+ * runWithBatchContext scope.
+ *
+ * @returns {{ read: number, write: number }} The accumulated capacity, or { read: 0, write: 0 } if not in a batch context
+ *
+ * @example
+ * import { runWithBatchContext, getBatchContextCapacity } from "dynamo-bao";
+ *
+ * await runWithBatchContext(async () => {
+ *   await User.find(userId);
+ *   await Post.queryByIndex('byUser', userId);
+ *
+ *   const capacity = getBatchContextCapacity();
+ *   console.log(`Read: ${capacity.read} RCUs, Write: ${capacity.write} WCUs`);
+ * });
+ */
+function getBatchContextCapacity() {
+  if (!batchContext) {
+    return { read: 0, write: 0 };
+  }
+  const context = batchContext.getStore();
+  if (!context?.capacityAccumulator) {
+    return { read: 0, write: 0 };
+  }
+  return { ...context.capacityAccumulator };
+}
+
 const BatchLoadingMethods = {
   _getBatchRequests() {
     // AsyncLocalStorage is required - check for context
@@ -174,6 +217,11 @@ const BatchLoadingMethods = {
         // Track consumed capacity
         if (batchResult.ConsumedCapacity) {
           consumedCapacity.push(...[].concat(batchResult.ConsumedCapacity));
+          // Accumulate to batch context
+          const capacityArray = [].concat(batchResult.ConsumedCapacity);
+          for (const cap of capacityArray) {
+            _accumulateCapacityToContext(cap?.CapacityUnits || 0, "read");
+          }
         }
 
         // Handle unprocessed keys
@@ -277,6 +325,11 @@ const BatchLoadingMethods = {
       let instance;
       if (!result.Item) {
         instance = new ObjectNotFound(result.ConsumedCapacity);
+        // Accumulate capacity for ObjectNotFound since _addConsumedCapacity isn't called
+        _accumulateCapacityToContext(
+          result.ConsumedCapacity?.CapacityUnits || 0,
+          "read",
+        );
       } else {
         instance = this._createFromDyItem(result.Item);
         instance._addConsumedCapacity(result.ConsumedCapacity, "read", false);
@@ -338,7 +391,8 @@ const BatchLoadingMethods = {
             currentBatch.items.forEach((batchItem) => {
               let item = items[batchItem.id];
               if (item) {
-                item._addConsumedCapacity(consumedCapacity, "read", false);
+                // Skip context accumulation since batchFind already accumulated the total
+                item._addConsumedCapacity(consumedCapacity, "read", false, true);
               } else {
                 item = new ObjectNotFound(consumedCapacity);
               }
@@ -446,6 +500,7 @@ function runWithBatchContext(fn) {
     loaderContext: new Map(), // Add automatic loaderContext
     timers: new Set(),
     startTime: Date.now(),
+    capacityAccumulator: { read: 0, write: 0 }, // Track total capacity consumed
   };
 
   return batchContext.run(context, fn);
@@ -454,6 +509,8 @@ function runWithBatchContext(fn) {
 module.exports = {
   BatchLoadingMethods,
   runWithBatchContext,
+  getBatchContextCapacity,
+  _accumulateCapacityToContext,
   DEFAULT_BATCH_DELAY_MS,
   BATCH_REQUEST_TIMEOUT,
 };

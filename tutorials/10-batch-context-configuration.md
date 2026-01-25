@@ -344,3 +344,213 @@ test("user creation", async () => {
   });
 });
 ```
+
+## Request-Scoped Capacity Tracking
+
+DynamoBao provides `getBatchContextCapacity()` to retrieve the total DynamoDB consumed capacity (RCUs/WCUs) for all operations within the current `runWithBatchContext` scope.
+
+### Basic Usage
+
+```javascript
+const {
+  runWithBatchContext,
+  getBatchContextCapacity,
+} = require("dynamo-bao");
+
+await runWithBatchContext(async () => {
+  // Perform various operations
+  const user = await User.find(userId);
+  const posts = await Post.queryByIndex("postsForUser", userId);
+  await user.save();
+
+  // Get total capacity consumed
+  const capacity = getBatchContextCapacity();
+  console.log(`Read: ${capacity.read} RCUs, Write: ${capacity.write} WCUs`);
+  // Example output: "Read: 1.5 RCUs, Write: 2.0 WCUs"
+});
+```
+
+### Multi-Tenant Usage Metering
+
+A primary use case is billing tenants for their DynamoDB usage:
+
+```javascript
+const {
+  runWithBatchContext,
+  getBatchContextCapacity,
+  TenantContext,
+} = require("dynamo-bao");
+
+// Express middleware for usage tracking
+app.use(async (req, res, next) => {
+  const tenantId = req.headers["x-tenant-id"];
+
+  await TenantContext.runWithTenant(tenantId, async () => {
+    await runWithBatchContext(async () => {
+      // Store original end function
+      const originalEnd = res.end;
+
+      // Override to capture capacity before response completes
+      res.end = function (...args) {
+        const capacity = getBatchContextCapacity();
+
+        // Record usage for billing
+        usageTracker.record({
+          tenantId,
+          endpoint: req.path,
+          method: req.method,
+          readCapacityUnits: capacity.read,
+          writeCapacityUnits: capacity.write,
+          timestamp: new Date().toISOString(),
+        });
+
+        return originalEnd.apply(this, args);
+      };
+
+      await next();
+    });
+  });
+});
+```
+
+### AWS Lambda with Usage Logging
+
+```javascript
+const {
+  runWithBatchContext,
+  getBatchContextCapacity,
+  initModels,
+} = require("dynamo-bao");
+
+exports.handler = async (event) => {
+  return runWithBatchContext(async () => {
+    const { User, Order } = initModels(config).models;
+
+    // Your business logic
+    const userId = event.pathParameters.userId;
+    const user = await User.find(userId);
+    const orders = await user.queryOrders();
+
+    // Get capacity for logging/monitoring
+    const capacity = getBatchContextCapacity();
+
+    // Log for CloudWatch metrics
+    console.log(
+      JSON.stringify({
+        metric: "DynamoDBCapacity",
+        userId,
+        readCapacityUnits: capacity.read,
+        writeCapacityUnits: capacity.write,
+      })
+    );
+
+    return {
+      statusCode: 200,
+      body: JSON.stringify({
+        user,
+        orders: orders.items,
+      }),
+    };
+  });
+};
+```
+
+### Tracking Capacity for Specific Operations
+
+You can check capacity at any point within a batch context:
+
+```javascript
+await runWithBatchContext(async () => {
+  const capacityBefore = getBatchContextCapacity();
+
+  // Expensive operation
+  await User.batchFind(userIds); // Load 100 users
+
+  const capacityAfter = getBatchContextCapacity();
+  const operationCost = {
+    read: capacityAfter.read - capacityBefore.read,
+    write: capacityAfter.write - capacityBefore.write,
+  };
+
+  console.log(`Batch find consumed ${operationCost.read} RCUs`);
+});
+```
+
+### What Operations Are Tracked
+
+| Operation      | Capacity Type | Notes                              |
+| -------------- | ------------- | ---------------------------------- |
+| `find()`       | Read          | Both direct and batched finds      |
+| `batchFind()`  | Read          | Total capacity for the batch       |
+| `queryByIndex` | Read          | Including count-only queries       |
+| `create()`     | Write         | Includes unique constraint writes  |
+| `update()`     | Read + Write  | Read for existing item check       |
+| `delete()`     | Write         | Includes unique constraint cleanup |
+| `save()`       | Read + Write  | Depends on whether item exists     |
+
+### Behavior Outside Batch Context
+
+When called outside a batch context, `getBatchContextCapacity()` returns zeros:
+
+```javascript
+// Outside batch context
+const capacity = getBatchContextCapacity();
+console.log(capacity); // { read: 0, write: 0 }
+
+// Inside batch context
+await runWithBatchContext(async () => {
+  await User.find("user123");
+  const capacity = getBatchContextCapacity();
+  console.log(capacity); // { read: 0.5, write: 0 }
+});
+
+// After batch context ends, back to zeros
+const capacityAfter = getBatchContextCapacity();
+console.log(capacityAfter); // { read: 0, write: 0 }
+```
+
+### Context Isolation
+
+Each batch context has its own isolated capacity accumulator:
+
+```javascript
+// First request
+await runWithBatchContext(async () => {
+  await User.create({ name: "User 1", email: "user1@example.com" });
+  console.log(getBatchContextCapacity()); // { read: 0, write: 7 }
+});
+
+// Second request - starts fresh
+await runWithBatchContext(async () => {
+  console.log(getBatchContextCapacity()); // { read: 0, write: 0 }
+  await User.find("user123");
+  console.log(getBatchContextCapacity()); // { read: 0.5, write: 0 }
+});
+```
+
+### Combining with Per-Instance Capacity
+
+DynamoBao also tracks capacity per model instance via `getNumericConsumedCapacity()`. Use both for different purposes:
+
+```javascript
+await runWithBatchContext(async () => {
+  const user = await User.find(userId);
+
+  // Per-instance: capacity for this specific object's operations
+  const instanceCapacity = user.getNumericConsumedCapacity("read");
+
+  // Request-scoped: total capacity for all operations in this request
+  const requestCapacity = getBatchContextCapacity();
+
+  console.log(`Instance read: ${instanceCapacity} RCUs`);
+  console.log(`Total request: ${requestCapacity.read} RCUs`);
+});
+```
+
+### Best Practices
+
+1. **Call at the end of requests**: Get capacity just before sending the response
+2. **Use for billing/metering**: Aggregate capacity by tenant, endpoint, or user
+3. **Monitor in production**: Log capacity to CloudWatch or your monitoring system
+4. **Set up alerts**: Detect unexpected capacity spikes early
+5. **Combine with per-instance tracking**: Use request-scoped for billing, per-instance for debugging

@@ -197,7 +197,9 @@ class DynamoDBClient {
       'CreateTableCommand': 'CreateTable',
       'ListTablesCommand': 'ListTables',
       'DescribeTableCommand': 'DescribeTable',
-      'UpdateTimeToLiveCommand': 'UpdateTimeToLive'
+      'UpdateTimeToLiveCommand': 'UpdateTimeToLive',
+      'DescribeTimeToLiveCommand': 'DescribeTimeToLive',
+      'UpdateTableCommand': 'UpdateTable'
     };
     
     return operationMap[commandName] || commandName.replace('Command', '');
@@ -635,6 +637,18 @@ class UpdateTimeToLiveCommand {
   }
 }
 
+class DescribeTimeToLiveCommand {
+  constructor(input) {
+    this.input = input;
+  }
+}
+
+class UpdateTableCommand {
+  constructor(input) {
+    this.input = input;
+  }
+}
+
 module.exports = {
   DynamoDBClient,
   DynamoDBDocumentClient,
@@ -648,6 +662,8 @@ module.exports = {
   ListTablesCommand,
   DescribeTableCommand,
   UpdateTimeToLiveCommand,
+  DescribeTimeToLiveCommand,
+  UpdateTableCommand,
   marshall,
   unmarshall
 };

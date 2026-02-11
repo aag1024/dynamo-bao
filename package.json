@@ -55,6 +55,7 @@
     "bao-init": "bin/dynamo-bao-create-table.js",
     "bao-codegen": "./bin/codegen.js",
     "bao-watch": "./bin/watch.js",
+    "bao-update": "bin/dynamo-bao-update-table.js",
     "bao-delete": "bin/dynamo-bao-delete-table.js"
   }
 }

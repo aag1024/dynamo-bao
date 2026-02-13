@@ -6,6 +6,8 @@ const {
   GSI_INDEX_ID1,
   GSI_INDEX_ID2,
   GSI_INDEX_ID3,
+  GSI_INDEX_ID4,
+  GSI_INDEX_ID5,
   UNIQUE_CONSTRAINT_ID1,
   UNIQUE_CONSTRAINT_ID2,
   UNIQUE_CONSTRAINT_ID3,
@@ -98,6 +100,8 @@ const ValidationMethods = {
       GSI_INDEX_ID1,
       GSI_INDEX_ID2,
       GSI_INDEX_ID3,
+      GSI_INDEX_ID4,
+      GSI_INDEX_ID5,
       undefined,
     ]; // undefined for PK-based indexes
 

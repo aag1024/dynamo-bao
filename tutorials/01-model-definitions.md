@@ -226,7 +226,7 @@ If the sortKey is not specified, it will use the modelPrefix as the sortKey. Thi
 
 ## Indexes
 
-You can add up to 3 secondary indexes (`gsi1`, `gsi2`, `gsi3`) to a model. Much like a primary key, each index has a `partitionKey` and `sortKey`. However, unlike a primary key, you can change the `partitionKey` and `sortKey` at any time.
+You can add up to 5 secondary indexes (`gsi1`, `gsi2`, `gsi3`, `gsi4`, `gsi5`) to a model. Much like a primary key, each index has a `partitionKey` and `sortKey`. However, unlike a primary key, you can change the `partitionKey` and `sortKey` at any time.
 
 Indexes incur additional costs, so you should only add them if you need them. In particular, if you are creating an index to support an infrequent query, it would be good to test the query with a filter rather than an index to see if the index necessary before adding it.
 

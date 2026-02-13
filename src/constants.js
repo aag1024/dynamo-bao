@@ -2,6 +2,8 @@
 const GSI_INDEX_ID1 = "gsi1";
 const GSI_INDEX_ID2 = "gsi2";
 const GSI_INDEX_ID3 = "gsi3";
+const GSI_INDEX_ID4 = "gsi4";
+const GSI_INDEX_ID5 = "gsi5";
 
 // Constants for iteration index
 const ITERATION_INDEX_NAME = "iter_index";
@@ -23,6 +25,10 @@ const SYSTEM_FIELDS = [
   "_gsi2_sk",
   "_gsi3_pk",
   "_gsi3_sk",
+  "_gsi4_pk",
+  "_gsi4_sk",
+  "_gsi5_pk",
+  "_gsi5_sk",
   "_iter_pk",
   "_iter_sk",
 ];
@@ -33,6 +39,8 @@ module.exports = {
   GSI_INDEX_ID1,
   GSI_INDEX_ID2,
   GSI_INDEX_ID3,
+  GSI_INDEX_ID4,
+  GSI_INDEX_ID5,
   ITERATION_INDEX_NAME,
   ITERATION_PK_FIELD,
   ITERATION_SK_FIELD,

@@ -100,7 +100,11 @@ function generateModelClass(
           // Update logging
           logger.debug(`Generating index ${indexName}:`, indexConfig);
 
-          const indexId = `GSI_INDEX_ID${indexConfig.indexId.slice(-1)}`;
+          const indexNum = indexConfig.indexId.match(/(\d+)$/);
+          if (!indexNum) {
+            throw new Error(`Invalid indexId format: ${indexConfig.indexId}. Expected format: gsi1, gsi2, etc.`);
+          }
+          const indexId = `GSI_INDEX_ID${indexNum[1]}`;
           constantImports.add(indexId);
           return `    ${indexName}: IndexConfig('${indexConfig.partitionKey}', '${indexConfig.sortKey}', ${indexId}),`;
         })

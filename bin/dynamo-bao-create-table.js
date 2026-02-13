@@ -4,6 +4,8 @@ const {
   DynamoDBClient,
   CreateTableCommand,
   ListTablesCommand,
+  DescribeTableCommand,
+  UpdateTimeToLiveCommand,
 } = require("../src/dynamodb-client.js");
 const readline = require("readline");
 const fs = require("fs");
@@ -86,6 +88,23 @@ module.exports = config;
   console.log(`Config file written to: ${configPath}`);
 }
 
+async function waitForTableActive(tableName, maxAttempts = 30) {
+  for (let i = 0; i < maxAttempts; i++) {
+    const response = await client.send(
+      new DescribeTableCommand({ TableName: tableName }),
+    );
+    const status = response.Table.TableStatus;
+    if (status === "ACTIVE") {
+      return;
+    }
+    // Wait 2 seconds between checks
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+  }
+  throw new Error(
+    `Table ${tableName} did not become active within ${maxAttempts * 2} seconds`,
+  );
+}
+
 async function createTable() {
   // Prompt user for table name
   const defaultTableName = "dynamo-bao-dev";
@@ -106,6 +125,10 @@ async function createTable() {
       { AttributeName: "_gsi2_sk", AttributeType: "S" },
       { AttributeName: "_gsi3_pk", AttributeType: "S" },
       { AttributeName: "_gsi3_sk", AttributeType: "S" },
+      { AttributeName: "_gsi4_pk", AttributeType: "S" },
+      { AttributeName: "_gsi4_sk", AttributeType: "S" },
+      { AttributeName: "_gsi5_pk", AttributeType: "S" },
+      { AttributeName: "_gsi5_sk", AttributeType: "S" },
       { AttributeName: "_iter_pk", AttributeType: "S" },
       { AttributeName: "_iter_sk", AttributeType: "S" },
     ],
@@ -139,6 +162,22 @@ async function createTable() {
         Projection: { ProjectionType: "ALL" },
       },
       {
+        IndexName: "gsi4",
+        KeySchema: [
+          { AttributeName: "_gsi4_pk", KeyType: "HASH" },
+          { AttributeName: "_gsi4_sk", KeyType: "RANGE" },
+        ],
+        Projection: { ProjectionType: "ALL" },
+      },
+      {
+        IndexName: "gsi5",
+        KeySchema: [
+          { AttributeName: "_gsi5_pk", KeyType: "HASH" },
+          { AttributeName: "_gsi5_sk", KeyType: "RANGE" },
+        ],
+        Projection: { ProjectionType: "ALL" },
+      },
+      {
         IndexName: "iter_index",
         KeySchema: [
           { AttributeName: "_iter_pk", KeyType: "HASH" },
@@ -147,10 +186,6 @@ async function createTable() {
         Projection: { ProjectionType: "KEYS_ONLY" },
       },
     ],
-    TimeToLiveSpecification: {
-      AttributeName: "ttl",
-      Enabled: true,
-    },
   };
 
   try {
@@ -162,7 +197,23 @@ async function createTable() {
       response.TableDescription.TableName,
     );
 
-    // Add this line to write the config file after table creation
+    // Wait for table to become active before enabling TTL
+    console.log("Waiting for table to become active...");
+    await waitForTableActive(tableName);
+
+    // Enable TTL (must be done after table creation via UpdateTimeToLive)
+    await client.send(
+      new UpdateTimeToLiveCommand({
+        TableName: tableName,
+        TimeToLiveSpecification: {
+          AttributeName: "ttl",
+          Enabled: true,
+        },
+      }),
+    );
+    console.log("TTL enabled on attribute 'ttl'");
+
+    // Write the config file after table creation
     await writeConfigFile(tableName);
   } catch (error) {
     console.error("Error creating table:", error);

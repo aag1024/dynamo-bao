@@ -163,7 +163,7 @@ describe("Instance Methods", () => {
             _pk: user._dyData._pk,
             _sk: user._dyData._sk,
           },
-          UpdateExpression: "REMOVE #g1pk, #g1sk, #g2pk, #g2sk, #g3pk, #g3sk",
+          UpdateExpression: "REMOVE #g1pk, #g1sk, #g2pk, #g2sk, #g3pk, #g3sk, #g4pk, #g4sk, #g5pk, #g5sk",
           ExpressionAttributeNames: {
             "#g1pk": "_gsi1_pk",
             "#g1sk": "_gsi1_sk",
@@ -171,6 +171,10 @@ describe("Instance Methods", () => {
             "#g2sk": "_gsi2_sk",
             "#g3pk": "_gsi3_pk",
             "#g3sk": "_gsi3_sk",
+            "#g4pk": "_gsi4_pk",
+            "#g4sk": "_gsi4_sk",
+            "#g5pk": "_gsi5_pk",
+            "#g5sk": "_gsi5_sk",
           },
           ReturnValues: "ALL_NEW",
         }),
@@ -354,6 +358,303 @@ describe("Instance Methods", () => {
       expect(newUser.exists()).toBe(true);
       expect(newUser.name).toBe("New User");
       expect(newUser.email).toBe("new@example.com");
+    });
+  });
+
+  test("forceReindex should preserve new values instead of overwriting with old ones", async () => {
+    await runWithBatchContext(async () => {
+      const user = await User.find(testUser.userId);
+      const docClient = User.documentClient;
+
+      // Update the role field with forceReindex
+      user.role = "admin";
+      await user.save({ forceReindex: true });
+
+      // Verify the new value was saved, not the old one
+      const savedUser = await User.find(testUser.userId, {
+        bypassCache: true,
+      });
+      expect(savedUser.role).toBe("admin");
+
+      // Verify the GSI that uses role as a key was updated with the new value
+      const tableItem = await docClient.send(
+        new GetCommand({
+          TableName: User.table,
+          Key: {
+            _pk: savedUser._dyData._pk,
+            _sk: savedUser._dyData._sk,
+          },
+        }),
+      );
+
+      // byRole index uses role as PK - verify the GSI key reflects the new value
+      expect(tableItem.Item._gsi2_pk).toContain("admin");
+      expect(tableItem.Item._gsi2_pk).not.toContain("user");
+    });
+  });
+
+  test("partial GSI key update should auto-backfill counterpart from existing item", async () => {
+    await runWithBatchContext(async () => {
+      const docClient = User.documentClient;
+
+      // User has byRole index: IndexConfig("role", "status", GSI_INDEX_ID2)
+      // Updating only role (PK) should auto-backfill status (SK) from existing item
+      const updated = await User.update(testUser.userId, { role: "admin" });
+      expect(updated.role).toBe("admin");
+      expect(updated.status).toBe("active"); // original value preserved
+
+      // Verify the GSI was updated correctly with new role + old status
+      const tableItem = await docClient.send(
+        new GetCommand({
+          TableName: User.table,
+          Key: {
+            _pk: updated._dyData._pk,
+            _sk: updated._dyData._sk,
+          },
+        }),
+      );
+
+      expect(tableItem.Item._gsi2_pk).toContain("admin");
+      expect(tableItem.Item._gsi2_sk).toBeDefined();
+    });
+  });
+
+  test("SK-only update should auto-backfill PK across multiple GSIs", async () => {
+    await runWithBatchContext(async () => {
+      const docClient = User.documentClient;
+
+      // status is SK in byRole (PK=role) AND PK in byStatus (SK=createdAt)
+      // Updating status alone should backfill both role and createdAt
+      const updated = await User.update(testUser.userId, {
+        status: "inactive",
+      });
+      expect(updated.status).toBe("inactive");
+
+      const tableItem = await docClient.send(
+        new GetCommand({
+          TableName: User.table,
+          Key: {
+            _pk: updated._dyData._pk,
+            _sk: updated._dyData._sk,
+          },
+        }),
+      );
+
+      // byRole (gsi2): PK=role should be backfilled, SK=status is the new value
+      expect(tableItem.Item._gsi2_pk).toBeDefined();
+      expect(tableItem.Item._gsi2_pk).toContain("user"); // original role
+
+      // byStatus (gsi3): PK=status is the new value, SK=createdAt should be backfilled
+      expect(tableItem.Item._gsi3_pk).toBeDefined();
+      expect(tableItem.Item._gsi3_pk).toContain("inactive");
+      expect(tableItem.Item._gsi3_sk).toBeDefined();
+    });
+  });
+
+  test("non-GSI field update should not rewrite GSI keys", async () => {
+    await runWithBatchContext(async () => {
+      const docClient = User.documentClient;
+
+      // Grab the GSI keys before the update
+      const beforeItem = await docClient.send(
+        new GetCommand({
+          TableName: User.table,
+          Key: {
+            _pk: testUser._dyData._pk,
+            _sk: testUser._dyData._sk,
+          },
+        }),
+      );
+
+      // Update a field that doesn't participate in any GSI
+      await User.update(testUser.userId, { name: "New Name" });
+
+      const afterItem = await docClient.send(
+        new GetCommand({
+          TableName: User.table,
+          Key: {
+            _pk: testUser._dyData._pk,
+            _sk: testUser._dyData._sk,
+          },
+        }),
+      );
+
+      // GSI keys should be unchanged
+      expect(afterItem.Item._gsi1_pk).toEqual(beforeItem.Item._gsi1_pk);
+      expect(afterItem.Item._gsi1_sk).toEqual(beforeItem.Item._gsi1_sk);
+      expect(afterItem.Item._gsi2_pk).toEqual(beforeItem.Item._gsi2_pk);
+      expect(afterItem.Item._gsi2_sk).toEqual(beforeItem.Item._gsi2_sk);
+      expect(afterItem.Item._gsi3_pk).toEqual(beforeItem.Item._gsi3_pk);
+      expect(afterItem.Item._gsi3_sk).toEqual(beforeItem.Item._gsi3_sk);
+    });
+  });
+
+  test("forceReindex should preserve multiple new values", async () => {
+    await runWithBatchContext(async () => {
+      const user = await User.find(testUser.userId);
+      const docClient = User.documentClient;
+
+      // Change both fields of the byRole GSI key pair
+      user.role = "admin";
+      user.status = "inactive";
+      await user.save({ forceReindex: true });
+
+      const savedUser = await User.find(testUser.userId, {
+        bypassCache: true,
+      });
+      expect(savedUser.role).toBe("admin");
+      expect(savedUser.status).toBe("inactive");
+
+      const tableItem = await docClient.send(
+        new GetCommand({
+          TableName: User.table,
+          Key: {
+            _pk: savedUser._dyData._pk,
+            _sk: savedUser._dyData._sk,
+          },
+        }),
+      );
+
+      // byRole GSI should reflect both new values
+      expect(tableItem.Item._gsi2_pk).toContain("admin");
+      expect(tableItem.Item._gsi2_pk).not.toContain("user");
+    });
+  });
+
+  test("backfill succeeds when counterpart exists in stored item", async () => {
+    await runWithBatchContext(async () => {
+      // Create a user without externalPlatform (optional field, GSI PK)
+      const user = await User.create({
+        name: "No Platform User",
+        email: "noplatform@example.com",
+        externalId: "ext_np",
+        role: "user",
+        status: "active",
+      });
+
+      const docClient = User.documentClient;
+
+      // Manually remove the externalPlatform GSI keys AND the field data
+      // to simulate an item that never had this field stored
+      await docClient.send(
+        new UpdateCommand({
+          TableName: User.table,
+          Key: {
+            _pk: user._dyData._pk,
+            _sk: user._dyData._sk,
+          },
+          UpdateExpression: "REMOVE #ep, #g1pk, #g1sk",
+          ExpressionAttributeNames: {
+            "#ep": "externalPlatform",
+            "#g1pk": "_gsi1_pk",
+            "#g1sk": "_gsi1_sk",
+          },
+          ReturnValues: "ALL_NEW",
+        }),
+      );
+
+      // byPlatform index: PK=externalPlatform, SK=userId
+      // Updating externalPlatform (PK) should try to backfill userId (SK)
+      // userId always exists so this should succeed, not throw
+      const updated = await User.update(user.userId, {
+        externalPlatform: "newPlatform",
+      });
+      expect(updated.externalPlatform).toBe("newPlatform");
+    });
+  });
+
+  describe("safety net throw with fully optional GSI key pair", () => {
+    let OptionalGsiModel, optionalTestId;
+
+    beforeEach(async () => {
+      await runWithBatchContext(async () => {
+        optionalTestId = ulid();
+        const manager = initTestModelsWithTenant(testConfig, optionalTestId);
+        OptionalGsiModel = manager.getModel("OptionalGsiModel");
+
+        await cleanupTestDataByIteration(optionalTestId, [OptionalGsiModel]);
+        await verifyCleanup(optionalTestId, [OptionalGsiModel]);
+      });
+    });
+
+    afterEach(async () => {
+      await runWithBatchContext(async () => {
+        TenantContext.clearTenant();
+        if (optionalTestId) {
+          await cleanupTestDataByIteration(optionalTestId, [OptionalGsiModel]);
+          await verifyCleanup(optionalTestId, [OptionalGsiModel]);
+        }
+      });
+    });
+
+    test("should throw when updating one GSI key field and counterpart was never stored", async () => {
+      await runWithBatchContext(async () => {
+        // Create an item without either GSI key field
+        const item = await OptionalGsiModel.create({
+          name: "Test Item",
+          // category and subcategory intentionally omitted
+        });
+
+        // byCategory index: PK=category, SK=subcategory
+        // Updating category (PK) when subcategory (SK) was never stored
+        // should throw because auto-backfill can't find the counterpart
+        await expect(
+          OptionalGsiModel.update(item.itemId, { category: "electronics" }),
+        ).rejects.toThrow(
+          /missing sort key "subcategory".*Include both fields or use forceReindex/,
+        );
+      });
+    });
+
+    test("should throw when updating SK and PK counterpart was never stored", async () => {
+      await runWithBatchContext(async () => {
+        const item = await OptionalGsiModel.create({
+          name: "Test Item",
+        });
+
+        await expect(
+          OptionalGsiModel.update(item.itemId, { subcategory: "phones" }),
+        ).rejects.toThrow(
+          /missing partition key "category".*Include both fields or use forceReindex/,
+        );
+      });
+    });
+
+    test("should succeed when both GSI key fields are provided together", async () => {
+      await runWithBatchContext(async () => {
+        const item = await OptionalGsiModel.create({
+          name: "Test Item",
+        });
+
+        const updated = await OptionalGsiModel.update(item.itemId, {
+          category: "electronics",
+          subcategory: "phones",
+        });
+        expect(updated.category).toBe("electronics");
+        expect(updated.subcategory).toBe("phones");
+      });
+    });
+
+    test("should succeed with forceReindex when both fields exist in stored item", async () => {
+      await runWithBatchContext(async () => {
+        // Create with both fields so the GSI is populated
+        const item = await OptionalGsiModel.create({
+          name: "Test Item",
+          category: "electronics",
+          subcategory: "phones",
+        });
+
+        // forceReindex backfills everything from the current item
+        const user = await OptionalGsiModel.find(item.itemId);
+        user.category = "clothing";
+        await user.save({ forceReindex: true });
+
+        const saved = await OptionalGsiModel.find(item.itemId, {
+          bypassCache: true,
+        });
+        expect(saved.category).toBe("clothing");
+        expect(saved.subcategory).toBe("phones");
+      });
     });
   });
 });

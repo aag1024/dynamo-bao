@@ -1,4 +1,5 @@
 - [bao-init](#bao-init)
+- [bao-update-table](#bao-update-table)
 - [bao-delete](#bao-delete)
 - [bao-codegen](#bao-codegen)
 - [bao-watch](#bao-watch)
@@ -25,6 +26,19 @@ Creates a new DynamoDB table with the recommended single-table design schema and
 
 - Table name (defaults to "dynamo-bao-dev")
 - Validates AWS credentials before table creation
+
+## bao-update-table
+
+Updates an existing DynamoDB table to match the expected schema. This is useful when upgrading dynamo-bao to a version that requires additional GSIs or other table changes.
+
+`npx bao-update-table`
+
+### Features
+
+- Checks for missing Global Secondary Indexes (GSIs) and adds them
+- Enables TTL on the `ttl` attribute if not already enabled
+- Adds one GSI at a time, waiting for the table to become active between each addition
+- Uses configuration from `dynamo-bao.config.js`
 
 ## bao-delete
 

@@ -95,7 +95,7 @@ models:
       content: {type: StringField, required: true}
     primaryKey: {partitionKey: postId}
     indexes:
-      # Add up to 3 indexes; make sure each index has a unique id: gsi1, gsi2, gsi3
+      # Add up to 5 indexes; make sure each index has a unique id: gsi1, gsi2, gsi3, gsi4, gsi5
       # Enables user.queryPosts() to query posts for a user
       postsForUser: {partitionKey: userId, sortKey: postId, indexId: gsi2}
 ```

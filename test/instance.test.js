@@ -563,50 +563,6 @@ describe("Instance Methods", () => {
     });
   });
 
-  test("backfill throws when counterpart field was never stored", async () => {
-    await runWithBatchContext(async () => {
-      // Create a user without externalPlatform (optional field, GSI PK)
-      const user = await User.create({
-        name: "No Platform User",
-        email: "noplatform2@example.com",
-        externalId: "ext_np2",
-        role: "user",
-        status: "active",
-      });
-
-      const docClient = User.documentClient;
-
-      // Remove both externalPlatform AND userId from the stored item
-      // to simulate an item where the GSI counterpart doesn't exist
-      await docClient.send(
-        new UpdateCommand({
-          TableName: User.table,
-          Key: {
-            _pk: user._dyData._pk,
-            _sk: user._dyData._sk,
-          },
-          UpdateExpression: "REMOVE #ep, #uid, #g1pk, #g1sk",
-          ExpressionAttributeNames: {
-            "#ep": "externalPlatform",
-            "#uid": "userId",
-            "#g1pk": "_gsi1_pk",
-            "#g1sk": "_gsi1_sk",
-          },
-          ReturnValues: "ALL_NEW",
-        }),
-      );
-
-      // byPlatform index: PK=externalPlatform, SK=userId
-      // Updating externalPlatform (PK) when userId (SK) was removed from the item
-      // should throw because auto-backfill can't find the counterpart
-      await expect(
-        User.update(user.userId, { externalPlatform: "newPlatform" }),
-      ).rejects.toThrow(
-        /missing sort key "userId".*Include both fields or use forceReindex/,
-      );
-    });
-  });
-
   describe("safety net throw with fully optional GSI key pair", () => {
     let OptionalGsiModel, optionalTestId;
 

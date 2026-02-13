@@ -562,4 +562,99 @@ describe("Instance Methods", () => {
       expect(updated.externalPlatform).toBe("newPlatform");
     });
   });
+
+  describe("safety net throw with fully optional GSI key pair", () => {
+    let OptionalGsiModel, optionalTestId;
+
+    beforeEach(async () => {
+      await runWithBatchContext(async () => {
+        optionalTestId = ulid();
+        const manager = initTestModelsWithTenant(testConfig, optionalTestId);
+        OptionalGsiModel = manager.getModel("OptionalGsiModel");
+
+        await cleanupTestDataByIteration(optionalTestId, [OptionalGsiModel]);
+        await verifyCleanup(optionalTestId, [OptionalGsiModel]);
+      });
+    });
+
+    afterEach(async () => {
+      await runWithBatchContext(async () => {
+        TenantContext.clearTenant();
+        if (optionalTestId) {
+          await cleanupTestDataByIteration(optionalTestId, [OptionalGsiModel]);
+          await verifyCleanup(optionalTestId, [OptionalGsiModel]);
+        }
+      });
+    });
+
+    test("should throw when updating one GSI key field and counterpart was never stored", async () => {
+      await runWithBatchContext(async () => {
+        // Create an item without either GSI key field
+        const item = await OptionalGsiModel.create({
+          name: "Test Item",
+          // category and subcategory intentionally omitted
+        });
+
+        // byCategory index: PK=category, SK=subcategory
+        // Updating category (PK) when subcategory (SK) was never stored
+        // should throw because auto-backfill can't find the counterpart
+        await expect(
+          OptionalGsiModel.update(item.itemId, { category: "electronics" }),
+        ).rejects.toThrow(
+          /missing sort key "subcategory".*Include both fields or use forceReindex/,
+        );
+      });
+    });
+
+    test("should throw when updating SK and PK counterpart was never stored", async () => {
+      await runWithBatchContext(async () => {
+        const item = await OptionalGsiModel.create({
+          name: "Test Item",
+        });
+
+        await expect(
+          OptionalGsiModel.update(item.itemId, { subcategory: "phones" }),
+        ).rejects.toThrow(
+          /missing partition key "category".*Include both fields or use forceReindex/,
+        );
+      });
+    });
+
+    test("should succeed when both GSI key fields are provided together", async () => {
+      await runWithBatchContext(async () => {
+        const item = await OptionalGsiModel.create({
+          name: "Test Item",
+        });
+
+        const updated = await OptionalGsiModel.update(item.itemId, {
+          category: "electronics",
+          subcategory: "phones",
+        });
+        expect(updated.category).toBe("electronics");
+        expect(updated.subcategory).toBe("phones");
+      });
+    });
+
+    test("should succeed with forceReindex even when counterpart was never stored", async () => {
+      await runWithBatchContext(async () => {
+        // Create with both fields so the GSI is populated
+        const item = await OptionalGsiModel.create({
+          name: "Test Item",
+          category: "electronics",
+          subcategory: "phones",
+        });
+
+        // forceReindex backfills everything from the current item
+        const user = await OptionalGsiModel.find(item.itemId);
+        user.category = "clothing";
+        await user.save({ forceReindex: true });
+
+        const saved = await OptionalGsiModel.find(item.itemId, {
+          bypassCache: true,
+        });
+        expect(saved.category).toBe("clothing");
+        expect(saved.subcategory).toBe("phones");
+      });
+    });
+  });
 });

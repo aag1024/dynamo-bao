@@ -360,4 +360,62 @@ describe("Instance Methods", () => {
       expect(newUser.email).toBe("new@example.com");
     });
   });
+
+  test("forceReindex should preserve new values instead of overwriting with old ones", async () => {
+    await runWithBatchContext(async () => {
+      const user = await User.find(testUser.userId);
+      const docClient = User.documentClient;
+
+      // Update the role field with forceReindex
+      user.role = "admin";
+      await user.save({ forceReindex: true });
+
+      // Verify the new value was saved, not the old one
+      const savedUser = await User.find(testUser.userId, {
+        bypassCache: true,
+      });
+      expect(savedUser.role).toBe("admin");
+
+      // Verify the GSI that uses role as a key was updated with the new value
+      const tableItem = await docClient.send(
+        new GetCommand({
+          TableName: User.table,
+          Key: {
+            _pk: savedUser._dyData._pk,
+            _sk: savedUser._dyData._sk,
+          },
+        }),
+      );
+
+      // byRole index uses role as PK - verify the GSI key reflects the new value
+      expect(tableItem.Item._gsi2_pk).toContain("admin");
+      expect(tableItem.Item._gsi2_pk).not.toContain("user");
+    });
+  });
+
+  test("partial GSI key update should auto-backfill counterpart from existing item", async () => {
+    await runWithBatchContext(async () => {
+      const docClient = User.documentClient;
+
+      // User has byRole index: IndexConfig("role", "status", GSI_INDEX_ID2)
+      // Updating only role (PK) should auto-backfill status (SK) from existing item
+      const updated = await User.update(testUser.userId, { role: "admin" });
+      expect(updated.role).toBe("admin");
+      expect(updated.status).toBe("active"); // original value preserved
+
+      // Verify the GSI was updated correctly with new role + old status
+      const tableItem = await docClient.send(
+        new GetCommand({
+          TableName: User.table,
+          Key: {
+            _pk: updated._dyData._pk,
+            _sk: updated._dyData._sk,
+          },
+        }),
+      );
+
+      expect(tableItem.Item._gsi2_pk).toContain("admin");
+      expect(tableItem.Item._gsi2_sk).toBeDefined();
+    });
+  });
 });

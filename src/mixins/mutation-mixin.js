@@ -348,13 +348,46 @@ const MutationMethods = {
         }
       }
 
-      if (forceReindex && currentItem) {
-        Object.keys(this.fields).forEach((fieldName) => {
-          const currentValue = currentItem._dyData[fieldName];
-          if (currentValue !== undefined) {
-            indexComputationData[fieldName] = currentValue;
-          }
-        });
+      // Backfill from currentItem for GSI consistency
+      if (!isNew && currentItem) {
+        if (forceReindex) {
+          // forceReindex: backfill all fields from current item
+          Object.keys(this.fields).forEach((fieldName) => {
+            const currentValue = currentItem._dyData[fieldName];
+            if (
+              currentValue !== undefined &&
+              indexComputationData[fieldName] === undefined
+            ) {
+              indexComputationData[fieldName] = currentValue;
+            }
+          });
+        } else {
+          // Regular update: backfill GSI counterpart fields so indexes
+          // stay consistent when only one field of a key pair is updated
+          Object.entries(this.indexes).forEach(([, index]) => {
+            const pkField = index.pk;
+            const skField = index.sk;
+            const pkInUpdate =
+              pkField === "modelPrefix" ||
+              indexComputationData[pkField] !== undefined;
+            const skInUpdate =
+              skField === "modelPrefix" ||
+              indexComputationData[skField] !== undefined;
+
+            if (pkInUpdate && !skInUpdate && skField !== "modelPrefix") {
+              const currentValue = currentItem._dyData[skField];
+              if (currentValue !== undefined) {
+                indexComputationData[skField] = currentValue;
+              }
+            }
+            if (skInUpdate && !pkInUpdate && pkField !== "modelPrefix") {
+              const currentValue = currentItem._dyData[pkField];
+              if (currentValue !== undefined) {
+                indexComputationData[pkField] = currentValue;
+              }
+            }
+          });
+        }
       }
 
       if (isNew) {
@@ -428,12 +461,13 @@ const MutationMethods = {
       }
 
       // Add GSI keys
-      const indexSourceData =
-        forceReindex && Object.keys(indexComputationData).length
-          ? indexComputationData
-          : dyUpdatesToSave;
+      const indexSourceData = Object.keys(indexComputationData).length
+        ? indexComputationData
+        : dyUpdatesToSave;
 
-      const indexKeys = this._getIndexKeys(indexSourceData);
+      const indexKeys = this._getIndexKeys(indexSourceData, {
+        isUpdate: !isNew,
+      });
       logger.debug("indexKeys", indexKeys);
       Object.assign(dyUpdatesToSave, indexKeys);
 
@@ -711,7 +745,7 @@ const MutationMethods = {
     };
   },
 
-  _getIndexKeys(data) {
+  _getIndexKeys(data, { isUpdate = false } = {}) {
     const indexKeys = {};
 
     Object.entries(this.indexes).forEach(([indexName, index]) => {
@@ -736,6 +770,26 @@ const MutationMethods = {
         skValue = data[index.sk];
         if (skValue !== undefined) {
           skValue = skField.toGsi(skValue);
+        }
+      }
+
+      // Detect partial GSI key updates that would cause index staleness
+      if (isUpdate && index.indexId !== undefined) {
+        const pkProvided =
+          index.pk === "modelPrefix" || pkValue !== undefined;
+        const skProvided =
+          index.sk === "modelPrefix" || skValue !== undefined;
+        if (pkProvided && !skProvided) {
+          throw new Error(
+            `Update includes GSI partition key "${index.pk}" for index "${indexName}" ` +
+              `but is missing sort key "${index.sk}". Include both fields or use forceReindex.`,
+          );
+        }
+        if (skProvided && !pkProvided) {
+          throw new Error(
+            `Update includes GSI sort key "${index.sk}" for index "${indexName}" ` +
+              `but is missing partition key "${index.pk}". Include both fields or use forceReindex.`,
+          );
         }
       }
 

@@ -121,10 +121,6 @@ describe("Pagination Tests", () => {
   });
 
   test("should paginate with ascending sort", async () => {
-    const allUsers = await TestUser.queryByIndex("byStatus", "active", null, {
-      direction: "ASC",
-    });
-
     // First page
     const page1 = await TestUser.queryByIndex("byStatus", "active", null, {
       limit: 2,
@@ -132,8 +128,9 @@ describe("Pagination Tests", () => {
     });
 
     expect(page1.items).toHaveLength(2);
-    expect(page1.items[0].userId).toBe(allUsers.items[0].userId);
-    expect(page1.items[1].userId).toBe(allUsers.items[1].userId);
+    expect(page1.lastEvaluatedKey).toBeDefined();
+    // Verify ASC order within page
+    expect(page1.items[0].userId < page1.items[1].userId).toBe(true);
 
     // Second page
     const page2 = await TestUser.queryByIndex("byStatus", "active", null, {
@@ -143,15 +140,12 @@ describe("Pagination Tests", () => {
     });
 
     expect(page2.items).toHaveLength(2);
-    expect(page2.items[0].userId).toBe(allUsers.items[2].userId);
-    expect(page2.items[1].userId).toBe(allUsers.items[3].userId);
+    // Verify ASC order within page and across pages
+    expect(page2.items[0].userId < page2.items[1].userId).toBe(true);
+    expect(page1.items[1].userId < page2.items[0].userId).toBe(true);
   });
 
   test("should paginate with descending sort", async () => {
-    const allUsers = await TestUser.queryByIndex("byStatus", "active", null, {
-      direction: "DESC",
-    });
-
     // First page
     const page1 = await TestUser.queryByIndex("byStatus", "active", null, {
       limit: 3,
@@ -159,8 +153,10 @@ describe("Pagination Tests", () => {
     });
 
     expect(page1.items).toHaveLength(3);
-    expect(page1.items[0].userId).toBe(allUsers.items[0].userId);
-    expect(page1.items[2].userId).toBe(allUsers.items[2].userId);
+    expect(page1.lastEvaluatedKey).toBeDefined();
+    // Verify DESC order within page
+    expect(page1.items[0].userId > page1.items[1].userId).toBe(true);
+    expect(page1.items[1].userId > page1.items[2].userId).toBe(true);
 
     // Second page
     const page2 = await TestUser.queryByIndex("byStatus", "active", null, {
@@ -170,8 +166,9 @@ describe("Pagination Tests", () => {
     });
 
     expect(page2.items).toHaveLength(2);
-    expect(page2.items[0].userId).toBe(allUsers.items[3].userId);
-    expect(page2.items[1].userId).toBe(allUsers.items[4].userId);
+    // Verify DESC order within page and across pages
+    expect(page2.items[0].userId > page2.items[1].userId).toBe(true);
+    expect(page1.items[2].userId > page2.items[0].userId).toBe(true);
   });
 
   test("should maintain consistent order across pages", async () => {

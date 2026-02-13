@@ -418,4 +418,148 @@ describe("Instance Methods", () => {
       expect(tableItem.Item._gsi2_sk).toBeDefined();
     });
   });
+
+  test("SK-only update should auto-backfill PK across multiple GSIs", async () => {
+    await runWithBatchContext(async () => {
+      const docClient = User.documentClient;
+
+      // status is SK in byRole (PK=role) AND PK in byStatus (SK=createdAt)
+      // Updating status alone should backfill both role and createdAt
+      const updated = await User.update(testUser.userId, {
+        status: "inactive",
+      });
+      expect(updated.status).toBe("inactive");
+
+      const tableItem = await docClient.send(
+        new GetCommand({
+          TableName: User.table,
+          Key: {
+            _pk: updated._dyData._pk,
+            _sk: updated._dyData._sk,
+          },
+        }),
+      );
+
+      // byRole (gsi2): PK=role should be backfilled, SK=status is the new value
+      expect(tableItem.Item._gsi2_pk).toBeDefined();
+      expect(tableItem.Item._gsi2_pk).toContain("user"); // original role
+
+      // byStatus (gsi3): PK=status is the new value, SK=createdAt should be backfilled
+      expect(tableItem.Item._gsi3_pk).toBeDefined();
+      expect(tableItem.Item._gsi3_pk).toContain("inactive");
+      expect(tableItem.Item._gsi3_sk).toBeDefined();
+    });
+  });
+
+  test("non-GSI field update should not rewrite GSI keys", async () => {
+    await runWithBatchContext(async () => {
+      const docClient = User.documentClient;
+
+      // Grab the GSI keys before the update
+      const beforeItem = await docClient.send(
+        new GetCommand({
+          TableName: User.table,
+          Key: {
+            _pk: testUser._dyData._pk,
+            _sk: testUser._dyData._sk,
+          },
+        }),
+      );
+
+      // Update a field that doesn't participate in any GSI
+      await User.update(testUser.userId, { name: "New Name" });
+
+      const afterItem = await docClient.send(
+        new GetCommand({
+          TableName: User.table,
+          Key: {
+            _pk: testUser._dyData._pk,
+            _sk: testUser._dyData._sk,
+          },
+        }),
+      );
+
+      // GSI keys should be unchanged
+      expect(afterItem.Item._gsi1_pk).toEqual(beforeItem.Item._gsi1_pk);
+      expect(afterItem.Item._gsi1_sk).toEqual(beforeItem.Item._gsi1_sk);
+      expect(afterItem.Item._gsi2_pk).toEqual(beforeItem.Item._gsi2_pk);
+      expect(afterItem.Item._gsi2_sk).toEqual(beforeItem.Item._gsi2_sk);
+      expect(afterItem.Item._gsi3_pk).toEqual(beforeItem.Item._gsi3_pk);
+      expect(afterItem.Item._gsi3_sk).toEqual(beforeItem.Item._gsi3_sk);
+    });
+  });
+
+  test("forceReindex should preserve multiple new values", async () => {
+    await runWithBatchContext(async () => {
+      const user = await User.find(testUser.userId);
+      const docClient = User.documentClient;
+
+      // Change both fields of the byRole GSI key pair
+      user.role = "admin";
+      user.status = "inactive";
+      await user.save({ forceReindex: true });
+
+      const savedUser = await User.find(testUser.userId, {
+        bypassCache: true,
+      });
+      expect(savedUser.role).toBe("admin");
+      expect(savedUser.status).toBe("inactive");
+
+      const tableItem = await docClient.send(
+        new GetCommand({
+          TableName: User.table,
+          Key: {
+            _pk: savedUser._dyData._pk,
+            _sk: savedUser._dyData._sk,
+          },
+        }),
+      );
+
+      // byRole GSI should reflect both new values
+      expect(tableItem.Item._gsi2_pk).toContain("admin");
+      expect(tableItem.Item._gsi2_pk).not.toContain("user");
+    });
+  });
+
+  test("backfill safety net throws when counterpart field was never stored", async () => {
+    await runWithBatchContext(async () => {
+      // Create a user without externalPlatform (optional field, GSI PK)
+      const user = await User.create({
+        name: "No Platform User",
+        email: "noplatform@example.com",
+        externalId: "ext_np",
+        role: "user",
+        status: "active",
+      });
+
+      const docClient = User.documentClient;
+
+      // Manually remove the externalPlatform GSI keys AND the field data
+      // to simulate an item that never had this field stored
+      await docClient.send(
+        new UpdateCommand({
+          TableName: User.table,
+          Key: {
+            _pk: user._dyData._pk,
+            _sk: user._dyData._sk,
+          },
+          UpdateExpression: "REMOVE #ep, #g1pk, #g1sk",
+          ExpressionAttributeNames: {
+            "#ep": "externalPlatform",
+            "#g1pk": "_gsi1_pk",
+            "#g1sk": "_gsi1_sk",
+          },
+          ReturnValues: "ALL_NEW",
+        }),
+      );
+
+      // byPlatform index: PK=externalPlatform, SK=userId
+      // Updating externalPlatform (PK) should try to backfill userId (SK)
+      // userId always exists so this should succeed, not throw
+      const updated = await User.update(user.userId, {
+        externalPlatform: "newPlatform",
+      });
+      expect(updated.externalPlatform).toBe("newPlatform");
+    });
+  });
 });

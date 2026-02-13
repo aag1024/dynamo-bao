@@ -521,7 +521,7 @@ describe("Instance Methods", () => {
     });
   });
 
-  test("backfill safety net throws when counterpart field was never stored", async () => {
+  test("backfill succeeds when counterpart exists in stored item", async () => {
     await runWithBatchContext(async () => {
       // Create a user without externalPlatform (optional field, GSI PK)
       const user = await User.create({
@@ -560,6 +560,50 @@ describe("Instance Methods", () => {
         externalPlatform: "newPlatform",
       });
       expect(updated.externalPlatform).toBe("newPlatform");
+    });
+  });
+
+  test("backfill throws when counterpart field was never stored", async () => {
+    await runWithBatchContext(async () => {
+      // Create a user without externalPlatform (optional field, GSI PK)
+      const user = await User.create({
+        name: "No Platform User",
+        email: "noplatform2@example.com",
+        externalId: "ext_np2",
+        role: "user",
+        status: "active",
+      });
+
+      const docClient = User.documentClient;
+
+      // Remove both externalPlatform AND userId from the stored item
+      // to simulate an item where the GSI counterpart doesn't exist
+      await docClient.send(
+        new UpdateCommand({
+          TableName: User.table,
+          Key: {
+            _pk: user._dyData._pk,
+            _sk: user._dyData._sk,
+          },
+          UpdateExpression: "REMOVE #ep, #uid, #g1pk, #g1sk",
+          ExpressionAttributeNames: {
+            "#ep": "externalPlatform",
+            "#uid": "userId",
+            "#g1pk": "_gsi1_pk",
+            "#g1sk": "_gsi1_sk",
+          },
+          ReturnValues: "ALL_NEW",
+        }),
+      );
+
+      // byPlatform index: PK=externalPlatform, SK=userId
+      // Updating externalPlatform (PK) when userId (SK) was removed from the item
+      // should throw because auto-backfill can't find the counterpart
+      await expect(
+        User.update(user.userId, { externalPlatform: "newPlatform" }),
+      ).rejects.toThrow(
+        /missing sort key "userId".*Include both fields or use forceReindex/,
+      );
     });
   });
 
@@ -635,7 +679,7 @@ describe("Instance Methods", () => {
       });
     });
 
-    test("should succeed with forceReindex even when counterpart was never stored", async () => {
+    test("should succeed with forceReindex when both fields exist in stored item", async () => {
       await runWithBatchContext(async () => {
         // Create with both fields so the GSI is populated
         const item = await OptionalGsiModel.create({

@@ -5,6 +5,7 @@
   "main": "src/index.js",
   "exports": {
     ".": "./src/index.js",
+    "./src/*": "./src/*",
     "./package.json": "./package.json"
   },
   "scripts": {
@@ -52,10 +53,11 @@
     "eslint-plugin-promise": "^6.1.1"
   },
   "bin": {
-    "bao-init": "bin/dynamo-bao-create-table.js",
+    "bao-init": "./bin/dynamo-bao-create-table.js",
+    "bao-create-table": "./bin/bao-create-table.js",
     "bao-codegen": "./bin/codegen.js",
     "bao-watch": "./bin/watch.js",
-    "bao-update-table": "bin/dynamo-bao-update-table.js",
-    "bao-delete": "bin/dynamo-bao-delete-table.js"
+    "bao-update-table": "./bin/dynamo-bao-update-table.js",
+    "bao-delete": "./bin/dynamo-bao-delete-table.js"
   }
 }

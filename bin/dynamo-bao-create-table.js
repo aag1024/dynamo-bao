@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 
+const resolve = require("./lib/resolve");
 const {
   DynamoDBClient,
   CreateTableCommand,
   ListTablesCommand,
-  DescribeTableCommand,
   UpdateTimeToLiveCommand,
-} = require("../src/dynamodb-client.js");
+} = resolve("src/dynamodb-client.js");
+const { TABLE_PARAMS, waitForTableActive } = require("./lib/create-table-params");
 const readline = require("readline");
 const fs = require("fs");
 const path = require("path");
@@ -88,23 +89,6 @@ module.exports = config;
   console.log(`Config file written to: ${configPath}`);
 }
 
-async function waitForTableActive(tableName, maxAttempts = 30) {
-  for (let i = 0; i < maxAttempts; i++) {
-    const response = await client.send(
-      new DescribeTableCommand({ TableName: tableName }),
-    );
-    const status = response.Table.TableStatus;
-    if (status === "ACTIVE") {
-      return;
-    }
-    // Wait 2 seconds between checks
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-  }
-  throw new Error(
-    `Table ${tableName} did not become active within ${maxAttempts * 2} seconds`,
-  );
-}
-
 async function createTable() {
   // Prompt user for table name
   const defaultTableName = "dynamo-bao-dev";
@@ -112,81 +96,7 @@ async function createTable() {
     (await prompt(`Enter table name [${defaultTableName}]: `)) ||
     defaultTableName;
 
-  // Define table parameters
-  const params = {
-    TableName: tableName,
-    BillingMode: "PAY_PER_REQUEST",
-    AttributeDefinitions: [
-      { AttributeName: "_pk", AttributeType: "S" },
-      { AttributeName: "_sk", AttributeType: "S" },
-      { AttributeName: "_gsi1_pk", AttributeType: "S" },
-      { AttributeName: "_gsi1_sk", AttributeType: "S" },
-      { AttributeName: "_gsi2_pk", AttributeType: "S" },
-      { AttributeName: "_gsi2_sk", AttributeType: "S" },
-      { AttributeName: "_gsi3_pk", AttributeType: "S" },
-      { AttributeName: "_gsi3_sk", AttributeType: "S" },
-      { AttributeName: "_gsi4_pk", AttributeType: "S" },
-      { AttributeName: "_gsi4_sk", AttributeType: "S" },
-      { AttributeName: "_gsi5_pk", AttributeType: "S" },
-      { AttributeName: "_gsi5_sk", AttributeType: "S" },
-      { AttributeName: "_iter_pk", AttributeType: "S" },
-      { AttributeName: "_iter_sk", AttributeType: "S" },
-    ],
-    KeySchema: [
-      { AttributeName: "_pk", KeyType: "HASH" },
-      { AttributeName: "_sk", KeyType: "RANGE" },
-    ],
-    GlobalSecondaryIndexes: [
-      {
-        IndexName: "gsi1",
-        KeySchema: [
-          { AttributeName: "_gsi1_pk", KeyType: "HASH" },
-          { AttributeName: "_gsi1_sk", KeyType: "RANGE" },
-        ],
-        Projection: { ProjectionType: "ALL" },
-      },
-      {
-        IndexName: "gsi2",
-        KeySchema: [
-          { AttributeName: "_gsi2_pk", KeyType: "HASH" },
-          { AttributeName: "_gsi2_sk", KeyType: "RANGE" },
-        ],
-        Projection: { ProjectionType: "ALL" },
-      },
-      {
-        IndexName: "gsi3",
-        KeySchema: [
-          { AttributeName: "_gsi3_pk", KeyType: "HASH" },
-          { AttributeName: "_gsi3_sk", KeyType: "RANGE" },
-        ],
-        Projection: { ProjectionType: "ALL" },
-      },
-      {
-        IndexName: "gsi4",
-        KeySchema: [
-          { AttributeName: "_gsi4_pk", KeyType: "HASH" },
-          { AttributeName: "_gsi4_sk", KeyType: "RANGE" },
-        ],
-        Projection: { ProjectionType: "ALL" },
-      },
-      {
-        IndexName: "gsi5",
-        KeySchema: [
-          { AttributeName: "_gsi5_pk", KeyType: "HASH" },
-          { AttributeName: "_gsi5_sk", KeyType: "RANGE" },
-        ],
-        Projection: { ProjectionType: "ALL" },
-      },
-      {
-        IndexName: "iter_index",
-        KeySchema: [
-          { AttributeName: "_iter_pk", KeyType: "HASH" },
-          { AttributeName: "_iter_sk", KeyType: "RANGE" },
-        ],
-        Projection: { ProjectionType: "KEYS_ONLY" },
-      },
-    ],
-  };
+  const params = { ...TABLE_PARAMS, TableName: tableName };
 
   try {
     // Create table
@@ -199,7 +109,7 @@ async function createTable() {
 
     // Wait for table to become active before enabling TTL
     console.log("Waiting for table to become active...");
-    await waitForTableActive(tableName);
+    await waitForTableActive(client, tableName);
 
     // Enable TTL (must be done after table creation via UpdateTimeToLive)
     await client.send(
@@ -235,7 +145,7 @@ async function createDirectoriesAndFiles() {
 # Here's a simple example:
 # models:
 #   User: {
-#   
+#
 #     modelPrefix: u
 #     fields:
 #       userId: {type: UlidField, autoAssign: true, required: true}
@@ -254,7 +164,6 @@ async function createDirectoriesAndFiles() {
 async function main() {
   await checkAwsCredentials();
   await createTable();
-  // Add this line after table creation
   await createDirectoriesAndFiles();
 }
 

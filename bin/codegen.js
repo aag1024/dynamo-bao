@@ -6,8 +6,9 @@ const yaml = require("js-yaml");
 const { generateModelFiles } = require("./generators/model");
 const { generateManifestFile } = require("./generators/manifest");
 const { createLogger } = require("./utils/scriptLogger");
-const FieldResolver = require("../src/fieldResolver");
-const { initConfig } = require("../src/config");
+const resolve = require("./lib/resolve");
+const FieldResolver = resolve("src/fieldResolver");
+const { initConfig } = resolve("src/config");
 
 // const __dirname = __dirname;
 

@@ -1,13 +1,14 @@
 #!/usr/bin/env node
 
+const resolve = require("./lib/resolve");
 const {
   DynamoDBClient,
   DescribeTableCommand,
   UpdateTableCommand,
   DescribeTimeToLiveCommand,
   UpdateTimeToLiveCommand,
-} = require("../src/dynamodb-client.js");
-const { initConfig } = require("../src/config.js");
+} = resolve("src/dynamodb-client.js");
+const { initConfig } = resolve("src/config.js");
 
 // Expected GSI definitions - the full set that should exist on the table
 const EXPECTED_GSIS = [
@@ -77,24 +78,9 @@ const ALL_ATTRIBUTE_DEFINITIONS = [
   { AttributeName: "_iter_sk", AttributeType: "S" },
 ];
 
-let client;
+const { waitForTableActive } = require("./lib/create-table-params");
 
-async function waitForTableActive(tableName, maxAttempts = 60) {
-  for (let i = 0; i < maxAttempts; i++) {
-    const response = await client.send(
-      new DescribeTableCommand({ TableName: tableName }),
-    );
-    const status = response.Table.TableStatus;
-    if (status === "ACTIVE") {
-      return;
-    }
-    console.log(`  Table status: ${status}, waiting...`);
-    await new Promise((resolve) => setTimeout(resolve, 5000));
-  }
-  throw new Error(
-    `Table ${tableName} did not become active within ${maxAttempts * 5} seconds`,
-  );
-}
+let client;
 
 async function checkAndAddMissingGSIs(tableName) {
   const response = await client.send(
@@ -147,7 +133,7 @@ async function checkAndAddMissingGSIs(tableName) {
     console.log(
       `  GSI ${gsi.IndexName} creation initiated. Waiting for table to become active...`,
     );
-    await waitForTableActive(tableName);
+    await waitForTableActive(client, tableName, { maxAttempts: 60, intervalMs: 5000 });
     console.log(`  GSI ${gsi.IndexName} is ready.`);
   }
 }

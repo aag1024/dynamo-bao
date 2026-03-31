@@ -5,7 +5,8 @@ const path = require("path");
 const chokidar = require("chokidar");
 const { run: runCodegen } = require("./codegen");
 const { createLogger } = require("./utils/scriptLogger");
-const config = require("../src/config");
+const resolve = require("./lib/resolve");
+const config = resolve("src/config");
 
 const logger = createLogger("Watch");
 

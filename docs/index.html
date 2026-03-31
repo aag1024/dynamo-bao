@@ -251,7 +251,8 @@ try {
 cd your-project
 npm install dynamo-bao
 </code></pre><p>Create a new Dynamo table for your project. You should have one table per project.</p><pre class="prettyprint source"><code>npx bao-init
-</code></pre><p>This creates a <code>config.js</code> which contains settings for your project like AWS region and the table name.</p><p>It also creates a <code>models.yaml</code> file with a simple example model, and a <code>models</code> directory where the generated models will be stored.</p><p>Edit your <code>models.yaml</code> file to define these models.</p><pre class="prettyprint source"><code>models:
+</code></pre><p>This creates a <code>config.js</code> which contains settings for your project like AWS region and the table name.</p><p>It also creates a <code>models.yaml</code> file with a simple example model, and a <code>models</code> directory where the generated models will be stored.</p><p>If you only need to create the table without any project scaffolding (e.g., in CI/CD or scripts), use:</p><pre class="prettyprint source"><code>npx bao-create-table &lt;table-name>
+</code></pre><p>Edit your <code>models.yaml</code> file to define these models.</p><pre class="prettyprint source"><code>models:
   User:
     modelPrefix: u   # required short string to identify the model
     fields:

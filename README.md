@@ -453,6 +453,12 @@ This creates a `config.js` which contains settings for your project like AWS reg
 It also creates a `models.yaml` file with a simple example model, and a `models` directory where
 the generated models will be stored.
 
+If you only need to create the table without any project scaffolding (e.g., in CI/CD or scripts), use:
+
+```
+npx bao-create-table <table-name>
+```
+
 Edit your `models.yaml` file to define these models.
 
 ```

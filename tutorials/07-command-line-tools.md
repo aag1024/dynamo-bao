@@ -1,4 +1,5 @@
 - [bao-init](#bao-init)
+- [bao-create-table](#bao-create-table)
 - [bao-update-table](#bao-update-table)
 - [bao-delete](#bao-delete)
 - [bao-codegen](#bao-codegen)
@@ -14,8 +15,8 @@ Creates a new DynamoDB table with the recommended single-table design schema and
 
 - Creates a DynamoDB table with:
   - Pay-per-request billing
-  - 3 Global Secondary Indexes (GSI1, GSI2, GSI3)
-  - A test GSI
+  - 5 Global Secondary Indexes (GSI1-GSI5)
+  - An iteration index for `iterateAll()` support
   - TTL attribute support
 - Generates a `dynamo-bao.config.js` file with AWS and table configurations
 - Creates initial project structure:
@@ -26,6 +27,26 @@ Creates a new DynamoDB table with the recommended single-table design schema and
 
 - Table name (defaults to "dynamo-bao-dev")
 - Validates AWS credentials before table creation
+
+## bao-create-table
+
+Creates a DynamoDB table without initializing project configuration or directory structure. Useful for CI/CD pipelines, scripts, or when you want to manage configuration separately.
+
+`npx bao-create-table <table-name>`
+
+### Arguments
+
+- `table-name` (required): The name of the DynamoDB table to create
+
+### Features
+
+- Creates a DynamoDB table with the same schema as `bao-init`:
+  - Pay-per-request billing
+  - 5 Global Secondary Indexes (GSI1-GSI5)
+  - An iteration index for `iterateAll()` support
+  - TTL attribute support
+- No interactive prompts — table name is passed as an argument
+- Does not generate config files, `models/` directory, or `models.yaml`
 
 ## bao-update-table
 

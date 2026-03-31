@@ -4,14 +4,14 @@
 const { 
   BaoModel,
   PrimaryKeyConfig
-} = require('../../../../src/model.js');
+} = require('dynamo-bao/src/model.js');
 
 
 const { 
     UlidField,
     StringField,
     CreateDateField
-} = require('../../../../src/fields.js');
+} = require('dynamo-bao/src/fields.js');
 
 
 const { TaggedPost } = require('./tagged-post.js');

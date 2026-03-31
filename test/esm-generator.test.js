@@ -134,6 +134,36 @@ describe("ESM Generated Models", () => {
     });
   });
 
+  describe("Import Path Style", () => {
+    test("should use bare package specifiers for dynamo-bao imports (ESM)", () => {
+      const userFile = fs.readFileSync(
+        path.join(__dirname, "codegen", "esm-test", "generated", "user.js"),
+        "utf-8"
+      );
+
+      // Should use bare package specifier
+      expect(userFile).toMatch(/from\s+['"]dynamo-bao\/src\/model\.js['"]/);
+      expect(userFile).toMatch(/from\s+['"]dynamo-bao\/src\/fields\.js['"]/);
+
+      // Should NOT use relative paths to reach dynamo-bao internals
+      expect(userFile).not.toMatch(/from\s+['"]\.\.\/.*src\/(model|fields|constants)\.js['"]/);
+    });
+
+    test("should use bare package specifiers for dynamo-bao imports (CommonJS)", () => {
+      const userFile = fs.readFileSync(
+        path.join(__dirname, "codegen", "single-model-file", "models", "user.js"),
+        "utf-8"
+      );
+
+      // Should use bare package specifier
+      expect(userFile).toMatch(/require\(['"]dynamo-bao\/src\/model\.js['"]\)/);
+      expect(userFile).toMatch(/require\(['"]dynamo-bao\/src\/fields\.js['"]\)/);
+
+      // Should NOT use relative paths to reach dynamo-bao internals
+      expect(userFile).not.toMatch(/require\(['"]\.\.\/.*src\/(model|fields|constants)\.js['"]\)/);
+    });
+  });
+
   describe("Cross-module References", () => {
     test("should properly reference other ESM modules", () => {
       const postFile = fs.readFileSync(

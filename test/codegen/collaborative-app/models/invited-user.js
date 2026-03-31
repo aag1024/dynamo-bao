@@ -4,14 +4,14 @@
 const { 
   BaoModel,
   PrimaryKeyConfig
-} = require('../../../../src/model.js');
+} = require('dynamo-bao/src/model.js');
 
 
 const { 
     RelatedField,
     StringField,
     CreateDateField
-} = require('../../../../src/fields.js');
+} = require('dynamo-bao/src/fields.js');
 
 
 

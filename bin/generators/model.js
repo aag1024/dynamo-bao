@@ -15,11 +15,8 @@ function generateModelClass(
   outputDir,
   moduleSystem = 'commonjs',
 ) {
-  // Calculate relative path to src directory from output directory
-  const projectRoot = path.resolve(__dirname, '../..');
-  const srcPath = path.join(projectRoot, 'src');
-  const relativeSrcPath = path.relative(outputDir, srcPath).replace(/\\/g, '/');
-  const srcImportPrefix = relativeSrcPath.startsWith('.') ? relativeSrcPath : './' + relativeSrcPath;
+  // Use bare package specifier so imports survive version bumps
+  const srcImportPrefix = 'dynamo-bao/src';
   if (!modelConfig || !modelConfig.fields) {
     throw new Error(
       `Invalid model configuration for ${modelName}: missing fields`,

@@ -5,19 +5,19 @@ const {
   BaoModel,
   PrimaryKeyConfig,
   UniqueConstraintConfig
-} = require('../../../../src/model.js');
+} = require('dynamo-bao/src/model.js');
 
 const {
   UNIQUE_CONSTRAINT_ID1,
   UNIQUE_CONSTRAINT_ID2
-} = require('../../../../src/constants.js');
+} = require('dynamo-bao/src/constants.js');
 
 const { 
     UlidField,
     StringField,
     CreateDateField,
     ModifiedDateField
-} = require('../../../../src/fields.js');
+} = require('dynamo-bao/src/fields.js');
 
 
 const { App } = require('./app.js');

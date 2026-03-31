@@ -5,18 +5,18 @@ import {
   BaoModel,
   PrimaryKeyConfig,
   UniqueConstraintConfig
-} from '../../../../src/model.js';
+} from 'dynamo-bao/src/model.js';
 
 import {
   UNIQUE_CONSTRAINT_ID1
-} from '../../../../src/constants.js';
+} from 'dynamo-bao/src/constants.js';
 
 import { 
     UlidField,
     StringField,
     CreateDateField,
     ModifiedDateField
-} from '../../../../src/fields.js';
+} from 'dynamo-bao/src/fields.js';
 
 
 import { Post } from './post.js';

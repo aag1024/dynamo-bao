@@ -5,11 +5,11 @@ import {
   BaoModel,
   PrimaryKeyConfig,
   IndexConfig
-} from '../../../../src/model.js';
+} from 'dynamo-bao/src/model.js';
 
 import {
   GSI_INDEX_ID3
-} from '../../../../src/constants.js';
+} from 'dynamo-bao/src/constants.js';
 
 import { 
     UlidField,
@@ -18,7 +18,7 @@ import {
     IntegerField,
     CreateDateField,
     ModifiedDateField
-} from '../../../../src/fields.js';
+} from 'dynamo-bao/src/fields.js';
 
 
 

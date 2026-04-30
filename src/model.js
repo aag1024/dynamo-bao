@@ -447,16 +447,12 @@ class BaoModel {
       const remainingItems = limit - collectedObjectIds.length;
       const remainingScan = maxScannedItems - scanned;
       const activeForRound = round.length;
-      // Pick a per-bucket page size that:
-      //   - never asks for more than the remaining scan budget allows (hard cap),
-      //   - aims for at least 10 to amortize round-trips when budget is loose,
-      //   - never exceeds 100 so a single round is bounded.
-      const scanCap = Math.max(1, Math.ceil(remainingScan / activeForRound));
-      const limitTarget = Math.max(
-        10,
-        Math.ceil(remainingItems / activeForRound),
-      );
-      const perPageLimit = Math.min(100, scanCap, limitTarget);
+      // Per-bucket page size: at most 100 (DynamoDB cap), bounded by both the
+      // remaining scan budget and the remaining item target so we don't
+      // over-fetch on the last round when limit is small.
+      const scanCap = Math.ceil(remainingScan / activeForRound);
+      const limitCap = Math.ceil(remainingItems / activeForRound);
+      const perPageLimit = Math.max(1, Math.min(100, scanCap, limitCap));
 
       const pages = await Promise.all(
         round.map((entry) =>

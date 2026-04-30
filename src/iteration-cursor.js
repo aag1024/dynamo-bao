@@ -32,6 +32,12 @@ function encodeCursor(state) {
 
 /**
  * Decode and validate a cursor against the current model and tenant.
+ *
+ * Cursors are intended to be treated as opaque strings produced by this
+ * library and round-tripped by callers — not arbitrary user-supplied input.
+ * Callers should not size-bound or otherwise sanitize external strings before
+ * passing them here; if cursors flow through an untrusted boundary (e.g. a
+ * public API parameter), the caller is responsible for any input-size limits.
  * @param {string} cursor base64url-encoded cursor produced by encodeCursor
  * @param {Object} ctx
  * @param {string} ctx.modelPrefix

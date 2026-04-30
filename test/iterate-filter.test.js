@@ -178,6 +178,13 @@ describe("iterateFilter", () => {
       expect(page.items.length).toBe(5);
       page.items.forEach((u) => expect(u.status).toBe("active"));
       expect(page.cursor).toBeNull();
+
+      // consumedCapacity is populated: one entry per bucket queried this round.
+      expect(Array.isArray(page.consumedCapacity)).toBe(true);
+      expect(page.consumedCapacity.length).toBeGreaterThan(0);
+      page.consumedCapacity.forEach((cc) =>
+        expect(typeof cc.CapacityUnits).toBe("number"),
+      );
     });
 
     test("no filter returns all items", async () => {
@@ -418,12 +425,11 @@ describe("iterateFilter", () => {
       // few enough per bucket that none requires multiple pages — this lets
       // us prove the FIFO scheduler hits each bucket exactly once.
       const N = 60;
-      for (let i = 0; i < N; i++) {
-        await ManyBucketUser.create({
-          name: `User ${i}`,
-          status: "active",
-        });
-      }
+      await Promise.all(
+        Array.from({ length: N }, (_, i) =>
+          ManyBucketUser.create({ name: `User ${i}`, status: "active" }),
+        ),
+      );
 
       const calls = [];
       const original = ManyBucketUser._filterPartitionPage;
@@ -450,12 +456,11 @@ describe("iterateFilter", () => {
 
     test("queue order survives the cursor (across-call rotation)", async () => {
       const N = 60;
-      for (let i = 0; i < N; i++) {
-        await ManyBucketUser.create({
-          name: `User ${i}`,
-          status: "active",
-        });
-      }
+      await Promise.all(
+        Array.from({ length: N }, (_, i) =>
+          ManyBucketUser.create({ name: `User ${i}`, status: "active" }),
+        ),
+      );
 
       const calls = [];
       const original = ManyBucketUser._filterPartitionPage;

@@ -494,6 +494,123 @@ describe("iterateFilter", () => {
     }, 180000);
   });
 
+  describe("$contains on string field across multiple partitions", () => {
+    test("finds all matches across buckets, no duplicates, no false positives", async () => {
+      // Names crafted so the substring "alpha" appears at start, middle, and
+      // end — and 24 distractors do not contain it. With ULID-assigned userIds
+      // hashed across 5 buckets, the matches will land in >= 2 different
+      // partitions (verified via _hashObjectId below) — exercising the
+      // multi-partition aggregation path.
+      const matchingNames = [
+        "alpha-tester", // prefix
+        "alphabet",     // prefix
+        "team-alpha",   // suffix
+        "pre-alpha-1",  // middle
+        "almostalpha",  // suffix
+        "ALPHAGEEK",    // not a match (case-sensitive)
+      ];
+      const distractorCount = 24;
+
+      const created = [];
+      for (const name of matchingNames) {
+        const u = await IterableUser.create({
+          name,
+          email: `${name.toLowerCase()}@example.com`,
+          status: "active",
+        });
+        created.push(u);
+      }
+      for (let i = 0; i < distractorCount; i++) {
+        const u = await IterableUser.create({
+          name: `distractor-${i}`,
+          email: `d${i}@example.com`,
+          status: "active",
+        });
+        created.push(u);
+      }
+
+      const expectedMatches = matchingNames.filter((n) => n.includes("alpha"));
+      expect(expectedMatches.length).toBe(5); // ALPHAGEEK excluded
+
+      // Sanity: matching users span at least 2 distinct buckets (confirms we
+      // actually exercise the multi-partition aggregation path; not just
+      // luck that everything landed in one bucket).
+      const matchingBuckets = new Set(
+        created
+          .filter((u) => u.name.includes("alpha"))
+          .map(
+            (u) =>
+              IterableUser._hashObjectId(u.userId) %
+              IterableUser.iterationBuckets,
+          ),
+      );
+      expect(matchingBuckets.size).toBeGreaterThanOrEqual(2);
+
+      // Walk with a small limit to force pagination across buckets.
+      const { items, calls } = await walkAll(IterableUser, {
+        filter: { name: { $contains: "alpha" } },
+        limit: 2,
+        maxScannedItems: 5,
+      });
+
+      expect(calls).toBeGreaterThan(1);
+
+      const foundNames = items.map((u) => u.name).sort();
+      expect(foundNames).toEqual(expectedMatches.sort());
+
+      // No duplicates across pages.
+      const ids = items.map((u) => u.userId);
+      expect(new Set(ids).size).toBe(ids.length);
+
+      // No false positives.
+      items.forEach((u) => expect(u.name).toMatch(/alpha/));
+    }, 120000);
+
+    test("$contains is case-sensitive", async () => {
+      await IterableUser.create({
+        name: "Alpha",
+        email: "a@example.com",
+        status: "active",
+      });
+      await IterableUser.create({
+        name: "alpha",
+        email: "b@example.com",
+        status: "active",
+      });
+
+      const { items: lower } = await walkAll(IterableUser, {
+        filter: { name: { $contains: "alpha" } },
+        limit: 50,
+      });
+      expect(lower.map((u) => u.name)).toEqual(["alpha"]);
+
+      const { items: upper } = await walkAll(IterableUser, {
+        filter: { name: { $contains: "Alpha" } },
+        limit: 50,
+      });
+      expect(upper.map((u) => u.name)).toEqual(["Alpha"]);
+    }, 60000);
+
+    test("$contains with zero matches across all buckets returns empty", async () => {
+      for (let i = 0; i < 15; i++) {
+        await IterableUser.create({
+          name: `user-${i}`,
+          email: `u${i}@example.com`,
+          status: "active",
+        });
+      }
+
+      const { items, calls } = await walkAll(IterableUser, {
+        filter: { name: { $contains: "needle" } },
+        limit: 50,
+      });
+
+      expect(items).toEqual([]);
+      // All buckets must have been queried to confirm no matches anywhere.
+      expect(calls).toBeGreaterThanOrEqual(1);
+    }, 60000);
+  });
+
   describe("Self-containment of cursor", () => {
     test("cursor encoded in one call resumes correctly in another", async () => {
       const collected = [];

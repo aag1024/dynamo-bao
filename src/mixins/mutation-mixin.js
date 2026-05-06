@@ -13,6 +13,8 @@ const {
   ConditionalError,
   ValidationError,
 } = require("../exceptions");
+const { computeSearchTextUpdate } = require("../utils/search-text");
+const { SEARCH_TEXT_FIELD } = require("../constants");
 
 const MutationMethods = {
   /**
@@ -478,6 +480,21 @@ const MutationMethods = {
           dyUpdatesToSave,
         );
         Object.assign(dyUpdatesToSave, iterationKeys);
+      }
+
+      // Compute _searchText if the model is searchable. Returns undefined to
+      // skip the write entirely, null to REMOVE, or a string to SET.
+      if (this.searchable && this.searchConfig) {
+        const searchTextValue = computeSearchTextUpdate({
+          searchConfig: this.searchConfig,
+          dyUpdatesToSave,
+          currentItem,
+          isNew,
+          forceReindex,
+        });
+        if (searchTextValue !== undefined) {
+          dyUpdatesToSave[SEARCH_TEXT_FIELD] = searchTextValue;
+        }
       }
 
       // Build the update expression first

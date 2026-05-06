@@ -62,6 +62,11 @@ const TABLE_PARAMS = {
       Projection: { ProjectionType: "ALL" },
     },
     {
+      // Legacy iteration index (KEYS_ONLY). To enable search, run
+      // `bao-update-table` after package upgrade — it will add
+      // `iter_search_index` (INCLUDE projection on _searchText) alongside
+      // this one. Then set `db.iterationIndexName: "iter_search_index"` in
+      // your config to start using it.
       IndexName: "iter_index",
       KeySchema: [
         { AttributeName: "_iter_pk", KeyType: "HASH" },

@@ -9,6 +9,7 @@ models:
     tableType: "standard" # Optional: "standard" (default) or "mapping"
     iterable: true # Optional: "true" (default) or "false". See notes on iteration.
     iterationBuckets: 10 # Optional: number of buckets for iteration. Default is 10.
+    searchable: false # Optional: see "Searchable Models" for the object form.
     fields: {} # Required: field definitions
     primaryKey: {} # Required: primary key configuration
     indexes: {} # Optional: secondary indexes
@@ -295,6 +296,141 @@ Choosing the number of buckets:
 A good root model isn't too large and doesn't get written to frequently. For instance, a `User` model may be a good candidate, since you typically have many fewer users than posts, messages, or other objects in the system. Users also don't get written to as frequently as other objects, so it's a good fit for iteration. Since iteration defaults to using 10 buckets, write capacity is automatically distributed, but you should still be mindful of very high-velocity writes (e.g. bulk importing users without rate limiting).
 
 It is not recommended to use the `modelPrefix` as the primaryKey's partitionKey, since it cannot be changed later. The `iterable` feature provides a safer and more flexible way to enable iteration.
+
+## Searchable Models
+
+Models can declare a `searchable` block to auto-populate a `_searchText` attribute on every save. The framework concatenates the listed string fields, normalizes the result (lowercased by default, punctuation stripped, whitespace collapsed), and stores it on the row. You can then query against it from inside any filter, or use the dedicated `searchAll`/`searchBucket` API on iterable models for parallel cross-bucket search.
+
+```yaml
+models:
+  Post:
+    modelPrefix: "p"
+    iterable: true
+    searchable:
+      fields: [title, body, summary] # Required: must be StringField
+      caseSensitive: false # Optional, default false
+      minTermLength: 1 # Optional, default 1 (no token filtering)
+      dedupe: false # Optional, default false
+    fields:
+      title: { type: StringField }
+      body: { type: StringField }
+      summary: { type: StringField }
+      # ...
+```
+
+Codegen validates that every name in `searchable.fields` is defined on the model and is a `StringField`. Mismatches fail the build with a clear error.
+
+### How `_searchText` is computed
+
+1. Read each listed field, skip null/undefined values.
+2. Concat with a single space.
+3. Lowercase unless `caseSensitive: true`.
+4. Strip Unicode non-alphanumeric characters (`/[^\p{L}\p{N}\s]/gu`) → spaces.
+5. Collapse whitespace.
+6. If `dedupe: true`: tokenize, dedupe in first-seen order, rejoin.
+7. If `minTermLength > 1`: drop tokens shorter than that, rejoin.
+
+### Save-time behavior
+
+- `_searchText` is recomputed only when at least one source field is in the update (or on `create`, or with `forceReindex: true`). Updates that touch unrelated fields leave `_searchText` alone — no extra index churn.
+- Untouched source fields are backfilled from the current row, so you never lose part of the searchable text just because you only updated one field.
+- If the recomputed value is empty (all sources cleared), `_searchText` is `REMOVE`d and the row drops out of search results.
+
+### Eventual consistency
+
+`searchAll` and `searchBucket` read from the `iter_search_index` GSI. DynamoDB GSIs are eventually consistent, so a row whose `_searchText` was just updated may briefly:
+
+- still appear under its **old** value (false positive: row matches the old terms for a few seconds after the update); or
+- not yet appear under its **new** value (false negative: row doesn't match the new terms until the index catches up).
+
+The same window applies to `iterateAll({ filter: ... })`. If you need stronger guarantees for a destructive bulk operation, re-read each item via `find()` (strongly consistent base read) and re-check the predicate yourself before acting.
+
+### Searching iterable models
+
+```javascript
+// Single-term search across all buckets
+for await (const batch of Post.searchAll(["alice"])) {
+  for (const post of batch) console.log(post.title);
+}
+
+// Multi-term: AND by default, $or also supported
+for await (const batch of Post.searchAll(["iphone", "review"])) { /* ... */ }
+for await (const batch of Post.searchAll(["alice", "bob"], { operator: "$or" })) { /* ... */ }
+
+// Phrase as a single term (multi-word substring)
+for await (const batch of Post.searchAll(["foo bar"])) { /* ... */ }
+
+// Parallel fan-out across buckets
+const buckets = await Promise.all(
+  Array.from({ length: Post.iterationBuckets }, async (_, b) => {
+    const out = [];
+    for await (const batch of Post.searchBucket(b, ["alice"])) out.push(...batch);
+    return out;
+  }),
+);
+
+// Helper: split a free-form query string into terms (honors quoted phrases)
+const terms = Post.tokenizeSearchQuery('"hello world" foo'); // => ["hello world", "foo"]
+```
+
+`searchAll` accepts an `options.filter` that's combined with the search predicate, but DynamoDB only allows the index-level filter to reference attributes that are *projected* onto the GSI. The `iter_search_index` projects only `_searchText` (plus the index/base keys) — anything else throws a clear error before the round-trip:
+
+```
+Filter on 'iter_search_index' references attribute(s) that aren't projected: [status]. ...
+```
+
+For non-projected attributes, filter the hydrated batch in JS:
+
+```javascript
+for await (const batch of Post.searchAll(["alice"])) {
+  for (const post of batch) {
+    if (post.status === "active") yieldOrCollect(post);
+  }
+}
+```
+
+### Searchable + non-iterable models
+
+`searchable` works without `iterable: true` — `_searchText` is still populated on every save and exists on the row's raw data. The `searchAll`/`searchBucket` API only works on iterable models (it relies on the bucketed iter_search_index), so for non-iterable models you'd typically:
+
+1. `query` or `queryByIndex` on a known partition.
+2. Filter the hydrated results in JS using `Model.normalizeSearchTerm(query)` to normalize the search input the same way `_searchText` was built.
+
+```javascript
+const term = Post.normalizeSearchTerm(userQuery);
+const { items } = await Post.queryByIndex("byUser", userId);
+const matches = items.filter((p) => p._dyData._searchText?.includes(term));
+```
+
+(Direct filtering on `_searchText` via the standard filter API is a planned enhancement — `FilterExpressionBuilder` currently only accepts user-defined fields.)
+
+### Multilingual support
+
+The default normalization preserves any Unicode letter (Chinese, Japanese, Korean, Cyrillic, Arabic, Devanagari, etc.). `searchAll(["苹果"])` matches rows whose `_searchText` contains `苹果` (including substrings like `苹果手机`).
+
+The `dedupe` and `minTermLength` options use whitespace tokenization, which doesn't fit languages without inter-word spacing (Chinese, Japanese). Leave them at their defaults (`dedupe: false`, `minTermLength: 1`) for CJK content; the rest of normalization Just Works.
+
+### Adopting search on existing data
+
+When you turn a model `searchable: true` for the first time on a model that already has rows, those rows lack `_searchText`. After running `bao-update-table` to add the new GSI, run:
+
+```
+npx bao-rebuild-search-text Post
+```
+
+This walks every row of the model with `iterateAll` and re-saves with `forceReindex: true` so the save-time computation populates `_searchText`.
+
+### Migration: enabling search on existing tables
+
+Iteration uses the legacy `iter_index` GSI (HASH `_iter_pk`, RANGE `_iter_sk`, `KEYS_ONLY` projection) by default. Search needs the new `iter_search_index` (same keys, but `INCLUDE [_searchText]`). To enable search:
+
+1. **Bump dynamo-bao** — no breakage, iteration still uses `iter_index`.
+2. **Add the GSI:** `npx bao-update-table` — this adds `iter_search_index` alongside the legacy index. DynamoDB auto-backfills the GSI's key entries; rows that already lack `_searchText` won't be searchable until you do step 4.
+3. **Flip the config:** set `db.iterationIndexName: "iter_search_index"` in your dynamo-bao config file (e.g., `dynamo-bao.config.js`). After this, `iterateAll` and `searchAll` both query the new index.
+4. **Backfill existing rows:** `npx bao-rebuild-search-text <ModelName>` — walks every row and re-saves with `forceReindex: true`, populating `_searchText`. Skip if the model is empty or you only need to search rows newer than today.
+5. **(Optional, later)** drop the legacy `iter_index` GSI manually to save the duplicate write cost. Verify iteration and search both work first.
+
+You can stop after step 2 if you only want to add the new GSI infrastructure without flipping the runtime over yet — both indexes will be populated by saves until step 5.
 
 ## Unique Constraints
 

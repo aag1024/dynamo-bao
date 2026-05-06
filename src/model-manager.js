@@ -113,6 +113,17 @@ class ModelManager {
     return this._tenantId;
   }
 
+  // Resolved iteration index name. Defaults to "iter_search_index"; users
+  // mid-migration can override via config.db.iterationIndexName: "iter_index"
+  // to keep iteration on the legacy index. searchAll/searchBucket guard against
+  // the legacy value.
+  getIterationIndexName() {
+    return (
+      this._config?.db?.iterationIndexName ||
+      require("./constants").ITERATION_INDEX_NAME
+    );
+  }
+
   // Backward compatibility
   getTestId() {
     return this._tenantId;

@@ -190,6 +190,40 @@ const ValidationMethods = {
       this.iterable = false;
     }
 
+    // Validate searchable configuration. Catches the case where a model has
+    // `searchable: true` but no `searchConfig` (e.g., hand-written class or
+    // partially-regenerated codebase) — better to fail loudly at registration
+    // than silently skip _searchText computation on every save.
+    if (this.searchable === true) {
+      if (!this.searchConfig || typeof this.searchConfig !== "object") {
+        throw new ConfigurationError(
+          `${this.name} has \`searchable: true\` but no \`searchConfig\`. ` +
+            `Re-run codegen, or set \`static searchConfig = { fields: [...] }\` ` +
+            `on the class.`,
+          this.name,
+        );
+      }
+      if (
+        !Array.isArray(this.searchConfig.fields) ||
+        this.searchConfig.fields.length === 0
+      ) {
+        throw new ConfigurationError(
+          `${this.name} \`searchConfig.fields\` must be a non-empty array.`,
+          this.name,
+        );
+      }
+      for (const fieldName of this.searchConfig.fields) {
+        const fieldDef = this.fields[fieldName];
+        if (!fieldDef) {
+          throw new ConfigurationError(
+            `${this.name} \`searchConfig.fields\` references "${fieldName}" but ` +
+              `that field is not defined on the model.`,
+            this.name,
+          );
+        }
+      }
+    }
+
     // Validate unique constraints
     const validConstraintIds = [
       UNIQUE_CONSTRAINT_ID1,

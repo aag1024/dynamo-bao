@@ -62,12 +62,15 @@ const TABLE_PARAMS = {
       Projection: { ProjectionType: "ALL" },
     },
     {
-      IndexName: "iter_index",
+      IndexName: "iter_search_index",
       KeySchema: [
         { AttributeName: "_iter_pk", KeyType: "HASH" },
         { AttributeName: "_iter_sk", KeyType: "RANGE" },
       ],
-      Projection: { ProjectionType: "KEYS_ONLY" },
+      Projection: {
+        ProjectionType: "INCLUDE",
+        NonKeyAttributes: ["_searchText"],
+      },
     },
   ],
 };

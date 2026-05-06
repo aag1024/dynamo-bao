@@ -53,12 +53,15 @@ const EXPECTED_GSIS = [
     Projection: { ProjectionType: "ALL" },
   },
   {
-    IndexName: "iter_index",
+    IndexName: "iter_search_index",
     KeySchema: [
       { AttributeName: "_iter_pk", KeyType: "HASH" },
       { AttributeName: "_iter_sk", KeyType: "RANGE" },
     ],
-    Projection: { ProjectionType: "KEYS_ONLY" },
+    Projection: {
+      ProjectionType: "INCLUDE",
+      NonKeyAttributes: ["_searchText"],
+    },
   },
 ];
 
@@ -209,6 +212,21 @@ async function main() {
   // Check and add missing GSIs
   console.log("Checking GSIs...");
   await checkAndAddMissingGSIs(tableName);
+
+  // Notify about legacy iter_index if present.
+  const desc = await client.send(
+    new DescribeTableCommand({ TableName: tableName }),
+  );
+  const existingIndexNames = (desc.Table.GlobalSecondaryIndexes || []).map(
+    (g) => g.IndexName,
+  );
+  if (existingIndexNames.includes("iter_index")) {
+    console.log(
+      "\nNote: legacy 'iter_index' is still present. dynamo-bao now reads " +
+        "and writes through 'iter_search_index'. The legacy index can be " +
+        "dropped manually once you've verified iteration and search work.",
+    );
+  }
 
   // Check and enable TTL
   console.log("\nChecking TTL...");

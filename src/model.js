@@ -33,8 +33,10 @@ const {
   UNIQUE_CONSTRAINT_KEY,
   SYSTEM_FIELDS,
   ITERATION_INDEX_NAME,
+  LEGACY_ITERATION_INDEX_NAME,
   ITERATION_PK_FIELD,
   ITERATION_SK_FIELD,
+  SEARCH_TEXT_FIELD,
 } = require("./constants");
 const {
   ConfigurationError,
@@ -63,6 +65,8 @@ class BaoModel {
   static uniqueConstraints = {};
   static iterable = false;
   static iterationBuckets = 100;
+  static searchable = false;
+  static searchConfig = null;
 
   static defaultQueryLimit = 100;
 
@@ -269,21 +273,99 @@ class BaoModel {
     yield* this._iterateSingleBucket(bucketNum, options);
   }
 
-  static async *_iterateSingleBucket(bucketNum, options = {}) {
-    const { batchSize = 100, filter = null } = options;
-    const tenantId = this.manager.getTenantId();
+  static _assertSearchable() {
+    if (!this.searchable || !this.searchConfig) {
+      throw new Error(
+        `Model ${this.name} is not configured as searchable. ` +
+          `Add a searchable: { fields: [...] } block in YAML to enable search.`,
+      );
+    }
+    if (!this.iterable) {
+      throw new Error(
+        `searchAll requires iterable: true. For non-iterable models, use ` +
+          `query/queryByIndex with a filter on _searchText.`,
+      );
+    }
+    const indexName = this.manager.getIterationIndexName();
+    if (indexName === LEGACY_ITERATION_INDEX_NAME) {
+      throw new Error(
+        `searchAll requires '${ITERATION_INDEX_NAME}'; current config points ` +
+          `at the legacy '${LEGACY_ITERATION_INDEX_NAME}'. Run 'bao-update-table' ` +
+          `to add the new index, then remove the iterationIndexName override.`,
+      );
+    }
+  }
 
-    let iterPk;
+  static async *searchAll(terms, options = {}) {
+    this._assertSearchable();
+    const {
+      buildSearchPredicate,
+    } = require("./utils/search-text");
+    const { operator = "$and", batchSize = 100, filter = null } = options;
+    const searchPredicate = buildSearchPredicate(terms, this.searchConfig, {
+      operator,
+    });
+
     if (this.iterationBuckets === 1) {
-      iterPk = tenantId
+      yield* this._iterateSingleBucket(null, {
+        batchSize,
+        filter,
+        searchPredicate,
+      });
+    } else {
+      for (let bucket = 0; bucket < this.iterationBuckets; bucket++) {
+        yield* this._iterateSingleBucket(bucket, {
+          batchSize,
+          filter,
+          searchPredicate,
+        });
+      }
+    }
+  }
+
+  static async *searchBucket(bucketNum, terms, options = {}) {
+    this._assertSearchable();
+    if (bucketNum < 0 || bucketNum >= this.iterationBuckets) {
+      throw new Error(
+        `Invalid bucket number ${bucketNum}. Must be 0-${this.iterationBuckets - 1}`,
+      );
+    }
+    const {
+      buildSearchPredicate,
+    } = require("./utils/search-text");
+    const { operator = "$and", batchSize = 100, filter = null } = options;
+    const searchPredicate = buildSearchPredicate(terms, this.searchConfig, {
+      operator,
+    });
+    yield* this._iterateSingleBucket(bucketNum, {
+      batchSize,
+      filter,
+      searchPredicate,
+    });
+  }
+
+  static tokenizeSearchQuery(queryString) {
+    const { tokenizeSearchQuery } = require("./utils/search-text");
+    return tokenizeSearchQuery(queryString);
+  }
+
+  static _getIterationPk(bucketNum) {
+    const tenantId = this.manager.getTenantId();
+    if (this.iterationBuckets === 1) {
+      return tenantId
         ? `[${tenantId}]#${this.modelPrefix}#iter`
         : `${this.modelPrefix}#iter`;
-    } else {
-      const bucket = bucketNum.toString().padStart(3, "0");
-      iterPk = tenantId
-        ? `[${tenantId}]#${this.modelPrefix}#iter#${bucket}`
-        : `${this.modelPrefix}#iter#${bucket}`;
     }
+    const bucket = bucketNum.toString().padStart(3, "0");
+    return tenantId
+      ? `[${tenantId}]#${this.modelPrefix}#iter#${bucket}`
+      : `${this.modelPrefix}#iter#${bucket}`;
+  }
+
+  static async *_iterateSingleBucket(bucketNum, options = {}) {
+    const { batchSize = 100, filter = null, searchPredicate = null } = options;
+    const iterPk = this._getIterationPk(bucketNum);
+    const indexName = this.manager.getIterationIndexName();
 
     let lastEvaluatedKey = null;
 
@@ -291,7 +373,7 @@ class BaoModel {
       const { QueryCommand } = require("./dynamodb-client");
       const params = {
         TableName: this.table,
-        IndexName: ITERATION_INDEX_NAME,
+        IndexName: indexName,
         KeyConditionExpression: "#pk = :pk",
         ExpressionAttributeNames: { "#pk": ITERATION_PK_FIELD },
         ExpressionAttributeValues: { ":pk": iterPk },
@@ -303,12 +385,13 @@ class BaoModel {
         params.ExclusiveStartKey = lastEvaluatedKey;
       }
 
+      const filterParts = [];
       if (filter) {
         const { FilterExpressionBuilder } = require("./filter-expression");
         const filterBuilder = new FilterExpressionBuilder();
         const filterExpression = filterBuilder.build(filter, this);
         if (filterExpression) {
-          params.FilterExpression = filterExpression.FilterExpression;
+          filterParts.push(filterExpression.FilterExpression);
           Object.assign(
             params.ExpressionAttributeNames,
             filterExpression.ExpressionAttributeNames,
@@ -319,8 +402,36 @@ class BaoModel {
           );
         }
       }
+      if (searchPredicate) {
+        filterParts.push(searchPredicate.FilterExpression);
+        Object.assign(
+          params.ExpressionAttributeNames,
+          searchPredicate.ExpressionAttributeNames,
+        );
+        Object.assign(
+          params.ExpressionAttributeValues,
+          searchPredicate.ExpressionAttributeValues,
+        );
+      }
+      if (filterParts.length > 0) {
+        params.FilterExpression = filterParts.map((p) => `(${p})`).join(" AND ");
+      }
 
-      const response = await this.documentClient.send(new QueryCommand(params));
+      let response;
+      try {
+        response = await this.documentClient.send(new QueryCommand(params));
+      } catch (error) {
+        if (
+          error.name === "ResourceNotFoundException" ||
+          /index.*not.*found/i.test(error.message || "")
+        ) {
+          throw new Error(
+            `Index '${indexName}' is missing on table '${this.table}'. ` +
+              `Run 'bao-update-table' to add it.`,
+          );
+        }
+        throw error;
+      }
 
       if (response.Items && response.Items.length > 0) {
         const objectIds = response.Items.map(

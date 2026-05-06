@@ -58,6 +58,7 @@
     "bao-codegen": "./bin/codegen.js",
     "bao-watch": "./bin/watch.js",
     "bao-update-table": "./bin/dynamo-bao-update-table.js",
-    "bao-delete": "./bin/dynamo-bao-delete-table.js"
+    "bao-delete": "./bin/dynamo-bao-delete-table.js",
+    "bao-rebuild-search-text": "./bin/bao-rebuild-search-text.js"
   }
 }

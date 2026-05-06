@@ -9,6 +9,7 @@ models:
     tableType: "standard" # Optional: "standard" (default) or "mapping"
     iterable: true # Optional: "true" (default) or "false". See notes on iteration.
     iterationBuckets: 10 # Optional: number of buckets for iteration. Default is 10.
+    searchable: false # Optional: see "Searchable Models" for the object form.
     fields: {} # Required: field definitions
     primaryKey: {} # Required: primary key configuration
     indexes: {} # Optional: secondary indexes
@@ -295,6 +296,109 @@ Choosing the number of buckets:
 A good root model isn't too large and doesn't get written to frequently. For instance, a `User` model may be a good candidate, since you typically have many fewer users than posts, messages, or other objects in the system. Users also don't get written to as frequently as other objects, so it's a good fit for iteration. Since iteration defaults to using 10 buckets, write capacity is automatically distributed, but you should still be mindful of very high-velocity writes (e.g. bulk importing users without rate limiting).
 
 It is not recommended to use the `modelPrefix` as the primaryKey's partitionKey, since it cannot be changed later. The `iterable` feature provides a safer and more flexible way to enable iteration.
+
+## Searchable Models
+
+Models can declare a `searchable` block to auto-populate a `_searchText` attribute on every save. The framework concatenates the listed string fields, normalizes the result (lowercased by default, punctuation stripped, whitespace collapsed), and stores it on the row. You can then query against it from inside any filter, or use the dedicated `searchAll`/`searchBucket` API on iterable models for parallel cross-bucket search.
+
+```yaml
+models:
+  Post:
+    modelPrefix: "p"
+    iterable: true
+    searchable:
+      fields: [title, body, summary] # Required: must be StringField
+      caseSensitive: false # Optional, default false
+      minTermLength: 1 # Optional, default 1 (no token filtering)
+      dedupe: false # Optional, default false
+    fields:
+      title: { type: StringField }
+      body: { type: StringField }
+      summary: { type: StringField }
+      # ...
+```
+
+Codegen validates that every name in `searchable.fields` is defined on the model and is a `StringField`. Mismatches fail the build with a clear error.
+
+### How `_searchText` is computed
+
+1. Read each listed field, skip null/undefined values.
+2. Concat with a single space.
+3. Lowercase unless `caseSensitive: true`.
+4. Strip Unicode non-alphanumeric characters (`/[^\p{L}\p{N}\s]/gu`) → spaces.
+5. Collapse whitespace.
+6. If `dedupe: true`: tokenize, dedupe in first-seen order, rejoin.
+7. If `minTermLength > 1`: drop tokens shorter than that, rejoin.
+
+### Save-time behavior
+
+- `_searchText` is recomputed only when at least one source field is in the update (or on `create`, or with `forceReindex: true`). Updates that touch unrelated fields leave `_searchText` alone — no extra index churn.
+- Untouched source fields are backfilled from the current row, so you never lose part of the searchable text just because you only updated one field.
+- If the recomputed value is empty (all sources cleared), `_searchText` is `REMOVE`d and the row drops out of search results.
+
+### Searching iterable models
+
+```javascript
+// Single-term search across all buckets
+for await (const batch of Post.searchAll(["alice"])) {
+  for (const post of batch) console.log(post.title);
+}
+
+// Multi-term: AND by default, $or also supported
+for await (const batch of Post.searchAll(["iphone", "review"])) { /* ... */ }
+for await (const batch of Post.searchAll(["alice", "bob"], { operator: "$or" })) { /* ... */ }
+
+// Phrase as a single term (multi-word substring)
+for await (const batch of Post.searchAll(["foo bar"])) { /* ... */ }
+
+// Parallel fan-out across buckets
+const buckets = await Promise.all(
+  Array.from({ length: Post.iterationBuckets }, async (_, b) => {
+    const out = [];
+    for await (const batch of Post.searchBucket(b, ["alice"])) out.push(...batch);
+    return out;
+  }),
+);
+
+// Helper: split a free-form query string into terms (honors quoted phrases)
+const terms = Post.tokenizeSearchQuery('"hello world" foo'); // => ["hello world", "foo"]
+```
+
+`searchAll` accepts an `options.filter` that's combined with the search predicate, but DynamoDB only allows the index-level filter to reference attributes that are projected onto the GSI. The `iter_search_index` projects `_searchText` and the iteration keys, so filters on those work — for any other attribute, filter the hydrated batch in JS:
+
+```javascript
+for await (const batch of Post.searchAll(["alice"])) {
+  for (const post of batch) {
+    if (post.status === "active") yieldOrCollect(post);
+  }
+}
+```
+
+### Searchable + non-iterable models
+
+`searchable` works without `iterable: true` — `_searchText` is still populated on every save and you can reference it in any `query`/`queryByIndex` filter (all GSIs project `_searchText` automatically because their projection is `ALL`). The `searchAll`/`searchBucket` API only works on iterable models, since it relies on the bucketed iter_search_index.
+
+### Multilingual support
+
+The default normalization preserves any Unicode letter (Chinese, Japanese, Korean, Cyrillic, Arabic, Devanagari, etc.). `searchAll(["苹果"])` matches rows whose `_searchText` contains `苹果` (including substrings like `苹果手机`).
+
+The `dedupe` and `minTermLength` options use whitespace tokenization, which doesn't fit languages without inter-word spacing (Chinese, Japanese). Leave them at their defaults (`dedupe: false`, `minTermLength: 1`) for CJK content; the rest of normalization Just Works.
+
+### Adopting search on existing data
+
+When you turn a model `searchable: true` for the first time on a model that already has rows, those rows lack `_searchText`. After running `bao-update-table` to add the new GSI, run:
+
+```
+npx bao-rebuild-search-text Post
+```
+
+This walks every row of the model with `iterateAll` and re-saves with `forceReindex: true` so the save-time computation populates `_searchText`.
+
+### Migration: `iter_search_index`
+
+dynamo-bao now reads and writes through `iter_search_index` (HASH `_iter_pk`, RANGE `_iter_sk`, projection `INCLUDE [_searchText]`). New tables get this index from `bao-create-table`. Existing tables can add it via `bao-update-table`. The legacy `iter_index` is left in place — drop it manually once you've verified iteration and search work.
+
+If you need to keep iteration on the legacy index during the transition, set `db.iterationIndexName: "iter_index"` in your config. `searchAll`/`searchBucket` will throw a clear error in that mode (the legacy index has no `_searchText` projection).
 
 ## Unique Constraints
 

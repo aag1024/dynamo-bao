@@ -123,6 +123,16 @@ function generateModelClass(
   const iterable = modelConfig.iterable === true;
   const iterationBuckets = modelConfig.iterationBuckets || 100;
 
+  // Handle searchable configuration. modelConfig.searchable is either `false`
+  // or a fully-validated object (validated by applyModelDefaults in
+  // bin/lib/process-models.js).
+  const searchable = !!(
+    modelConfig.searchable && typeof modelConfig.searchable === "object"
+  );
+  const searchConfigLiteral = searchable
+    ? JSON.stringify(modelConfig.searchable)
+    : "null";
+
   // Always need these
   baseImports.add("PrimaryKeyConfig");
   if (indexes) baseImports.add("IndexConfig");
@@ -231,7 +241,9 @@ class ${modelName} extends BaoModel {
   static modelPrefix = '${modelConfig.modelPrefix}';
   static iterable = ${iterable};
   static iterationBuckets = ${iterationBuckets};
-  
+  static searchable = ${searchable};
+  static searchConfig = ${searchConfigLiteral};
+
   static fields = {
 ${fields}
   };

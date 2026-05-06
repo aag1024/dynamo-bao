@@ -53,6 +53,21 @@ const EXPECTED_GSIS = [
     Projection: { ProjectionType: "ALL" },
   },
   {
+    // Legacy iteration index — KEYS_ONLY. The package default still reads
+    // through this; existing tables keep working without changes.
+    IndexName: "iter_index",
+    KeySchema: [
+      { AttributeName: "_iter_pk", KeyType: "HASH" },
+      { AttributeName: "_iter_sk", KeyType: "RANGE" },
+    ],
+    Projection: { ProjectionType: "KEYS_ONLY" },
+  },
+  {
+    // New search-capable iteration index. INCLUDEs _searchText so
+    // searchAll/searchBucket can filter on the GSI without a base read.
+    // Adding this index is non-destructive: it costs an extra GSI write per
+    // save, but iterateAll continues to use iter_index until the user opts
+    // in via `db.iterationIndexName: "iter_search_index"`.
     IndexName: "iter_search_index",
     KeySchema: [
       { AttributeName: "_iter_pk", KeyType: "HASH" },
@@ -213,18 +228,22 @@ async function main() {
   console.log("Checking GSIs...");
   await checkAndAddMissingGSIs(tableName);
 
-  // Notify about legacy iter_index if present.
+  // Print next steps for users who just added iter_search_index for the
+  // first time. The package default keeps reading through iter_index, so
+  // adding the new GSI alone doesn't change runtime behavior — they need to
+  // flip the config.
   const desc = await client.send(
     new DescribeTableCommand({ TableName: tableName }),
   );
   const existingIndexNames = (desc.Table.GlobalSecondaryIndexes || []).map(
     (g) => g.IndexName,
   );
-  if (existingIndexNames.includes("iter_index")) {
+  if (existingIndexNames.includes("iter_search_index")) {
     console.log(
-      "\nNote: legacy 'iter_index' is still present. dynamo-bao now reads " +
-        "and writes through 'iter_search_index'. The legacy index can be " +
-        "dropped manually once you've verified iteration and search work.",
+      "\nTo enable search:\n" +
+        "  1) Set 'db.iterationIndexName: \"iter_search_index\"' in your config.\n" +
+        "  2) (If your model has existing rows) run 'bao-rebuild-search-text <ModelName>'.\n" +
+        "  3) (Optional, after verification) drop the legacy 'iter_index' GSI.",
     );
   }
 

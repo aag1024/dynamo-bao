@@ -66,10 +66,18 @@ class TestNonIterableSearchable extends dynamoBao.BaoModel {
   static primaryKey = dynamoBao.PrimaryKeyConfig("postId", "modelPrefix");
 }
 
+// Search-enabled tests need the runtime to resolve the iteration index to
+// `iter_search_index` (the new INCLUDE-projection GSI). Opt in via config —
+// the package default is the legacy `iter_index` for backwards compatibility.
+const searchEnabledConfig = {
+  ...testConfig,
+  db: { ...testConfig.db, iterationIndexName: "iter_search_index" },
+};
+
 describe("Searchable models", () => {
   beforeEach(async () => {
     testId = ulid();
-    const manager = initTestModelsWithTenant(testConfig, testId);
+    const manager = initTestModelsWithTenant(searchEnabledConfig, testId);
     manager.registerModel(TestSearchablePost);
     manager.registerModel(TestNonSearchablePost);
     manager.registerModel(TestNonIterableSearchable);

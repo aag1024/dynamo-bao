@@ -420,11 +420,17 @@ npx bao-rebuild-search-text Post
 
 This walks every row of the model with `iterateAll` and re-saves with `forceReindex: true` so the save-time computation populates `_searchText`.
 
-### Migration: `iter_search_index`
+### Migration: enabling search on existing tables
 
-dynamo-bao now reads and writes through `iter_search_index` (HASH `_iter_pk`, RANGE `_iter_sk`, projection `INCLUDE [_searchText]`). New tables get this index from `bao-create-table`. Existing tables can add it via `bao-update-table`. The legacy `iter_index` is left in place — drop it manually once you've verified iteration and search work.
+Iteration uses the legacy `iter_index` GSI (HASH `_iter_pk`, RANGE `_iter_sk`, `KEYS_ONLY` projection) by default. Search needs the new `iter_search_index` (same keys, but `INCLUDE [_searchText]`). To enable search:
 
-If you need to keep iteration on the legacy index during the transition, set `db.iterationIndexName: "iter_index"` in your config. `searchAll`/`searchBucket` will throw a clear error in that mode (the legacy index has no `_searchText` projection).
+1. **Bump dynamo-bao** — no breakage, iteration still uses `iter_index`.
+2. **Add the GSI:** `npx bao-update-table` — this adds `iter_search_index` alongside the legacy index. DynamoDB auto-backfills the GSI's key entries; rows that already lack `_searchText` won't be searchable until you do step 4.
+3. **Flip the config:** set `db.iterationIndexName: "iter_search_index"` in your dynamo-bao config file (e.g., `dynamo-bao.config.js`). After this, `iterateAll` and `searchAll` both query the new index.
+4. **Backfill existing rows:** `npx bao-rebuild-search-text <ModelName>` — walks every row and re-saves with `forceReindex: true`, populating `_searchText`. Skip if the model is empty or you only need to search rows newer than today.
+5. **(Optional, later)** drop the legacy `iter_index` GSI manually to save the duplicate write cost. Verify iteration and search both work first.
+
+You can stop after step 2 if you only want to add the new GSI infrastructure without flipping the runtime over yet — both indexes will be populated by saves until step 5.
 
 ## Unique Constraints
 

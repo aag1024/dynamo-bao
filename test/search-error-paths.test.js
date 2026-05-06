@@ -14,6 +14,13 @@ const { initTestModelsWithTenant } = require("./utils/test-utils");
 const { ulid } = require("ulid");
 const { ConfigurationError } = require("../src/exceptions");
 
+// Some tests need the iter_search_index path active. The package default
+// resolves to `iter_index`, so override per-suite when needed.
+const searchEnabledConfig = {
+  ...testConfig,
+  db: { ...testConfig.db, iterationIndexName: "iter_search_index" },
+};
+
 describe("missing iter_search_index → friendly error", () => {
   let testId, ModelClass, manager;
 
@@ -30,7 +37,9 @@ describe("missing iter_search_index → friendly error", () => {
 
   beforeEach(() => {
     testId = ulid();
-    manager = initTestModelsWithTenant(testConfig, testId);
+    // Use the search-enabled config so the resolved index is iter_search_index
+    // (matching the test name and the message expectations below).
+    manager = initTestModelsWithTenant(searchEnabledConfig, testId);
     manager.registerModel(IterableForMissingIndex);
     ModelClass = manager.getModel("IterableForMissingIndex");
   });
@@ -153,7 +162,7 @@ describe("filter on non-projected attribute → friendly error before round-trip
 
   beforeEach(() => {
     testId = ulid();
-    const manager = initTestModelsWithTenant(testConfig, testId);
+    const manager = initTestModelsWithTenant(searchEnabledConfig, testId);
     manager.registerModel(IterableForFilterCheck);
     ModelClass = manager.getModel("IterableForFilterCheck");
   });
@@ -220,15 +229,17 @@ describe("filter on non-projected attribute → friendly error before round-trip
   });
 
   test("preflight unit-test on the allowlist directly", () => {
-    // Direct unit test of _assertFilterFitsIterSearchIndex so we can confirm
-    // each projected attribute is allowed without going through the user-facing
-    // filter API (FilterExpressionBuilder's own validation rejects raw system
-    // field names — that's tracked as a separate enhancement).
+    // Direct unit test of _assertFilterFitsIterIndex so we can confirm each
+    // projected attribute is allowed without going through the user-facing
+    // filter API (FilterExpressionBuilder's own validation rejects raw
+    // system field names — that's tracked as a separate enhancement).
     expect(() =>
-      ModelClass._assertFilterFitsIterSearchIndex({ "#n1": "_searchText" }),
+      ModelClass._assertFilterFitsIterIndex("iter_search_index", {
+        "#n1": "_searchText",
+      }),
     ).not.toThrow();
     expect(() =>
-      ModelClass._assertFilterFitsIterSearchIndex({
+      ModelClass._assertFilterFitsIterIndex("iter_search_index", {
         "#n1": "_pk",
         "#n2": "_sk",
         "#n3": "_iter_pk",
@@ -236,8 +247,64 @@ describe("filter on non-projected attribute → friendly error before round-trip
       }),
     ).not.toThrow();
     expect(() =>
-      ModelClass._assertFilterFitsIterSearchIndex({ "#n1": "title" }),
+      ModelClass._assertFilterFitsIterIndex("iter_search_index", {
+        "#n1": "title",
+      }),
     ).toThrow(/aren't projected.*\[title\]/i);
+  });
+
+  test("preflight knows iter_index (legacy) is KEYS_ONLY — even _searchText is rejected", () => {
+    expect(() =>
+      ModelClass._assertFilterFitsIterIndex("iter_index", {
+        "#n1": "_searchText",
+      }),
+    ).toThrow(/aren't projected.*\[_searchText\]/);
+    expect(() =>
+      ModelClass._assertFilterFitsIterIndex("iter_index", {
+        "#n1": "_iter_pk",
+      }),
+    ).not.toThrow();
+  });
+});
+
+describe("searchAll without iter_search_index config → friendly migration hint", () => {
+  test("throws with step-by-step migration guidance when default index is iter_index", async () => {
+    class SearchableButDefaultConfig extends dynamoBao.BaoModel {
+      static modelPrefix = "sbd";
+      static iterable = true;
+      static iterationBuckets = 1;
+      static searchable = true;
+      static searchConfig = {
+        fields: ["title"],
+        caseSensitive: false,
+        minTermLength: 1,
+        dedupe: false,
+      };
+      static fields = {
+        id: dynamoBao.fields.UlidField({ autoAssign: true, required: true }),
+        title: dynamoBao.fields.StringField(),
+      };
+      static primaryKey = dynamoBao.PrimaryKeyConfig("id", "modelPrefix");
+    }
+
+    const testId = ulid();
+    // Use the DEFAULT testConfig — iterationIndexName not set, so the manager
+    // resolves to 'iter_index' (the legacy default).
+    const manager = initTestModelsWithTenant(testConfig, testId);
+    manager.registerModel(SearchableButDefaultConfig);
+    const ModelClass = manager.getModel("SearchableButDefaultConfig");
+
+    await expect(async () => {
+      for await (const _ of ModelClass.searchAll(["foo"])) {
+        // unreachable
+      }
+    }).rejects.toThrow(/searchAll requires the 'iter_search_index' GSI/i);
+
+    await expect(async () => {
+      for await (const _ of ModelClass.searchAll(["foo"])) {
+        // unreachable
+      }
+    }).rejects.toThrow(/iterationIndexName.*iter_search_index/i);
   });
 });
 

@@ -1,0 +1,2070 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>The token-hash-bucket index — an interactive demonstration</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Newsreader:opsz,ital,wght@6..72,0,400;6..72,0,500;6..72,1,400;6..72,1,500&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg: #f4ede0;
+    --bg-elev: #ebe1cd;
+    --bg-deep: #e2d6bb;
+    --ink: #1a1814;
+    --ink-soft: #6b6354;
+    --ink-faint: #9d9381;
+    --line: #d4cab8;
+    --line-soft: #e3d8c0;
+    --accent: #c4471c;
+    --accent-deep: #9d3614;
+    --accent-soft: #f0c1a3;
+    --accent-glow: rgba(196, 71, 28, 0.08);
+    --warn: #a23b3b;
+    --warn-soft: #e9c5c5;
+    --ok: #3d6e3d;
+    --ok-soft: #c8d8c8;
+    --hot: #d4823d;
+
+    --serif: 'Fraunces', 'Iowan Old Style', Georgia, serif;
+    --body: 'Newsreader', 'Iowan Old Style', Georgia, serif;
+    --mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html { font-size: 17px; }
+
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--body);
+    font-feature-settings: "kern", "liga", "onum";
+    line-height: 1.55;
+    min-height: 100vh;
+    background-image:
+      radial-gradient(circle at 12% 8%, rgba(196,71,28,0.04) 0%, transparent 28%),
+      radial-gradient(circle at 88% 92%, rgba(61,110,61,0.035) 0%, transparent 35%);
+    background-attachment: fixed;
+  }
+
+  /* ───── Layout ───── */
+
+  main {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 88px 56px 120px;
+  }
+
+  @media (max-width: 880px) {
+    main { padding: 56px 28px 80px; }
+  }
+
+  section { margin-top: 88px; }
+
+  .section-head {
+    display: flex;
+    align-items: baseline;
+    gap: 24px;
+    margin-bottom: 32px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid var(--line);
+  }
+  .section-head .num {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--ink-faint);
+    font-weight: 500;
+    letter-spacing: 0.1em;
+  }
+  .section-head h2 {
+    font-family: var(--serif);
+    font-weight: 500;
+    font-size: 28px;
+    font-variation-settings: "opsz" 36;
+    letter-spacing: -0.015em;
+    color: var(--ink);
+  }
+  .section-head .desc {
+    margin-left: auto;
+    max-width: 360px;
+    font-size: 14px;
+    color: var(--ink-soft);
+    font-style: italic;
+    line-height: 1.5;
+    text-align: right;
+  }
+
+  /* ───── Header ───── */
+
+  header.title {
+    margin-bottom: 0;
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 56px;
+  }
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.22em;
+    color: var(--accent);
+    font-weight: 500;
+    margin-bottom: 32px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .eyebrow::before, .eyebrow::after {
+    content: "";
+    height: 1px;
+    background: var(--accent);
+    opacity: 0.4;
+    flex: 0 0 28px;
+  }
+  .eyebrow span { flex: 0 0 auto; }
+  header.title h1 {
+    font-family: var(--serif);
+    font-weight: 400;
+    font-size: clamp(48px, 7vw, 86px);
+    line-height: 0.96;
+    letter-spacing: -0.035em;
+    font-variation-settings: "opsz" 144, "SOFT" 0, "WONK" 1;
+    color: var(--ink);
+    margin-bottom: 28px;
+  }
+  header.title h1 em {
+    font-style: italic;
+    font-weight: 400;
+    color: var(--accent);
+    font-variation-settings: "opsz" 144, "SOFT" 100, "WONK" 1;
+  }
+  header.title .lead {
+    font-family: var(--body);
+    font-size: 19px;
+    font-variation-settings: "opsz" 24;
+    line-height: 1.55;
+    color: var(--ink-soft);
+    max-width: 720px;
+    font-weight: 400;
+  }
+  header.title .lead strong {
+    color: var(--ink);
+    font-weight: 500;
+  }
+
+  /* ───── Controls ───── */
+
+  .controls {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr 1.4fr;
+    gap: 0;
+    border: 1px solid var(--line);
+    background: var(--bg-elev);
+  }
+  @media (max-width: 1100px) { .controls { grid-template-columns: 1fr 1fr; } .controls .control-cell.query-cell { grid-column: 1 / -1; border-top: 1px solid var(--line); border-left: none; } }
+  @media (max-width: 600px) { .controls { grid-template-columns: 1fr; } .controls .control-cell + .control-cell { border-left: none; border-top: 1px solid var(--line); } }
+
+  .control-cell {
+    padding: 32px 36px;
+  }
+  .control-cell + .control-cell {
+    border-left: 1px solid var(--line);
+  }
+  @media (max-width: 720px) {
+    .control-cell + .control-cell { border-left: none; border-top: 1px solid var(--line); }
+  }
+
+  .control-label {
+    font-family: var(--mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    color: var(--ink-faint);
+    margin-bottom: 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+  }
+  .control-label .hint {
+    font-family: var(--body);
+    font-style: italic;
+    text-transform: none;
+    letter-spacing: 0;
+    font-size: 13px;
+    color: var(--ink-soft);
+  }
+
+  .k-display {
+    font-family: var(--serif);
+    font-size: 56px;
+    font-variation-settings: "opsz" 72, "WONK" 1;
+    line-height: 1;
+    color: var(--ink);
+    margin-bottom: 20px;
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+  }
+  .k-display .label {
+    font-family: var(--body);
+    font-size: 14px;
+    font-style: italic;
+    color: var(--ink-soft);
+  }
+
+  input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 4px;
+    background: var(--line);
+    border-radius: 2px;
+    outline: none;
+    cursor: pointer;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: 3px solid var(--bg);
+    box-shadow: 0 0 0 1px var(--accent);
+    cursor: grab;
+    transition: transform 120ms ease;
+  }
+  input[type="range"]::-webkit-slider-thumb:active { transform: scale(1.15); cursor: grabbing; }
+  input[type="range"]::-moz-range-thumb {
+    width: 18px; height: 18px; border-radius: 50%;
+    background: var(--accent);
+    border: 3px solid var(--bg);
+    box-shadow: 0 0 0 1px var(--accent);
+    cursor: grab;
+  }
+  .k-marks {
+    display: flex;
+    justify-content: space-between;
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--ink-faint);
+    margin-top: 8px;
+    font-weight: 500;
+  }
+
+  input[type="text"].query {
+    width: 100%;
+    border: none;
+    border-bottom: 2px solid var(--ink);
+    background: transparent;
+    font-family: var(--serif);
+    font-size: 38px;
+    font-variation-settings: "opsz" 60, "WONK" 1;
+    color: var(--ink);
+    padding: 6px 0 12px;
+    outline: none;
+    transition: border-color 200ms ease;
+    font-weight: 400;
+  }
+  input[type="text"].query::placeholder {
+    color: var(--ink-faint);
+    font-style: italic;
+    opacity: 0.7;
+  }
+  input[type="text"].query:focus { border-bottom-color: var(--accent); }
+
+  .query-hints {
+    margin-top: 14px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+  }
+  .query-hints span.label {
+    font-family: var(--mono);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    color: var(--ink-faint);
+  }
+  .query-hints button {
+    font-family: var(--mono);
+    font-size: 11px;
+    border: 1px solid var(--line);
+    background: var(--bg);
+    color: var(--ink);
+    padding: 4px 10px;
+    border-radius: 999px;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+  .query-hints button:hover {
+    background: var(--accent);
+    color: var(--bg);
+    border-color: var(--accent);
+  }
+
+  .fp-toggle {
+    margin-top: 18px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-family: var(--mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    color: var(--ink-soft);
+    cursor: pointer;
+    user-select: none;
+  }
+  .fp-toggle input { display: none; }
+  .fp-toggle .switch {
+    width: 28px; height: 16px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    position: relative;
+    background: var(--bg);
+    transition: background 200ms ease;
+  }
+  .fp-toggle .switch::after {
+    content: "";
+    position: absolute;
+    top: 1px; left: 1px;
+    width: 12px; height: 12px;
+    border-radius: 50%;
+    background: var(--ink-faint);
+    transition: transform 200ms ease, background 200ms ease;
+  }
+  .fp-toggle input:checked + .switch { background: var(--warn); border-color: var(--warn); }
+  .fp-toggle input:checked + .switch::after { transform: translateX(12px); background: var(--bg); }
+
+  /* ───── Hash trace ───── */
+
+  .trace {
+    margin-top: 36px;
+    background: var(--ink);
+    color: var(--bg);
+    padding: 28px 36px;
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1.7;
+    border-left: 3px solid var(--accent);
+    overflow-x: auto;
+  }
+  .trace-preamble {
+    font-family: var(--body);
+    font-style: italic;
+    font-size: 14px;
+    color: rgba(244, 237, 224, 0.7);
+    line-height: 1.55;
+    margin-bottom: 24px;
+    padding-bottom: 22px;
+    border-bottom: 1px solid rgba(244, 237, 224, 0.1);
+    max-width: 720px;
+  }
+  .trace-preamble em {
+    color: var(--accent-soft);
+    font-style: italic;
+  }
+  .trace-section {
+    padding: 4px 0;
+  }
+  .trace-section + .trace-section {
+    margin-top: 18px;
+    padding-top: 22px;
+    border-top: 1px solid rgba(244, 237, 224, 0.09);
+  }
+  .trace-section-head {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    margin-bottom: 12px;
+    font-family: var(--body);
+    font-size: 15px;
+    color: var(--bg);
+    font-weight: 400;
+  }
+  .trace-section-head em {
+    font-style: italic;
+    color: var(--accent-soft);
+  }
+  .t-tag {
+    font-family: var(--mono);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    background: rgba(244, 237, 224, 0.12);
+    color: var(--bg);
+    padding: 3px 9px;
+    border-radius: 2px;
+    font-weight: 700;
+    flex: 0 0 auto;
+  }
+  .trace-section.featured .t-tag {
+    background: var(--accent);
+    color: var(--bg);
+  }
+  .trace-section.featured .trace-section-head {
+    color: var(--accent-soft);
+  }
+  .trace .step {
+    display: flex;
+    gap: 20px;
+    align-items: baseline;
+  }
+  .trace .step + .step { margin-top: 4px; }
+  .trace .step-tag {
+    color: var(--accent-soft);
+    font-weight: 500;
+    flex: 0 0 90px;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+  }
+  .trace-section:not(.featured) .step-tag {
+    color: rgba(244, 237, 224, 0.55);
+  }
+  .trace .step-val { color: var(--bg); }
+  .trace .step-val em {
+    font-style: italic;
+    color: var(--accent-soft);
+    font-family: var(--body);
+    font-size: 14px;
+  }
+  .trace-section:not(.featured) .step-val em {
+    color: rgba(244, 237, 224, 0.55);
+  }
+  .trace.empty {
+    color: var(--ink-faint);
+    font-style: italic;
+    font-family: var(--body);
+    font-size: 16px;
+    text-align: center;
+    padding: 40px;
+    background: var(--bg-elev);
+    border-left: 3px solid var(--line);
+  }
+
+  /* ───── Three approaches ───── */
+
+  .approaches {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 20px;
+  }
+  @media (max-width: 880px) { .approaches { grid-template-columns: 1fr; } }
+
+  .approach {
+    border: 1px solid var(--line);
+    background: var(--bg-elev);
+    padding: 28px;
+    position: relative;
+    transition: transform 200ms ease, box-shadow 200ms ease;
+  }
+  .approach.featured {
+    background: var(--bg);
+    border: 1px solid var(--accent);
+    border-top: 3px solid var(--accent);
+  }
+  .approach .approach-tag {
+    font-family: var(--mono);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    color: var(--ink-faint);
+  }
+  .approach.featured .approach-tag {
+    color: var(--accent);
+    font-weight: 500;
+  }
+  .approach h3 {
+    font-family: var(--serif);
+    font-weight: 500;
+    font-size: 22px;
+    font-variation-settings: "opsz" 30, "WONK" 1;
+    color: var(--ink);
+    margin: 6px 0 16px;
+    letter-spacing: -0.01em;
+  }
+  .approach .blurb {
+    font-size: 14px;
+    font-style: italic;
+    color: var(--ink-soft);
+    margin-bottom: 18px;
+    line-height: 1.5;
+  }
+
+  .approach .schema {
+    margin-bottom: 20px;
+    padding: 12px 14px;
+    background: var(--bg);
+    border: 1px solid var(--line-soft);
+    font-family: var(--mono);
+    font-size: 11px;
+    line-height: 1.7;
+    color: var(--ink-soft);
+  }
+  .approach.featured .schema {
+    background: var(--bg-elev);
+    border-color: var(--accent-soft);
+  }
+  .approach .schema-tag {
+    display: block;
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.16em;
+    color: var(--ink-faint);
+    margin-bottom: 6px;
+    font-weight: 500;
+  }
+  .approach .schema .key {
+    color: var(--accent);
+    font-weight: 500;
+  }
+  .approach .schema .val {
+    color: var(--ink);
+  }
+  .approach .schema .note {
+    display: block;
+    margin-top: 6px;
+    color: var(--ink-faint);
+    font-style: italic;
+    font-family: var(--body);
+    font-size: 12px;
+    line-height: 1.4;
+  }
+  .approach .stat {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 12px 0;
+    border-top: 1px dotted var(--line);
+  }
+  .approach .stat:last-of-type { border-bottom: 1px dotted var(--line); }
+  .approach .stat-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: var(--ink-faint);
+  }
+  .approach .stat-val {
+    font-family: var(--mono);
+    font-size: 20px;
+    font-weight: 500;
+    color: var(--ink);
+    transition: color 200ms ease;
+  }
+  .approach.featured .stat-val { color: var(--accent); }
+  .approach .stat-val .small {
+    font-size: 12px;
+    color: var(--ink-faint);
+    font-weight: 400;
+    margin-left: 4px;
+  }
+
+  .savings-callout {
+    margin-top: 18px;
+    padding: 12px 16px;
+    background: var(--accent-glow);
+    border-left: 2px solid var(--accent);
+    font-size: 13px;
+    color: var(--accent-deep);
+    font-style: italic;
+    line-height: 1.4;
+  }
+  .approach:not(.featured) .savings-callout { display: none; }
+
+  /* ───── Histogram ───── */
+
+  .histogram-wrap {
+    background: var(--bg-elev);
+    border: 1px solid var(--line);
+    padding: 36px 36px 28px;
+  }
+  .histogram-stats {
+    display: flex;
+    gap: 40px;
+    margin-bottom: 24px;
+    flex-wrap: wrap;
+  }
+  .histogram-stats .stat {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .histogram-stats .stat-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: var(--ink-faint);
+  }
+  .histogram-stats .stat-val {
+    font-family: var(--serif);
+    font-size: 28px;
+    font-variation-settings: "opsz" 36, "WONK" 1;
+    color: var(--ink);
+    font-weight: 500;
+  }
+  .histogram-stats .stat-val.warn { color: var(--hot); }
+  .histogram-stats .stat-val.ok { color: var(--ok); }
+
+  svg.histogram {
+    display: block;
+    width: 100%;
+    height: 240px;
+    overflow: visible;
+  }
+  svg.histogram rect.bar {
+    fill: var(--ink-soft);
+    transition: fill 200ms ease;
+  }
+  svg.histogram rect.bar.hot { fill: var(--hot); }
+  svg.histogram rect.bar.queried {
+    fill: var(--accent);
+  }
+  svg.histogram .axis-line {
+    stroke: var(--line);
+    stroke-width: 1;
+  }
+  svg.histogram .axis-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    fill: var(--ink-faint);
+    letter-spacing: 0.1em;
+  }
+  svg.histogram .annotation {
+    font-family: var(--mono);
+    font-size: 10px;
+    fill: var(--accent);
+    font-weight: 500;
+  }
+  @keyframes bar-rise {
+    from { transform: scaleY(0); opacity: 0; }
+    to { transform: scaleY(1); opacity: 1; }
+  }
+  svg.histogram.animate rect.bar {
+    transform-origin: bottom;
+    animation: bar-rise 350ms ease-out backwards;
+  }
+
+  .legend {
+    display: flex;
+    gap: 24px;
+    margin-top: 18px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--ink-soft);
+    flex-wrap: wrap;
+  }
+  .legend .swatch {
+    display: inline-block;
+    width: 12px; height: 12px;
+    margin-right: 6px;
+    vertical-align: middle;
+    border-radius: 2px;
+  }
+  .legend .swatch.normal { background: var(--ink-soft); }
+  .legend .swatch.hot { background: var(--hot); }
+  .legend .swatch.queried { background: var(--accent); }
+
+  /* ───── Data panels ───── */
+
+  .data-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 28px;
+  }
+  @media (max-width: 1000px) { .data-grid { grid-template-columns: 1fr; } }
+
+  .data-panel {
+    border: 1px solid var(--line);
+    background: var(--bg);
+    display: flex;
+    flex-direction: column;
+    min-height: 580px;
+    max-height: 580px;
+  }
+  .data-panel-head {
+    padding: 18px 24px;
+    border-bottom: 1px solid var(--line);
+    background: var(--bg-elev);
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+  }
+  .data-panel-head h3 {
+    font-family: var(--serif);
+    font-weight: 500;
+    font-size: 18px;
+    font-variation-settings: "opsz" 24;
+    color: var(--ink);
+    letter-spacing: -0.005em;
+  }
+  .data-panel-head .meta {
+    font-family: var(--mono);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    color: var(--ink-faint);
+  }
+
+  .panel-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px 0;
+  }
+  .panel-body::-webkit-scrollbar { width: 8px; }
+  .panel-body::-webkit-scrollbar-track { background: transparent; }
+  .panel-body::-webkit-scrollbar-thumb { background: var(--line); border-radius: 4px; }
+
+  /* Corpus list */
+  .corpus-item {
+    padding: 12px 24px 14px;
+    border-left: 3px solid transparent;
+    transition: background 150ms ease, border-color 150ms ease;
+    position: relative;
+  }
+  .corpus-item + .corpus-item { border-top: 1px dotted var(--line-soft); }
+  .corpus-item.match {
+    border-left-color: var(--ok);
+    background: var(--ok-soft);
+  }
+  .corpus-item.match .marker { color: var(--ok); }
+  .corpus-item.fp {
+    border-left-color: var(--warn);
+    background: var(--warn-soft);
+  }
+  .corpus-item.fp .marker { color: var(--warn); }
+  .corpus-item .row1 {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    margin-bottom: 4px;
+  }
+  .corpus-item .name {
+    font-family: var(--serif);
+    font-weight: 500;
+    font-size: 16px;
+    font-variation-settings: "opsz" 18;
+    color: var(--ink);
+  }
+  .corpus-item .id {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--ink-faint);
+  }
+  .corpus-item .marker {
+    font-family: var(--mono);
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.16em;
+    margin-left: auto;
+    font-weight: 500;
+    opacity: 0;
+    transition: opacity 150ms ease;
+  }
+  .corpus-item.match .marker, .corpus-item.fp .marker { opacity: 1; }
+  .corpus-item .bio {
+    font-size: 14px;
+    color: var(--ink-soft);
+    line-height: 1.45;
+  }
+  .corpus-item .tokens-row {
+    margin-top: 8px;
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--ink-faint);
+    line-height: 1.7;
+  }
+  .corpus-item .tokens-row .label {
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    margin-right: 6px;
+    color: var(--ink-faint);
+  }
+  .corpus-item .tokens-row .tk {
+    display: inline-block;
+    padding: 1px 6px;
+    background: var(--bg-elev);
+    border-radius: 2px;
+    margin: 1px 2px 1px 0;
+    color: var(--ink);
+    font-size: 10px;
+  }
+  .corpus-item .tokens-row .tk.pad {
+    background: transparent;
+    border: 1px dashed var(--line);
+    color: var(--ink-faint);
+    font-style: italic;
+  }
+  .corpus-item .tokens-row .tk.hit {
+    background: var(--accent);
+    color: var(--bg);
+    font-weight: 500;
+  }
+  .corpus-item .buckets {
+    margin-top: 6px;
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--ink-faint);
+    letter-spacing: 0.05em;
+  }
+  .corpus-item .buckets .b {
+    display: inline-block;
+    padding: 1px 5px;
+    background: var(--bg-elev);
+    border-radius: 2px;
+    margin-right: 3px;
+  }
+  .corpus-item .buckets .b.hit {
+    background: var(--accent);
+    color: var(--bg);
+  }
+
+  .ddb-submeta {
+    padding: 8px 24px 10px;
+    border-bottom: 1px dotted var(--line);
+    background: var(--bg);
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--ink-faint);
+  }
+  .ddb-submeta strong {
+    font-weight: 700;
+    color: var(--ink);
+  }
+
+  /* Storage view selector */
+  .storage-tabs {
+    display: flex;
+    gap: 4px;
+  }
+  .storage-tab {
+    font-family: var(--mono);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    border: 1px solid var(--line);
+    background: var(--bg);
+    color: var(--ink-soft);
+    padding: 4px 10px;
+    cursor: pointer;
+    border-radius: 2px;
+    transition: all 150ms ease;
+  }
+  .storage-tab.active {
+    background: var(--ink);
+    color: var(--bg);
+    border-color: var(--ink);
+  }
+
+  /* DDB table */
+  .ddb-table {
+    font-family: var(--mono);
+    font-size: 11px;
+    width: 100%;
+    border-collapse: collapse;
+  }
+  .ddb-table .text-cell {
+    color: var(--ink-faint);
+    font-style: italic;
+    font-family: var(--body);
+    font-size: 12px;
+    max-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .ddb-table tbody tr.queried .text-cell { color: var(--ink-soft); }
+  .ddb-table thead th {
+    text-align: left;
+    padding: 10px 24px;
+    border-bottom: 1px solid var(--line);
+    font-weight: 500;
+    color: var(--ink-faint);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    background: var(--bg);
+    position: sticky;
+    top: 0;
+    z-index: 1;
+  }
+  .ddb-table tbody td {
+    padding: 5px 24px;
+    color: var(--ink-soft);
+    border-bottom: 1px dotted var(--line-soft);
+    transition: color 150ms ease, background 150ms ease;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .ddb-table tbody tr.queried td {
+    color: var(--ink);
+    background: var(--accent-glow);
+    font-weight: 500;
+  }
+  .ddb-table tbody tr.queried td:first-child {
+    box-shadow: inset 3px 0 var(--accent);
+  }
+  .ddb-table.dim-others tbody tr:not(.queried) td {
+    opacity: 0.35;
+  }
+
+  /* Footer */
+  footer {
+    margin-top: 120px;
+    padding-top: 32px;
+    border-top: 1px solid var(--line);
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--ink-faint);
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  footer em {
+    font-family: var(--body);
+    text-transform: none;
+    letter-spacing: 0;
+    font-style: italic;
+    color: var(--ink-soft);
+    font-size: 13px;
+  }
+
+  .note {
+    font-size: 13px;
+    font-style: italic;
+    color: var(--ink-soft);
+    line-height: 1.55;
+    max-width: 720px;
+    margin-top: 20px;
+    padding-left: 14px;
+    border-left: 2px solid var(--line);
+  }
+</style>
+</head>
+<body>
+<main>
+
+  <!-- ─────────────── HEADER ─────────────── -->
+  <header class="title">
+    <p class="eyebrow"><span>Technical demonstration · 2026</span></p>
+    <h1>The token-hash<br/>—bucket <em>index</em></h1>
+    <p class="lead">
+      A probabilistic alternative to full-table scans for substring-style queries in DynamoDB.
+      Instead of one index entry per token, each document writes one entry per <strong>bucket</strong> — a hash of its tokens, modulo K.
+      Reads target a single partition. False positives are tunable. Write amplification is bounded.
+    </p>
+  </header>
+
+  <!-- ─────────────── CONTROLS ─────────────── -->
+  <section>
+    <div class="section-head">
+      <span class="num">01</span>
+      <h2>Configuration &amp; query</h2>
+      <p class="desc">K controls the false-positive / storage tradeoff. The query uses the first token only.</p>
+    </div>
+
+    <div class="controls">
+      <div class="control-cell">
+        <div class="control-label">
+          <span>Corpus size</span>
+          <span class="hint">documents</span>
+        </div>
+        <div class="k-display">
+          <span id="n-value">80</span>
+          <span class="label">docs</span>
+        </div>
+        <input type="range" id="n-slider" min="20" max="500" step="10" value="80" />
+        <div class="k-marks">
+          <span>20</span><span>100</span><span>200</span><span>300</span><span>400</span><span>500</span>
+        </div>
+      </div>
+
+      <div class="control-cell">
+        <div class="control-label">
+          <span>K — number of buckets</span>
+          <span class="hint">log scale</span>
+        </div>
+        <div class="k-display">
+          <span id="k-value">64</span>
+          <span class="label">buckets</span>
+        </div>
+        <input type="range" id="k-slider" min="0" max="6" step="1" value="3" />
+        <div class="k-marks">
+          <span>8</span><span>16</span><span>32</span><span>64</span><span>128</span><span>256</span><span>512</span>
+        </div>
+      </div>
+
+      <div class="control-cell">
+        <div class="control-label">
+          <span>Tokens per doc</span>
+          <span class="hint">target after dedup</span>
+        </div>
+        <div class="k-display">
+          <span id="t-value">10</span>
+          <span class="label">tokens</span>
+        </div>
+        <input type="range" id="t-slider" min="3" max="50" step="1" value="10" />
+        <div class="k-marks">
+          <span>3</span><span>10</span><span>20</span><span>30</span><span>40</span><span>50</span>
+        </div>
+      </div>
+
+      <div class="control-cell query-cell">
+        <div class="control-label">
+          <span>Search query</span>
+          <span class="hint">single token</span>
+        </div>
+        <input type="text" class="query" id="query-input" placeholder="alpha" autocomplete="off" />
+        <div class="query-hints">
+          <span class="label">Try</span>
+          <button data-q="alpha">alpha</button>
+          <button data-q="engineer">engineer</button>
+          <button data-q="design">design</button>
+          <button data-q="kubernetes">kubernetes</button>
+          <button data-q="zeppelin">zeppelin</button>
+        </div>
+        <label class="fp-toggle" for="fp-toggle">
+          <input type="checkbox" id="fp-toggle" />
+          <span class="switch"></span>
+          <span>Highlight hash collisions</span>
+        </label>
+      </div>
+    </div>
+
+    <pre class="trace empty" id="trace">Type a search term to trace the lookup path.</pre>
+  </section>
+
+  <!-- ─────────────── THREE APPROACHES ─────────────── -->
+  <section>
+    <div class="section-head">
+      <span class="num">02</span>
+      <h2>Three approaches, one query</h2>
+      <p class="desc">Updates as K and the query change. Same dataset, same semantics — different cost shapes.</p>
+    </div>
+
+    <div class="approaches" id="approaches">
+      <article class="approach" data-key="scan">
+        <div class="approach-tag">A · iter index + searchText projection</div>
+        <h3>Bucketed scan, server-side filter</h3>
+        <p class="blurb">One record per doc with <code>searchText</code> projected. Query every iter bucket in parallel; DynamoDB applies <code>contains()</code> server-side. Returns exact docIds — no hydration needed.</p>
+        <div class="schema">
+          <span class="schema-tag">Index record · INCLUDE searchText</span>
+          <span class="key">pk</span> = <span class="val">"[acme]#iter#bucket:N"</span><br/>
+          <span class="key">sk</span> = <span class="val">docId</span><br/>
+          <span class="key">project</span> = <span class="val">searchText  // lowercase token concat</span>
+          <span class="note">Read: Query each iter bucket → DynamoDB scans all index entries with FilterExpression <code>contains(searchText, term)</code>. Returns only docIds whose searchText matches. No batchFind, no client filter.</span>
+        </div>
+        <div class="stat"><span class="stat-label">Items read · query</span><span class="stat-val" data-stat="read">—</span></div>
+        <div class="stat"><span class="stat-label">Bytes scanned · query</span><span class="stat-val" data-stat="readBytes">—</span></div>
+        <div class="stat"><span class="stat-label">Items returned</span><span class="stat-val" data-stat="returned">—</span></div>
+        <div class="stat"><span class="stat-label">Storage · records</span><span class="stat-val" data-stat="store">—</span></div>
+        <div class="stat"><span class="stat-label">Storage · bytes</span><span class="stat-val" data-stat="bytes">—</span></div>
+        <div class="stat"><span class="stat-label">Write amp · records / save</span><span class="stat-val" data-stat="writeRecs">—</span></div>
+        <div class="stat"><span class="stat-label">Write amp · bytes / save</span><span class="stat-val" data-stat="writeBytes">—</span></div>
+      </article>
+
+      <article class="approach" data-key="inverted">
+        <div class="approach-tag">B · inverted index · KEYS_ONLY</div>
+        <h3>Direct partition lookup per term</h3>
+        <p class="blurb">One record per (token, doc). One Query per term returns matching docIds directly — every record returned <em>is</em> a match. Multi-term AND/OR is N queries combined client-side with set ops.</p>
+        <div class="schema">
+          <span class="schema-tag">Index record · KEYS_ONLY</span>
+          <span class="key">pk</span> = <span class="val">"[acme]#term:" + lower(token)</span><br/>
+          <span class="key">sk</span> = <span class="val">docId</span><br/>
+          <span class="key">project</span> = <span class="val">— (keys only; no FilterExpression needed)</span>
+          <span class="note">Read: Query the term partition. Items returned = exact matches. For "alpha AND beta": one Query per term, intersect docId sets in client. For OR: union them. No partition scan.</span>
+        </div>
+        <div class="stat"><span class="stat-label">Items read · query</span><span class="stat-val" data-stat="read">—</span></div>
+        <div class="stat"><span class="stat-label">Bytes scanned · query</span><span class="stat-val" data-stat="readBytes">—</span></div>
+        <div class="stat"><span class="stat-label">Items returned</span><span class="stat-val" data-stat="returned">—</span></div>
+        <div class="stat"><span class="stat-label">Storage · records</span><span class="stat-val" data-stat="store">—</span></div>
+        <div class="stat"><span class="stat-label">Storage · bytes</span><span class="stat-val" data-stat="bytes">—</span></div>
+        <div class="stat"><span class="stat-label">Write amp · records / save</span><span class="stat-val" data-stat="writeRecs">—</span></div>
+        <div class="stat"><span class="stat-label">Write amp · bytes / save</span><span class="stat-val" data-stat="writeBytes">—</span></div>
+      </article>
+
+      <article class="approach featured" data-key="bucket">
+        <div class="approach-tag">C · token-hash-bucket + searchText projection</div>
+        <h3>Hashed partition, server-side verify</h3>
+        <p class="blurb">One record per (bucket, doc), with <code>searchText</code> projected. Hash narrows the partition; DynamoDB's <code>contains()</code> filter eliminates hash collisions server-side. Returns exact docIds.</p>
+        <div class="schema">
+          <span class="schema-tag">Index record · INCLUDE searchText</span>
+          <span class="key">pk</span> = <span class="val">"[acme]#bucket:" + (djb2(token) mod K)</span><br/>
+          <span class="key">sk</span> = <span class="val">docId</span><br/>
+          <span class="key">project</span> = <span class="val">searchText</span>
+          <span class="note">Read: hash term → bucket B → Query partition with FilterExpression <code>contains(searchText, term)</code>. DynamoDB scans the bucket, filters server-side, returns exact matches. Caps both partition heat (via K) and read scope (via bucketing).</span>
+        </div>
+        <div class="stat"><span class="stat-label">Items read · query</span><span class="stat-val" data-stat="read">—</span></div>
+        <div class="stat"><span class="stat-label">Bytes scanned · query</span><span class="stat-val" data-stat="readBytes">—</span></div>
+        <div class="stat"><span class="stat-label">Items returned</span><span class="stat-val" data-stat="returned">—</span></div>
+        <div class="stat"><span class="stat-label">Storage · records</span><span class="stat-val" data-stat="store">—</span></div>
+        <div class="stat"><span class="stat-label">Storage · bytes</span><span class="stat-val" data-stat="bytes">—</span></div>
+        <div class="stat"><span class="stat-label">Write amp · records / save</span><span class="stat-val" data-stat="writeRecs">—</span></div>
+        <div class="stat"><span class="stat-label">Write amp · bytes / save</span><span class="stat-val" data-stat="writeBytes">—</span></div>
+        <div class="savings-callout" id="savings-callout">Adjust K and run a query to see savings.</div>
+      </article>
+    </div>
+
+    <p class="note">
+      All three approaches return <strong>exact docIds with zero false positives</strong>. The differences live in <em>items read</em> (RCU cost), <em>storage bytes</em> (capacity cost), <em>write amplification</em> (WCU cost on save), and <em>client complexity</em> (B requires multi-query set operations for compound terms).<br/><br/>
+      <strong>On write amp:</strong> the record-count metric tells only half the story. B writes many records but each is just keys (~50 bytes) — cheap per write. C writes fewer records than B but each duplicates the full <code>searchText</code> projection — so bytes/save can dominate even when record-count looks competitive. Both bytes and record count contribute to WCU billing (DynamoDB rounds each write up to the nearest KB).
+    </p>
+  </section>
+
+  <!-- ─────────────── HISTOGRAM ─────────────── -->
+  <section>
+    <div class="section-head">
+      <span class="num">03</span>
+      <h2>Bucket distribution</h2>
+      <p class="desc">Records per bucket at the current K. Hot buckets — those holding more than 2× the average — are flagged.</p>
+    </div>
+
+    <div class="histogram-wrap">
+      <div class="histogram-stats">
+        <div class="stat">
+          <span class="stat-label">Total records</span>
+          <span class="stat-val" id="hist-total">—</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">Mean per bucket</span>
+          <span class="stat-val" id="hist-mean">—</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">Max bucket</span>
+          <span class="stat-val" id="hist-max">—</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">Hot buckets <span style="font-family:var(--body); text-transform:none; letter-spacing:0; font-style:italic; font-size:11px;">(&gt;&nbsp;2× mean)</span></span>
+          <span class="stat-val" id="hist-hot">—</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">Empty buckets</span>
+          <span class="stat-val" id="hist-empty">—</span>
+        </div>
+      </div>
+      <svg class="histogram" id="histogram" viewBox="0 0 1000 240" preserveAspectRatio="none"></svg>
+      <div class="legend">
+        <span><span class="swatch normal"></span>normal</span>
+        <span><span class="swatch hot"></span>hot bucket</span>
+        <span><span class="swatch queried"></span>queried bucket</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─────────────── DATA ─────────────── -->
+  <section>
+    <div class="section-head">
+      <span class="num">04</span>
+      <h2>Corpus &amp; storage</h2>
+      <p class="desc">Left: source documents and their bucket assignments. Right: the actual rows that would land in DynamoDB.</p>
+    </div>
+
+    <div class="data-grid">
+      <div class="data-panel">
+        <div class="data-panel-head">
+          <h3>Corpus <span id="corpus-size-label" style="color:var(--ink-faint); font-size:13px; font-style:italic; margin-left:8px;">80 user records</span></h3>
+          <span class="meta" id="corpus-meta">—</span>
+        </div>
+        <div class="panel-body">
+          <ul id="corpus-list" style="list-style:none;"></ul>
+        </div>
+      </div>
+
+      <div class="data-panel">
+        <div class="data-panel-head">
+          <h3>DynamoDB · index for selected approach</h3>
+          <div class="storage-tabs" id="storage-tabs">
+            <button class="storage-tab" data-view="scan">A</button>
+            <button class="storage-tab" data-view="inverted">B</button>
+            <button class="storage-tab active" data-view="bucket">C</button>
+          </div>
+        </div>
+        <div class="ddb-submeta">
+          <span style="color:var(--ink-soft); font-style:italic; font-family:var(--body); text-transform:none; letter-spacing:0; font-size:12px;">Each tab is a separate, independent index — switch to compare storage shapes.</span>
+          <br/><span class="meta" id="ddb-meta">—</span>
+        </div>
+        <div class="panel-body">
+          <table class="ddb-table" id="ddb-table">
+            <thead id="ddb-thead">
+              <tr>
+                <th style="width:50%">PK · partition key</th>
+                <th>SK · sort key</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <span>dynamo-bao · indexing exploration · 2026-05</span>
+    <em>Adjust K to see writes vs. false-positive tradeoff. The interesting band is K∈[16,&nbsp;128] for this corpus.</em>
+  </footer>
+</main>
+
+<script>
+// ───── DATA ─────
+
+const corpusData = [
+  ['Alice Chen',          'Backend engineer specializing in distributed systems and Kubernetes orchestration.'],
+  ['Bob Alvarez',         'Designer turned developer focused on accessible web interfaces and design systems.'],
+  ['Carlos Alpha-Tester', 'Database engineer building query optimizers for analytical alpha workloads.'],
+  ['Diane Foster',        'Frontend engineer with a passion for typography motion and editorial layouts.'],
+  ['Elena Washington',    'Site reliability engineer working on observability stacks and incident response.'],
+  ['Felix Brennan',       'Data engineer building real-time analytics pipelines for retail forecasting.'],
+  ['Grace Park',          'Product designer focused on data visualization tools for engineering teams.'],
+  ['Henry Morgan',        'Security engineer specializing in cryptographic protocols and key management.'],
+  ['Iris Lockwood',       'Machine learning engineer building recommendation systems and ranking models.'],
+  ['Jack Carmichael',     'Systems programmer working on database internals and storage engines.'],
+  ['Kira Sanderson',      'Mobile developer building offline-first applications with sync engines.'],
+  ['Leo Patel',           'DevOps engineer managing multi-region deployments and infrastructure as code.'],
+  ['Maya Rosenberg',      'Research scientist working on natural language processing and transformers.'],
+  ['Nathan Brooks',       'Cloud architect designing serverless infrastructure for event-driven systems.'],
+  ['Olivia Tran',         'Engineering manager leading the platform infrastructure team.'],
+  ['Paul Henderson',      'Performance engineer optimizing query execution plans for analytical databases.'],
+  ['Quinn Mitchell',      'Open source maintainer of test frameworks and continuous integration tools.'],
+  ['Riley Vasquez',       'Game developer building procedurally generated worlds with custom engines.'],
+  ['Sasha Klein',         'UX designer specializing in form input interactions and validation patterns.'],
+  ['Theo Yoshida',        'Compiler engineer working on garbage collection algorithms for managed runtimes.'],
+  ['Una Bergstrom',       'API designer with strong opinions on REST conventions and versioning strategies.'],
+  ['Victor Nguyen',       'Embedded systems engineer building IoT firmware for industrial sensors.'],
+  ['Wendy Salazar',       'Build engineer maintaining continuous integration pipelines and release tooling.'],
+  ['Xavier Donovan',      'Network engineer designing edge computing architectures and global load balancers.'],
+  ['Yuki Tanaka',         'Graphics programmer working on real-time rendering for design software.'],
+  ['Zara Mostafa',        'Database administrator managing petabyte-scale clusters and replication topology.'],
+  ['Adrian Kowalski',     'Frontend architect building component design systems with alpha and beta release tooling.'],
+  ['Bianca Rodriguez',    'Content strategist working on developer documentation and onboarding flows.'],
+  ['Connor Whitfield',    'Site reliability engineer focused on incident response and postmortem culture.'],
+  ['Daria Petrov',        'Data scientist building forecasting models for retail and supply chain teams.'],
+  ['Ethan Holloway',      'Backend engineer working on payment processing systems and idempotency guarantees.'],
+  ['Fiona MacLeod',       'Engineering lead for the authentication and identity team.'],
+  ['Gabriel Santos',      'Robotics engineer building autonomous warehouse systems and motion planning.'],
+  ['Hana Suzuki',         'Product manager for developer tools and API platforms.'],
+  ['Ivan Petrov',         'Systems engineer optimizing kernel and OS interactions for low-latency workloads.'],
+  ['Julia Ivanova',       'Senior engineer working on database query optimization and statistics planning.'],
+  ['Kai Lindberg',        'Frontend engineer specializing in animation and transition choreography.'],
+  ['Luna Martinez',       'Designer focused on typography and editorial layouts for long-form content.'],
+  ['Marcus Johnson',      'Security researcher analyzing cryptographic vulnerabilities in protocols.'],
+  ['Nora Eriksson',       'Engineering director overseeing the infrastructure platform organization.'],
+  ['Omar Fakhouri',       'Data engineer building event streaming architectures with exactly-once semantics.'],
+  ['Penelope Mason',      'Test engineer focused on chaos engineering, alpha rollouts, and resilience testing.'],
+  ['Quentin Albrecht',    'Backend engineer working on graph query languages and traversal optimization.'],
+  ['Rosalind Park',       'Machine learning engineer focused on transformer architectures and attention.'],
+  ['Sebastian Vargas',    'Open source maintainer of database drivers and protocol clients.'],
+  ['Tara Devereux',       'Frontend engineer working on accessibility standards and assistive tech testing.'],
+  ['Uma Krishnan',        'Engineering manager for the data infrastructure team.'],
+  ['Valentin Kowalik',    'Site reliability engineer building monitoring systems and alerting pipelines.'],
+  ['Willow Asimov',       'Product designer working on collaborative editing features for real-time docs.'],
+  ['Xander Brevoort',     'Database engineer specializing in storage engines and write-ahead logging.'],
+  ['Yara Khalil',         'Cloud engineer building multi-cloud orchestration and migration tools.'],
+  ['Zach Holloway',       'Engineering manager for platform reliability and capacity planning.'],
+  ['Astrid Lindqvist',    'Backend engineer working on real-time messaging and pub-sub infrastructure.'],
+  ['Beau Kavanagh',       'Designer focused on motion and interaction patterns for mobile applications.'],
+  ['Cassia Moreno',       'Data engineer building feature stores for machine learning systems.'],
+  ['Dante Ferrari',       'Systems engineer working on virtualization and container runtime internals.'],
+  ['Eloise Brennan',      'Frontend engineer specializing in canvas WebGL and shader programming.'],
+  ['Finn Galloway',       'Backend engineer working on search and indexing systems for content platforms.'],
+  ['Genevieve Park',      'Engineering lead for the developer experience team.'],
+  ['Hugo Almeida',        'Site reliability engineer focused on capacity planning and cost optimization.'],
+  ['Ines Salah',          'Machine learning engineer working on computer vision and image segmentation.'],
+  ['Jasper Dupont',       'Compiler engineer working on JavaScript engines and JIT optimization.'],
+  ['Kassia Pereira',      'Data scientist focused on causal inference methods and experimentation design.'],
+  ['Liam OSullivan',      'Backend engineer working on event-driven architectures with kafka and pulsar.'],
+  ['Mira Voronova',       'Systems engineer building file systems and persistent storage infrastructure.'],
+  ['Niko Karpov',         'Open source maintainer of testing libraries and assertion frameworks.'],
+  ['Octavia Reyes',       'Frontend engineer working on design tokens and theming infrastructure.'],
+  ['Pablo Fernandez',     'Cloud engineer building cost optimization tools for multi-cloud environments.'],
+  ['Quincy Aldridge',     'Backend engineer working on rate limiting and quota management for alpha environments.'],
+  ['Rita Nakamura',       'Designer focused on data visualization and operational dashboards.'],
+  ['Sergei Ivanov',       'Database engineer working on distributed transactions and consensus protocols.'],
+  ['Talia Goldberg',      'Frontend engineer specializing in form validation and accessibility patterns.'],
+  ['Ulysses Park',        'Backend engineer working on workflow orchestration and durable execution.'],
+  ['Vivian Tate',         'Engineering manager for the backend infrastructure team.'],
+  ['Wren Bellweather',    'Site reliability engineer working on chaos testing and game-day exercises.'],
+  ['Xiao Liu',            'Machine learning engineer focused on recommendation systems and ranking quality.'],
+  ['Yael Shapiro',        'Backend engineer working on graph databases and traversal algorithms.'],
+  ['Zane Maddox',         'Frontend engineer building developer documentation tools and search experiences.'],
+  ['Aria Kowalczyk',      'Designer focused on accessibility and inclusive design for global products.'],
+  ['Bram Hendricks',      'Backend engineer working on distributed consensus and zeppelin notebook tools.'],
+];
+
+const STOPWORDS = new Set(['the','a','an','of','and','to','in','is','it','for','on','with','at','by','from']);
+
+// Vocabulary pool used to pad short bios up to the target tokens/doc.
+// Words are deliberately distinct from the curated bios so padding is visible.
+const VOCAB_POOL = [
+  'pipeline','schema','workflow','protocol','algorithm','registry','catalog',
+  'manifest','partition','cluster','sharding','replication','consensus',
+  'leader','follower','quorum','consistency','availability','durability',
+  'latency','throughput','batching','streaming','queue','topic','channel',
+  'subscriber','consumer','producer','broker','router','gateway','proxy',
+  'mesh','sidecar','operator','controller','reconciler','scheduler','planner',
+  'optimizer','executor','runtime','sandbox','isolation','tenancy','quota',
+  'throttle','retry','idempotency','snapshot','journal','wal','checkpoint',
+  'recovery','failover','rollout','rollback','telemetry','metric','tracing',
+  'profiling','sampling','heuristic','manifest','envelope','payload','header',
+  'token','signature','attestation','encryption','rotation','escrow','vault',
+  'audit','lineage','provenance','schema','migration','seeding','fixture',
+  'replay','rebalance','compaction','vacuum','garbage'
+];
+
+// ───── HELPERS ─────
+
+function tokenize(text) {
+  const seen = new Set();
+  const out = [];
+  for (const raw of text.toLowerCase().split(/[^a-z0-9]+/)) {
+    if (raw.length < 2) continue;
+    if (STOPWORDS.has(raw)) continue;
+    if (seen.has(raw)) continue;
+    seen.add(raw);
+    out.push(raw);
+  }
+  return out;
+}
+
+function djb2(str) {
+  let h = 5381;
+  for (let i = 0; i < str.length; i++) {
+    h = ((h << 5) + h + str.charCodeAt(i)) | 0;
+  }
+  return h >>> 0;
+}
+
+function hex(n, width = 8) {
+  return '0x' + n.toString(16).padStart(width, '0');
+}
+
+function fakeUlid(seed) {
+  // Deterministic, *unique* per seed. The previous version multiplied a 32-bit
+  // accumulator by Knuth's constant each iteration, which lost precision in
+  // JS doubles and drifted to zero for many seeds — producing massive ID
+  // collisions (only ~32 unique IDs across 500 seeds). This version encodes
+  // the seed directly in the suffix so uniqueness is guaranteed, with a
+  // hash-derived prefix purely for visual variety.
+  const charset = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+  let h = djb2('ulid:' + seed);
+  let prefix = '';
+  for (let i = 0; i < 6; i++) {
+    prefix += charset[h & 0x1f];
+    h = h >>> 5;
+  }
+  let suffix = '';
+  let s = seed;
+  while (suffix.length < 20) {
+    suffix = charset[s & 0x1f] + suffix;
+    s = s >>> 5;
+  }
+  return prefix + suffix;
+}
+
+const TENANT = 'acme';
+
+// ───── BUILD CORPUS ─────
+
+// Pull first / last names out of the curated set so synthetic docs blend in.
+const _firstNames = [...new Set(corpusData.map(([n]) => n.split(' ')[0]))];
+const _lastNames  = [...new Set(corpusData.map(([n]) => {
+  const parts = n.split(' ').slice(1);
+  return parts.join(' ').split('-')[0];
+}).filter(Boolean))];
+const _roles = [
+  'Backend engineer', 'Frontend engineer', 'Site reliability engineer',
+  'Mobile developer', 'Data engineer', 'Machine learning engineer',
+  'Compiler engineer', 'Cloud architect', 'Product designer', 'DevOps engineer',
+  'Database engineer', 'Security researcher', 'Engineering manager',
+  'Open source maintainer', 'Network engineer', 'Embedded systems engineer',
+  'Graphics programmer', 'Systems programmer', 'Data scientist', 'Test engineer',
+];
+const _verbs = ['building', 'maintaining', 'designing', 'optimizing', 'leading', 'shipping', 'running'];
+
+function generateDoc(seed) {
+  let h = djb2('gen:' + seed);
+  const n = () => { h = ((h * 2654435761) | 0) >>> 0; return h; };
+  const fn = _firstNames[n() % _firstNames.length];
+  const ln = _lastNames[n() % _lastNames.length];
+  const role = _roles[n() % _roles.length];
+  const verb = _verbs[n() % _verbs.length];
+  const wc = 4 + (n() % 4);
+  const words = [];
+  while (words.length < wc) {
+    const w = VOCAB_POOL[n() % VOCAB_POOL.length];
+    if (!words.includes(w)) words.push(w);
+  }
+  const bio = `${role} ${verb} ${words.slice(0, 2).join(' ')} for ${words.slice(2).join(' ')}.`;
+  return [`${fn} ${ln}`, bio];
+}
+
+// Each doc has a *natural* token list (tokenized from the curated bio) and
+// an *indexed* token list driven by the tokens-per-doc slider. Padding tokens
+// are pulled deterministically from VOCAB_POOL; truncation just slices.
+let corpus = [];
+let corpusById = new Map();
+
+function rebuildCorpusFromSize(size) {
+  corpus = [];
+  for (let i = 0; i < size; i++) {
+    let row;
+    if (i < corpusData.length) {
+      row = corpusData[i];
+    } else {
+      row = generateDoc(i);
+    }
+    const [name, bio] = row;
+    const id = fakeUlid(i);
+    const naturalTokens = tokenize(name + ' ' + bio);
+    corpus.push({
+      id, name, naturalBio: bio, naturalTokens,
+      indexedTokens: naturalTokens,
+      tokenSet: new Set(naturalTokens),
+      padTokens: [],
+    });
+  }
+  corpusById = new Map(corpus.map(d => [d.id, d]));
+}
+
+rebuildCorpusFromSize(80);
+
+function generatePaddingTokens(seed, count, exclude) {
+  const out = [];
+  let h = djb2('pad:' + seed);
+  let safety = 0;
+  while (out.length < count && safety++ < count * 8) {
+    const w = VOCAB_POOL[h % VOCAB_POOL.length];
+    h = ((h * 2654435761) | 0) >>> 0;
+    if (!exclude.has(w) && !out.includes(w)) out.push(w);
+  }
+  // If we somehow ran out of unique words, allow repeats (rare with our pool size).
+  while (out.length < count) {
+    out.push(VOCAB_POOL[h % VOCAB_POOL.length]);
+    h = ((h * 2654435761) | 0) >>> 0;
+  }
+  return out;
+}
+
+function rebuildCorpusTokens(targetTokens) {
+  for (const doc of corpus) {
+    const nat = doc.naturalTokens;
+    if (nat.length >= targetTokens) {
+      doc.indexedTokens = nat.slice(0, targetTokens);
+      doc.padTokens = [];
+    } else {
+      const pad = generatePaddingTokens(doc.id, targetTokens - nat.length, new Set(nat));
+      doc.indexedTokens = nat.concat(pad);
+      doc.padTokens = pad;
+    }
+    doc.tokenSet = new Set(doc.indexedTokens);
+  }
+}
+
+// ───── INDEX BUILDERS ─────
+
+function buildHashBucketIndex(K) {
+  const buckets = new Map(); // bucket -> Set<docId>
+  const docBuckets = new Map(); // docId -> Set<bucket>
+  let totalRecords = 0;
+  for (const doc of corpus) {
+    const bs = new Set();
+    for (const t of doc.indexedTokens) bs.add(djb2(t) % K);
+    docBuckets.set(doc.id, bs);
+    for (const b of bs) {
+      if (!buckets.has(b)) buckets.set(b, new Set());
+      buckets.get(b).add(doc.id);
+      totalRecords++;
+    }
+  }
+  return { K, buckets, docBuckets, totalRecords };
+}
+
+function buildInvertedIndex() {
+  const tokenToDocs = new Map();
+  let total = 0;
+  for (const doc of corpus) {
+    for (const t of doc.indexedTokens) {
+      if (!tokenToDocs.has(t)) tokenToDocs.set(t, new Set());
+      tokenToDocs.get(t).add(doc.id);
+      total++;
+    }
+  }
+  return { tokenToDocs, total };
+}
+
+// ───── STATE ─────
+
+let K = 64;
+let tokensPerDoc = 10;
+let corpusSize = 80;
+let inverted = null;
+let corpusTokenTotal = 0;
+let corpusTokenAvg = 0;
+let index = null;
+let queryTerm = '';
+let queryResult = null;
+let showFP = false;
+
+// ───── QUERY ─────
+
+function runQuery(rawQuery) {
+  queryTerm = rawQuery.trim();
+  if (!queryTerm) { queryResult = null; return; }
+  const tokens = tokenize(queryTerm);
+  if (tokens.length === 0) { queryResult = null; return; }
+  const term = tokens[0];
+  const hash = djb2(term);
+  const bucket = hash % K;
+  const candidates = index.buckets.get(bucket) || new Set();
+  const trueMatches = new Set();
+  const fps = new Set();
+  for (const docId of candidates) {
+    if (corpusById.get(docId).tokenSet.has(term)) trueMatches.add(docId);
+    else fps.add(docId);
+  }
+  // Inverted: only true matches
+  const invertedMatches = inverted.tokenToDocs.get(term) || new Set();
+  queryResult = {
+    rawQuery: queryTerm,
+    term, hash, bucket,
+    candidates, trueMatches, fps, invertedMatches,
+    multiToken: tokens.length > 1,
+  };
+}
+
+// ───── RENDERERS ─────
+
+function fmtNum(n) {
+  if (n === null || n === undefined || Number.isNaN(n)) return '—';
+  if (Number.isInteger(n)) return n.toLocaleString();
+  return n.toFixed(2);
+}
+
+function renderTrace() {
+  const el = document.getElementById('trace');
+  if (!queryResult) {
+    el.classList.add('empty');
+    el.textContent = 'Type a search term to trace the lookup path for all three approaches.';
+    return;
+  }
+  el.classList.remove('empty');
+  const { rawQuery, term, hash, bucket, candidates, trueMatches, fps, invertedMatches, multiToken } = queryResult;
+
+  // Index sizes — each approach maintains an INDEPENDENT index of its own.
+  // A doesn't have B's records or C's records — each query only touches its
+  // own index.
+  const aIndexSize = corpus.length;                       // 1 record per doc
+  const bIndexSize = corpusTokenTotal;                    // 1 per (token, doc)
+  const cIndexSize = index.totalRecords;                  // 1 per (bucket, doc)
+
+  // Per-approach scan / return numbers.
+  let aBytes = 0;
+  for (const doc of corpus) aBytes += KEY_OVERHEAD_BYTES + searchTextLen(doc);
+  const aReturned = invertedMatches.size;
+  const aDropped = corpus.length - aReturned;
+
+  const bMatches = invertedMatches.size;
+  const bBytes = bMatches * KEY_OVERHEAD_BYTES;
+
+  let cBytes = 0;
+  for (const docId of candidates) {
+    const doc = corpusById.get(docId);
+    cBytes += KEY_OVERHEAD_BYTES + searchTextLen(doc);
+  }
+  const cDropped = fps.size;
+  const cMatches = trueMatches.size;
+
+  const tokenizeStep = `<div class="step"><span class="step-tag">tokenize</span><span class="step-val">"${rawQuery}" → "${term}"${multiToken ? ' <em>· extra tokens ignored — query uses first only</em>' : ''}</span></div>`;
+
+  el.innerHTML = `
+    <div class="trace-preamble">
+      Three independent indexes, three different query plans on the same input.
+      Each query only touches <em>its own</em> index — A's ${aIndexSize}-record index,
+      B's ${bIndexSize.toLocaleString()}-record index, or C's ${cIndexSize.toLocaleString()}-record index.
+    </div>
+
+    <div class="trace-section">
+      <div class="trace-section-head"><span class="t-tag">A</span><span>iter index + searchText projection · index has <strong>${aIndexSize}</strong> records (1 / doc)</span></div>
+      ${tokenizeStep}
+      <div class="step"><span class="step-tag">build</span><span class="step-val">FilterExpression = contains(searchText, "${term}")</span></div>
+      <div class="step"><span class="step-tag">query</span><span class="step-val">scan A's whole index — DynamoDB applies filter server-side</span></div>
+      <div class="step"><span class="step-tag">scanned</span><span class="step-val">${corpus.length} of ${aIndexSize} items · ${fmtBytes(aBytes)} <em>· ${aDropped} non-match dropped by FilterExpression</em></span></div>
+      <div class="step"><span class="step-tag">returned</span><span class="step-val"><strong>${aReturned}</strong> docId${aReturned === 1 ? '' : 's'} · no batchFind needed</span></div>
+    </div>
+
+    <div class="trace-section">
+      <div class="trace-section-head"><span class="t-tag">B</span><span>inverted index · KEYS_ONLY · index has <strong>${bIndexSize.toLocaleString()}</strong> records (1 / token / doc)</span></div>
+      ${tokenizeStep}
+      <div class="step"><span class="step-tag">query</span><span class="step-val">Query · PK = "[${TENANT}]#term:${term}" · no FilterExpression (every record in this partition is a match)</span></div>
+      <div class="step"><span class="step-tag">scanned</span><span class="step-val">${bMatches} of ${bIndexSize.toLocaleString()} items · ${fmtBytes(bBytes)} <em>· only the term:${term} partition is touched</em></span></div>
+      <div class="step"><span class="step-tag">returned</span><span class="step-val"><strong>${bMatches}</strong> docId${bMatches === 1 ? '' : 's'}${multiToken ? ' <em>· multi-term: 1 Query per term + client-side intersect / union</em>' : ''}</span></div>
+    </div>
+
+    <div class="trace-section featured">
+      <div class="trace-section-head"><span class="t-tag">C</span><span>token-hash-bucket + searchText projection · index has <strong>${cIndexSize.toLocaleString()}</strong> records (1 / bucket / doc)</span></div>
+      ${tokenizeStep}
+      <div class="step"><span class="step-tag">hash</span><span class="step-val">djb2("${term}") = ${hex(hash)}</span></div>
+      <div class="step"><span class="step-tag">bucket</span><span class="step-val">${hex(hash)} mod ${K} = <strong>${bucket}</strong></span></div>
+      <div class="step"><span class="step-tag">build</span><span class="step-val">FilterExpression = contains(searchText, "${term}")</span></div>
+      <div class="step"><span class="step-tag">query</span><span class="step-val">Query · PK = "[${TENANT}]#bucket:${bucket}" · only this bucket partition is touched</span></div>
+      <div class="step"><span class="step-tag">scanned</span><span class="step-val">${candidates.size} of ${cIndexSize.toLocaleString()} items · ${fmtBytes(cBytes)} <em>· ${cDropped} hash collision${cDropped === 1 ? '' : 's'} dropped by FilterExpression</em></span></div>
+      <div class="step"><span class="step-tag">returned</span><span class="step-val"><strong>${cMatches}</strong> exact match${cMatches === 1 ? '' : 'es'} · no batchFind needed</span></div>
+    </div>
+  `;
+}
+
+// Approximate per-record byte costs. DynamoDB items have ~50 bytes of fixed
+// metadata (attribute names, type tags, etc.) on top of the actual data.
+const KEY_OVERHEAD_BYTES = 50;
+function searchTextLen(doc) {
+  return doc.indexedTokens.join(' ').length;
+}
+function fmtBytes(n) {
+  if (n < 1024) return n + ' B';
+  if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+  return (n / (1024 * 1024)).toFixed(2) + ' MB';
+}
+
+function metricsFor(approach) {
+  if (approach === 'scan') {
+    // Storage: 1 record per doc, each carrying KEY + searchText.
+    // Read: every doc's index record is examined (FilterExpression applied
+    // post-read on the projected searchText). Bytes scanned = sum of all.
+    let storeBytes = 0, writeBytesTotal = 0;
+    for (const doc of corpus) {
+      const recBytes = KEY_OVERHEAD_BYTES + searchTextLen(doc);
+      storeBytes += recBytes;
+      writeBytesTotal += recBytes;
+    }
+    return {
+      read: queryResult ? corpus.length : '—',
+      readBytes: queryResult ? fmtBytes(storeBytes) : '—',
+      returned: queryResult ? queryResult.invertedMatches.size : '—',
+      store: corpus.length,
+      bytes: fmtBytes(storeBytes),
+      writeRecs: '1',
+      writeBytes: fmtBytes(Math.round(writeBytesTotal / corpus.length)),
+    };
+  }
+  if (approach === 'inverted') {
+    // Storage: 1 KEYS_ONLY record per (token, doc).
+    // Read: items in the term partition only — each is just keys (~KEY bytes).
+    const matches = queryResult ? queryResult.invertedMatches.size : '—';
+    let writeBytesTotal = 0;
+    for (const doc of corpus) {
+      writeBytesTotal += doc.indexedTokens.length * KEY_OVERHEAD_BYTES;
+    }
+    return {
+      read: matches,
+      readBytes: queryResult ? fmtBytes(matches * KEY_OVERHEAD_BYTES) : '—',
+      returned: matches,
+      store: corpusTokenTotal,
+      bytes: fmtBytes(corpusTokenTotal * KEY_OVERHEAD_BYTES),
+      writeRecs: corpusTokenAvg.toFixed(1),
+      writeBytes: fmtBytes(Math.round(writeBytesTotal / corpus.length)),
+    };
+  }
+  if (approach === 'bucket') {
+    // Storage: 1 record per (bucket, doc), each carrying KEY + searchText.
+    // Read: items in the queried bucket — each carries the projected
+    // searchText, so per-item cost mirrors A but only for the bucket's docs.
+    let storeBytes = 0, writeBytesTotal = 0;
+    for (const doc of corpus) {
+      const buckets = index.docBuckets.get(doc.id);
+      const recBytes = KEY_OVERHEAD_BYTES + searchTextLen(doc);
+      const docWriteBytes = buckets.size * recBytes;
+      storeBytes += docWriteBytes;
+      writeBytesTotal += docWriteBytes;
+    }
+    let readBytes = 0;
+    if (queryResult) {
+      for (const docId of queryResult.candidates) {
+        const doc = corpusById.get(docId);
+        readBytes += KEY_OVERHEAD_BYTES + searchTextLen(doc);
+      }
+    }
+    return {
+      read: queryResult ? queryResult.candidates.size : '—',
+      readBytes: queryResult ? fmtBytes(readBytes) : '—',
+      returned: queryResult ? queryResult.trueMatches.size : '—',
+      store: index.totalRecords,
+      bytes: fmtBytes(storeBytes),
+      writeRecs: (index.totalRecords / corpus.length).toFixed(1),
+      writeBytes: fmtBytes(Math.round(writeBytesTotal / corpus.length)),
+    };
+  }
+}
+
+function renderApproaches() {
+  const stats = {
+    scan: metricsFor('scan'),
+    inverted: metricsFor('inverted'),
+    bucket: metricsFor('bucket'),
+  };
+  for (const [key, vals] of Object.entries(stats)) {
+    const card = document.querySelector(`.approach[data-key="${key}"]`);
+    for (const [stat, v] of Object.entries(vals)) {
+      const el = card.querySelector(`[data-stat="${stat}"]`);
+      if (!el) continue;
+      el.textContent = typeof v === 'number' ? fmtNum(v) : v;
+    }
+  }
+  // Savings callout: compare C against A on bytes-scanned (the actual RCU driver)
+  const callout = document.getElementById('savings-callout');
+  if (queryResult) {
+    let aBytes = 0, cBytes = 0;
+    for (const doc of corpus) aBytes += KEY_OVERHEAD_BYTES + searchTextLen(doc);
+    for (const docId of queryResult.candidates) {
+      const doc = corpusById.get(docId);
+      cBytes += KEY_OVERHEAD_BYTES + searchTextLen(doc);
+    }
+    const byteReduction = aBytes === 0 ? 0 : ((aBytes - cBytes) / aBytes * 100);
+    const trueMatches = queryResult.trueMatches.size;
+    const fpCount = queryResult.candidates.size - trueMatches;
+    callout.innerHTML = `Scans ${fmtBytes(cBytes)} vs ${fmtBytes(aBytes)} for A — ${byteReduction.toFixed(0)}% less · DynamoDB drops ${fpCount} hash collision${fpCount === 1 ? '' : 's'} server-side · returns the same ${trueMatches} match${trueMatches === 1 ? '' : 'es'} as B`;
+  } else {
+    callout.textContent = 'Adjust K and run a query to see savings.';
+  }
+}
+
+function renderHistogram() {
+  const svg = document.getElementById('histogram');
+  const W = 1000, H = 240, padTop = 16, padBottom = 24;
+  const counts = [];
+  let total = 0, maxC = 0;
+  for (let b = 0; b < K; b++) {
+    const c = (index.buckets.get(b) || new Set()).size;
+    counts.push(c);
+    total += c;
+    if (c > maxC) maxC = c;
+  }
+  const mean = total / K;
+  const hotThreshold = mean * 2;
+  const hotCount = counts.filter(c => c > hotThreshold && c > 0).length;
+  const emptyCount = counts.filter(c => c === 0).length;
+
+  document.getElementById('hist-total').textContent = fmtNum(total);
+  document.getElementById('hist-mean').textContent = mean.toFixed(1);
+  document.getElementById('hist-max').textContent = fmtNum(maxC);
+  const hotEl = document.getElementById('hist-hot');
+  hotEl.textContent = fmtNum(hotCount);
+  hotEl.className = 'stat-val ' + (hotCount > 0 ? 'warn' : 'ok');
+  document.getElementById('hist-empty').textContent = fmtNum(emptyCount);
+
+  const usableW = W;
+  const barSlot = usableW / K;
+  const barW = Math.max(1, barSlot * 0.78);
+  const barOffset = (barSlot - barW) / 2;
+  const usableH = H - padTop - padBottom;
+
+  const queriedBucket = queryResult ? queryResult.bucket : null;
+
+  let bars = '';
+  for (let b = 0; b < K; b++) {
+    const c = counts[b];
+    const h = maxC === 0 ? 0 : (c / maxC) * usableH;
+    const x = b * barSlot + barOffset;
+    const y = H - padBottom - h;
+    const isHot = c > hotThreshold && c > 0;
+    const isQueried = b === queriedBucket;
+    const cls = 'bar' + (isQueried ? ' queried' : (isHot ? ' hot' : ''));
+    const delay = K <= 64 ? (b * 8) : (b * 1);
+    bars += `<rect class="${cls}" x="${x.toFixed(2)}" y="${y.toFixed(2)}" width="${barW.toFixed(2)}" height="${h.toFixed(2)}" style="animation-delay:${delay}ms"></rect>`;
+  }
+  // axis baseline
+  bars += `<line class="axis-line" x1="0" y1="${H - padBottom}" x2="${W}" y2="${H - padBottom}"/>`;
+  // labels
+  bars += `<text class="axis-label" x="0" y="${H - 6}">bucket 0</text>`;
+  bars += `<text class="axis-label" x="${W}" y="${H - 6}" text-anchor="end">bucket ${K - 1}</text>`;
+  if (queriedBucket !== null) {
+    const qx = queriedBucket * barSlot + barSlot / 2;
+    bars += `<text class="annotation" x="${qx.toFixed(2)}" y="${(H - padBottom - (counts[queriedBucket] / Math.max(maxC,1)) * usableH - 6).toFixed(2)}" text-anchor="middle">↓ "${queryResult.term}"</text>`;
+  }
+  svg.innerHTML = bars;
+  // restart animation
+  svg.classList.remove('animate');
+  void svg.offsetWidth;
+  svg.classList.add('animate');
+}
+
+function renderCorpus() {
+  const list = document.getElementById('corpus-list');
+  const matches = queryResult ? queryResult.trueMatches : new Set();
+  const fps = (queryResult && showFP) ? queryResult.fps : new Set();
+  const queriedTerm = queryResult ? queryResult.term : null;
+  const meta = document.getElementById('corpus-meta');
+  const sizeLabel = document.getElementById('corpus-size-label');
+  if (sizeLabel) sizeLabel.textContent = `${corpus.length} user records`;
+  if (queryResult) {
+    meta.textContent = `${matches.size} match · ${queryResult.candidates.size - matches.size} fp`;
+  } else {
+    const totalTokens = corpus.reduce((s, d) => s + d.indexedTokens.length, 0);
+    const padTokens = corpus.reduce((s, d) => s + d.padTokens.length, 0);
+    meta.textContent = `${totalTokens} indexed · ${padTokens} padded · ${(totalTokens/corpus.length).toFixed(1)} avg`;
+  }
+  let html = '';
+  for (const doc of corpus) {
+    const docBuckets = index.docBuckets.get(doc.id);
+    const isMatch = matches.has(doc.id);
+    const isFP = fps.has(doc.id);
+    const cls = isMatch ? 'match' : (isFP ? 'fp' : '');
+    const queriedBucket = queryResult ? queryResult.bucket : null;
+    const padSet = new Set(doc.padTokens);
+    let tokenBadges = '';
+    for (const t of doc.indexedTokens) {
+      const isPad = padSet.has(t);
+      const isHit = queriedTerm && t === queriedTerm;
+      const cssCls = isHit ? 'tk hit' : (isPad ? 'tk pad' : 'tk');
+      tokenBadges += `<span class="${cssCls}">${t}</span>`;
+    }
+    let bucketBadges = '';
+    const sortedB = [...docBuckets].sort((a, b) => a - b).slice(0, 12);
+    for (const b of sortedB) {
+      const hit = b === queriedBucket;
+      bucketBadges += `<span class="b ${hit ? 'hit' : ''}">${b}</span>`;
+    }
+    if (docBuckets.size > 12) bucketBadges += `<span style="color:var(--ink-faint);">+${docBuckets.size - 12}</span>`;
+    const marker = isMatch ? 'returned' : (isFP ? 'collision · filtered' : '');
+    html += `
+      <li class="corpus-item ${cls}">
+        <div class="row1">
+          <span class="name">${doc.name}</span>
+          <span class="id">${doc.id.slice(0, 10)}…</span>
+          <span class="marker">${marker}</span>
+        </div>
+        <div class="bio">${doc.naturalBio}</div>
+        <div class="tokens-row"><span class="label">indexed (${doc.indexedTokens.length})</span>${tokenBadges}</div>
+        <div class="buckets">buckets: ${bucketBadges}</div>
+      </li>
+    `;
+  }
+  list.innerHTML = html;
+}
+
+let storageView = 'bucket';
+
+function renderDDB() {
+  const tbody = document.querySelector('#ddb-table tbody');
+  const thead = document.getElementById('ddb-thead');
+  const meta = document.getElementById('ddb-meta');
+  const table = document.getElementById('ddb-table');
+  const queriedTerm = queryResult ? queryResult.term : null;
+
+  let rows = [];
+  let queriedRowKey = null; // identifies which rows belong to the queried partition
+
+  if (storageView === 'scan') {
+    // A: 1 record per doc with searchText projected. Bucketed by hash(docId) for hot-write mitigation.
+    // For visualization, use the same K used in C as the iter-bucket count so the user can see the scheme.
+    thead.innerHTML = '<tr><th style="width:42%">PK</th><th style="width:23%">SK</th><th>searchText (projected)</th></tr>';
+    for (const doc of corpus) {
+      const b = djb2(doc.id) % K;
+      rows.push({
+        partitionKey: 'iter#bucket:' + b,
+        pk: `[${TENANT}]#iter#bucket:${b}`,
+        sk: doc.id.slice(0, 14) + '…',
+        text: doc.indexedTokens.join(' '),
+        // For A, every partition is read (full scan across iter buckets).
+        queried: queryResult ? true : false,
+      });
+    }
+    if (queryResult) queriedRowKey = '__all__';
+  } else if (storageView === 'inverted') {
+    // B: 1 record per (token, doc) pair. KEYS_ONLY.
+    thead.innerHTML = '<tr><th style="width:50%">PK</th><th>SK</th></tr>';
+    const allTokens = [...inverted.tokenToDocs.keys()].sort();
+    for (const tok of allTokens) {
+      const docs = [...inverted.tokenToDocs.get(tok)].sort();
+      for (const docId of docs) {
+        rows.push({
+          partitionKey: 'term:' + tok,
+          pk: `[${TENANT}]#term:${tok}`,
+          sk: docId.slice(0, 14) + '…',
+          queried: queriedTerm === tok,
+        });
+      }
+    }
+    if (queriedTerm) queriedRowKey = 'term:' + queriedTerm;
+  } else {
+    // C: 1 record per (bucket, doc), searchText projected.
+    thead.innerHTML = '<tr><th style="width:42%">PK</th><th style="width:23%">SK</th><th>searchText (projected)</th></tr>';
+    for (let b = 0; b < K; b++) {
+      const docs = [...(index.buckets.get(b) || new Set())].sort();
+      for (const docId of docs) {
+        const doc = corpusById.get(docId);
+        rows.push({
+          partitionKey: 'bucket:' + b,
+          pk: `[${TENANT}]#bucket:${b}`,
+          sk: docId.slice(0, 14) + '…',
+          text: doc.indexedTokens.join(' '),
+          queried: queryResult && queryResult.bucket === b,
+        });
+      }
+    }
+    if (queryResult) queriedRowKey = 'bucket:' + queryResult.bucket;
+  }
+
+  // Render rows
+  let html = '';
+  for (const r of rows) {
+    const queriedCls = r.queried ? 'queried' : '';
+    if (r.text !== undefined) {
+      html += `<tr class="${queriedCls}"><td>${r.pk}</td><td>${r.sk}</td><td class="text-cell">${r.text}</td></tr>`;
+    } else {
+      html += `<tr class="${queriedCls}"><td>${r.pk}</td><td>${r.sk}</td></tr>`;
+    }
+  }
+  tbody.innerHTML = html;
+
+  // Meta line — make it clear WHICH index is being shown.
+  const label = storageView === 'scan' ? "A's index" : storageView === 'inverted' ? "B's index" : "C's index";
+  if (queryResult) {
+    table.classList.add('dim-others');
+    let scanned, returned;
+    if (storageView === 'scan') {
+      scanned = corpus.length;
+      returned = queryResult.invertedMatches.size;
+    } else if (storageView === 'inverted') {
+      scanned = queryResult.invertedMatches.size;
+      returned = scanned;
+    } else {
+      scanned = queryResult.candidates.size;
+      returned = queryResult.trueMatches.size;
+    }
+    meta.innerHTML = `<strong>${label}</strong> · ${rows.length.toLocaleString()} rows · query scans <strong>${scanned}</strong>, returns <strong>${returned}</strong>`;
+  } else {
+    table.classList.remove('dim-others');
+    meta.innerHTML = `<strong>${label}</strong> · ${rows.length.toLocaleString()} rows`;
+  }
+}
+
+// ───── ORCHESTRATION ─────
+
+function rebuild() {
+  if (corpus.length !== corpusSize) {
+    rebuildCorpusFromSize(corpusSize);
+  }
+  rebuildCorpusTokens(tokensPerDoc);
+  inverted = buildInvertedIndex();
+  corpusTokenTotal = inverted.total;
+  corpusTokenAvg = corpusTokenTotal / corpus.length;
+  index = buildHashBucketIndex(K);
+  if (queryTerm) runQuery(queryTerm);
+}
+
+function renderAll() {
+  renderTrace();
+  renderApproaches();
+  renderHistogram();
+  renderCorpus();
+  renderDDB();
+}
+
+function refreshAll() {
+  rebuild();
+  renderAll();
+}
+
+// ───── BIND ─────
+
+const kSlider = document.getElementById('k-slider');
+const kValue = document.getElementById('k-value');
+const kVals = [8, 16, 32, 64, 128, 256, 512];
+
+kSlider.addEventListener('input', () => {
+  K = kVals[parseInt(kSlider.value, 10)];
+  kValue.textContent = K;
+  refreshAll();
+});
+
+const tSlider = document.getElementById('t-slider');
+const tValue = document.getElementById('t-value');
+tSlider.addEventListener('input', () => {
+  tokensPerDoc = parseInt(tSlider.value, 10);
+  tValue.textContent = tokensPerDoc;
+  refreshAll();
+});
+
+const nSlider = document.getElementById('n-slider');
+const nValue = document.getElementById('n-value');
+nSlider.addEventListener('input', () => {
+  corpusSize = parseInt(nSlider.value, 10);
+  nValue.textContent = corpusSize;
+  refreshAll();
+});
+
+const queryInput = document.getElementById('query-input');
+queryInput.addEventListener('input', (e) => {
+  runQuery(e.target.value);
+  renderAll();
+});
+
+document.querySelectorAll('.query-hints button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    queryInput.value = btn.dataset.q;
+    runQuery(btn.dataset.q);
+    renderAll();
+  });
+});
+
+document.getElementById('fp-toggle').addEventListener('change', (e) => {
+  showFP = e.target.checked;
+  renderCorpus();
+});
+
+document.querySelectorAll('.storage-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.storage-tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    storageView = tab.dataset.view;
+    renderDDB();
+  });
+});
+
+// Init — pick up state from URL query params (?q=, ?k=, ?t=, ?n=)
+const params = new URLSearchParams(window.location.search);
+const qParam = params.get('q');
+const kParam = params.get('k');
+const tParam = params.get('t');
+const nParam = params.get('n');
+if (kParam && kVals.includes(parseInt(kParam, 10))) {
+  K = parseInt(kParam, 10);
+  kSlider.value = kVals.indexOf(K);
+  kValue.textContent = K;
+}
+if (tParam) {
+  const tNum = parseInt(tParam, 10);
+  if (Number.isInteger(tNum) && tNum >= 3 && tNum <= 50) {
+    tokensPerDoc = tNum;
+    tSlider.value = tNum;
+    tValue.textContent = tNum;
+  }
+}
+if (nParam) {
+  const nNum = parseInt(nParam, 10);
+  if (Number.isInteger(nNum) && nNum >= 20 && nNum <= 500) {
+    corpusSize = nNum;
+    nSlider.value = nNum;
+    nValue.textContent = nNum;
+  }
+}
+if (qParam) {
+  queryInput.value = qParam;
+}
+refreshAll();
+if (qParam) {
+  runQuery(qParam);
+  renderAll();
+}
+
+</script>
+</body>
+</html>

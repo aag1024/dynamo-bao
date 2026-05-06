@@ -193,28 +193,33 @@ class BaoModel {
     }
   }
 
+  static _getIterationPartitionKey(bucketNum) {
+    const tenantId = this.manager.getTenantId();
+
+    if (this.iterationBuckets === 1) {
+      return tenantId
+        ? `[${tenantId}]#${this.modelPrefix}#iter`
+        : `${this.modelPrefix}#iter`;
+    }
+
+    const bucket = bucketNum.toString().padStart(3, "0");
+    return tenantId
+      ? `[${tenantId}]#${this.modelPrefix}#iter#${bucket}`
+      : `${this.modelPrefix}#iter#${bucket}`;
+  }
+
   static _getIterationKeys(objectId, dyData) {
     if (!this.iterable) {
       return {};
     }
 
-    const tenantId = this.manager.getTenantId();
-    let iterPk;
-
-    if (this.iterationBuckets === 1) {
-      iterPk = tenantId
-        ? `[${tenantId}]#${this.modelPrefix}#iter`
-        : `${this.modelPrefix}#iter`;
-    } else {
-      const bucketNum = this._hashObjectId(objectId) % this.iterationBuckets;
-      const bucket = bucketNum.toString().padStart(3, "0");
-      iterPk = tenantId
-        ? `[${tenantId}]#${this.modelPrefix}#iter#${bucket}`
-        : `${this.modelPrefix}#iter#${bucket}`;
-    }
+    const bucketNum =
+      this.iterationBuckets === 1
+        ? 0
+        : this._hashObjectId(objectId) % this.iterationBuckets;
 
     return {
-      [ITERATION_PK_FIELD]: iterPk,
+      [ITERATION_PK_FIELD]: this._getIterationPartitionKey(bucketNum),
       [ITERATION_SK_FIELD]: objectId,
     };
   }
@@ -269,74 +274,251 @@ class BaoModel {
     yield* this._iterateSingleBucket(bucketNum, options);
   }
 
-  static async *_iterateSingleBucket(bucketNum, options = {}) {
-    const { batchSize = 100, filter = null } = options;
-    const tenantId = this.manager.getTenantId();
+  static _buildPrebuiltFilter(filter) {
+    if (!filter) return null;
+    const { FilterExpressionBuilder } = require("./filter-expression");
+    return new FilterExpressionBuilder().build(filter, this);
+  }
 
-    let iterPk;
-    if (this.iterationBuckets === 1) {
-      iterPk = tenantId
-        ? `[${tenantId}]#${this.modelPrefix}#iter`
-        : `${this.modelPrefix}#iter`;
-    } else {
-      const bucket = bucketNum.toString().padStart(3, "0");
-      iterPk = tenantId
-        ? `[${tenantId}]#${this.modelPrefix}#iter#${bucket}`
-        : `${this.modelPrefix}#iter#${bucket}`;
+  static async _filterPartitionPage(
+    bucketNum,
+    exclusiveStartKey,
+    prebuiltFilter,
+    perPageLimit,
+  ) {
+    const { QueryCommand } = require("./dynamodb-client");
+    const iterPk = this._getIterationPartitionKey(bucketNum);
+
+    const params = {
+      TableName: this.table,
+      IndexName: ITERATION_INDEX_NAME,
+      KeyConditionExpression: "#pk = :pk",
+      ExpressionAttributeNames: { "#pk": ITERATION_PK_FIELD },
+      ExpressionAttributeValues: { ":pk": iterPk },
+      Limit: perPageLimit,
+      ReturnConsumedCapacity: "TOTAL",
+    };
+
+    if (exclusiveStartKey) {
+      params.ExclusiveStartKey = exclusiveStartKey;
     }
 
-    let lastEvaluatedKey = null;
+    if (prebuiltFilter) {
+      params.FilterExpression = prebuiltFilter.FilterExpression;
+      Object.assign(
+        params.ExpressionAttributeNames,
+        prebuiltFilter.ExpressionAttributeNames,
+      );
+      Object.assign(
+        params.ExpressionAttributeValues,
+        prebuiltFilter.ExpressionAttributeValues,
+      );
+    }
+
+    const response = await this.documentClient.send(new QueryCommand(params));
+
+    return {
+      rawItems: response.Items || [],
+      lastEvaluatedKey: response.LastEvaluatedKey || null,
+      scannedCount: response.ScannedCount || 0,
+      consumedCapacity: response.ConsumedCapacity || null,
+    };
+  }
+
+  static async *_iterateSingleBucket(bucketNum, options = {}) {
+    const { batchSize = 100, filter = null } = options;
+    const prebuiltFilter = this._buildPrebuiltFilter(filter);
+    let exclusiveStartKey = null;
 
     do {
-      const { QueryCommand } = require("./dynamodb-client");
-      const params = {
-        TableName: this.table,
-        IndexName: ITERATION_INDEX_NAME,
-        KeyConditionExpression: "#pk = :pk",
-        ExpressionAttributeNames: { "#pk": ITERATION_PK_FIELD },
-        ExpressionAttributeValues: { ":pk": iterPk },
-        Limit: batchSize,
-        ReturnConsumedCapacity: "TOTAL",
-      };
+      const page = await this._filterPartitionPage(
+        bucketNum,
+        exclusiveStartKey,
+        prebuiltFilter,
+        batchSize,
+      );
 
-      if (lastEvaluatedKey) {
-        params.ExclusiveStartKey = lastEvaluatedKey;
-      }
-
-      if (filter) {
-        const { FilterExpressionBuilder } = require("./filter-expression");
-        const filterBuilder = new FilterExpressionBuilder();
-        const filterExpression = filterBuilder.build(filter, this);
-        if (filterExpression) {
-          params.FilterExpression = filterExpression.FilterExpression;
-          Object.assign(
-            params.ExpressionAttributeNames,
-            filterExpression.ExpressionAttributeNames,
-          );
-          Object.assign(
-            params.ExpressionAttributeValues,
-            filterExpression.ExpressionAttributeValues,
-          );
-        }
-      }
-
-      const response = await this.documentClient.send(new QueryCommand(params));
-
-      if (response.Items && response.Items.length > 0) {
-        const objectIds = response.Items.map(
+      if (page.rawItems.length > 0) {
+        const objectIds = page.rawItems.map(
           (item) => item[ITERATION_SK_FIELD],
         );
-
         const { items } = await this.batchFind(objectIds);
         const batch = Object.values(items);
-
         if (batch.length > 0) {
           yield batch;
         }
       }
 
-      lastEvaluatedKey = response.LastEvaluatedKey;
-    } while (lastEvaluatedKey);
+      exclusiveStartKey = page.lastEvaluatedKey;
+    } while (exclusiveStartKey);
+  }
+
+  /**
+   * @description
+   * Single-call paged filter/search over an iterable model. Queries iteration
+   * partitions in parallel rounds with FIFO scheduling so all active buckets
+   * make progress fairly. Returns a page of items plus an opaque cursor for
+   * resuming on the next call. The cursor encodes per-partition
+   * `LastEvaluatedKey`s and the round-robin queue order; nothing else needs
+   * to persist between calls — caller args + cursor are sufficient.
+   *
+   * The iteration index has KEYS_ONLY projection, so the `filter` is applied
+   * client-side after items are hydrated via `batchFind`. The `limit` therefore
+   * targets the count of *raw* items pulled from the index; the number of
+   * items returned after filtering may be lower (sparse match) or slightly
+   * higher (final round overshot). Walk the cursor to completion to see all
+   * matches.
+   *
+   * @param {Object} [options]
+   * @param {Object} [options.filter] FilterExpressionBuilder syntax (same operators as `iterateAll`'s filter option).
+   * @param {number} [options.limit=100] Target raw page size. Loop terminates when this many raw index entries have been collected, when `maxScannedItems` is reached, or when all buckets exhaust.
+   * @param {string|null} [options.cursor=null] Opaque cursor from a prior call, or null to start from the beginning.
+   * @param {number} [options.maxScannedItems] Approximate ceiling on raw iteration-index items examined this call (may be exceeded by up to one round's worth). Defaults to `limit * 10`.
+   * @param {number} [options.concurrency=10] Maximum buckets queried in parallel per round.
+   * @returns {Promise<{items: Array, cursor: string|null, count: number, scannedCount: number, consumedCapacity: Array}>}
+   */
+  static async iterateFilter(options = {}) {
+    if (!this.iterable) {
+      throw new Error(`Model ${this.name} is not configured as iterable`);
+    }
+
+    const {
+      filter = null,
+      limit = 100,
+      cursor = null,
+      concurrency = 10,
+    } = options;
+    const maxScannedItems = options.maxScannedItems ?? limit * 10;
+
+    if (!Number.isInteger(limit) || limit <= 0) {
+      throw new ValidationError("limit must be a positive integer");
+    }
+    if (!Number.isInteger(concurrency) || concurrency <= 0) {
+      throw new ValidationError("concurrency must be a positive integer");
+    }
+    if (!Number.isInteger(maxScannedItems) || maxScannedItems <= 0) {
+      throw new ValidationError("maxScannedItems must be a positive integer");
+    }
+
+    const { encodeCursor, decodeCursor } = require("./iteration-cursor");
+    const tenantId = this.manager.getTenantId() || null;
+    const cursorCtx = {
+      modelPrefix: this.modelPrefix,
+      tenantId,
+      iterationBuckets: this.iterationBuckets,
+    };
+
+    let queue;
+    if (cursor) {
+      ({ queue } = decodeCursor(cursor, cursorCtx));
+      queue = queue.map(([bucketNum, lek]) => ({
+        bucketNum,
+        exclusiveStartKey: lek,
+      }));
+    } else {
+      const numBuckets = this.iterationBuckets;
+      queue = [];
+      for (let b = 0; b < numBuckets; b++) {
+        queue.push({ bucketNum: b, exclusiveStartKey: null });
+      }
+    }
+
+    if (filter) {
+      // Validate field names against the model up-front so callers get a clear
+      // error before any DynamoDB round-trip.
+      const { FilterExpressionBuilder } = require("./filter-expression");
+      new FilterExpressionBuilder().validateFields(filter, this);
+    }
+
+    const collectedObjectIds = [];
+    let scanned = 0;
+    const consumedCapacity = [];
+
+    // Note: filter is applied client-side after batchFind, not server-side.
+    // The iteration index uses KEYS_ONLY projection, so DynamoDB's
+    // FilterExpression cannot reference any user-defined fields.
+    while (
+      collectedObjectIds.length < limit &&
+      scanned < maxScannedItems &&
+      queue.length > 0
+    ) {
+      const round = queue.splice(0, Math.min(concurrency, queue.length));
+
+      const remainingItems = limit - collectedObjectIds.length;
+      const remainingScan = maxScannedItems - scanned;
+      const activeForRound = round.length;
+      // Per-bucket page size: at most 100 (DynamoDB cap), bounded by both the
+      // remaining scan budget and the remaining item target so we don't
+      // over-fetch on the last round when limit is small.
+      const scanCap = Math.ceil(remainingScan / activeForRound);
+      const limitCap = Math.ceil(remainingItems / activeForRound);
+      const perPageLimit = Math.max(1, Math.min(100, scanCap, limitCap));
+
+      const pages = await Promise.all(
+        round.map((entry) =>
+          this._filterPartitionPage(
+            entry.bucketNum,
+            entry.exclusiveStartKey,
+            null,
+            perPageLimit,
+          ),
+        ),
+      );
+
+      for (let i = 0; i < round.length; i++) {
+        const entry = round[i];
+        const page = pages[i];
+        scanned += page.scannedCount;
+        if (page.consumedCapacity) {
+          consumedCapacity.push(page.consumedCapacity);
+        }
+        for (const rawItem of page.rawItems) {
+          collectedObjectIds.push(rawItem[ITERATION_SK_FIELD]);
+        }
+        if (page.lastEvaluatedKey) {
+          queue.push({
+            bucketNum: entry.bucketNum,
+            exclusiveStartKey: page.lastEvaluatedKey,
+          });
+        }
+      }
+    }
+
+    let items = [];
+    if (collectedObjectIds.length > 0) {
+      const { items: byId } = await this.batchFind(collectedObjectIds);
+      const hydrated = collectedObjectIds
+        .map((id) => byId[id])
+        .filter((item) => item !== undefined);
+
+      if (filter) {
+        const { evaluateFilter } = require("./filter-expression");
+        items = hydrated.filter((item) => evaluateFilter(filter, item));
+      } else {
+        items = hydrated;
+      }
+    }
+
+    const nextCursor =
+      queue.length === 0
+        ? null
+        : encodeCursor({
+            modelPrefix: this.modelPrefix,
+            tenantId,
+            iterationBuckets: this.iterationBuckets,
+            queue: queue.map((entry) => [
+              entry.bucketNum,
+              entry.exclusiveStartKey,
+            ]),
+          });
+
+    return {
+      items,
+      cursor: nextCursor,
+      count: items.length,
+      scannedCount: scanned,
+      consumedCapacity,
+    };
   }
 
   /**

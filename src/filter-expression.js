@@ -302,4 +302,113 @@ class FilterExpressionBuilder {
   }
 }
 
-module.exports = { FilterExpressionBuilder };
+/**
+ * Client-side evaluator that mirrors FilterExpressionBuilder's operator
+ * semantics. Used by iteration paths where the underlying GSI projection is
+ * KEYS_ONLY, making DynamoDB FilterExpression on non-key fields impossible.
+ * @param {Object|null} filter Same syntax as FilterExpressionBuilder.build.
+ * @param {Object} item Hydrated model instance or plain object.
+ * @returns {boolean}
+ */
+function evaluateFilter(filter, item) {
+  if (!filter || Object.keys(filter).length === 0) return true;
+
+  for (const [key, value] of Object.entries(filter)) {
+    if (key === "$and") {
+      if (!Array.isArray(value)) {
+        throw new QueryError("$and requires an array of conditions");
+      }
+      if (!value.every((cond) => evaluateFilter(cond, item))) return false;
+    } else if (key === "$or") {
+      if (!Array.isArray(value)) {
+        throw new QueryError("$or requires an array of conditions");
+      }
+      if (!value.some((cond) => evaluateFilter(cond, item))) return false;
+    } else if (key === "$not") {
+      if (evaluateFilter(value, item)) return false;
+    } else {
+      if (!_matchField(item[key], value)) return false;
+    }
+  }
+  return true;
+}
+
+function _matchField(itemValue, condition) {
+  if (condition === null) {
+    return itemValue === undefined || itemValue === null;
+  }
+  if (typeof condition !== "object" || condition instanceof Date) {
+    return _eq(itemValue, condition);
+  }
+
+  for (const [op, opValue] of Object.entries(condition)) {
+    if (!_applyOperator(itemValue, op, opValue)) return false;
+  }
+  return true;
+}
+
+function _eq(a, b) {
+  if (a instanceof Date && b instanceof Date) return a.getTime() === b.getTime();
+  return a === b;
+}
+
+function _applyOperator(itemValue, op, opValue) {
+  switch (op) {
+    case "$eq":
+      return _eq(itemValue, opValue);
+    case "$ne":
+      return !_eq(itemValue, opValue);
+    case "$gt":
+      return itemValue !== undefined && itemValue !== null && itemValue > opValue;
+    case "$gte":
+      return itemValue !== undefined && itemValue !== null && itemValue >= opValue;
+    case "$lt":
+      return itemValue !== undefined && itemValue !== null && itemValue < opValue;
+    case "$lte":
+      return itemValue !== undefined && itemValue !== null && itemValue <= opValue;
+    case "$in":
+      if (!Array.isArray(opValue)) {
+        throw new ValidationError("$in operator requires an array value");
+      }
+      return opValue.some((v) => _eq(itemValue, v));
+    case "$contains":
+      if (typeof itemValue === "string") return itemValue.includes(opValue);
+      if (Array.isArray(itemValue)) return itemValue.some((v) => _eq(v, opValue));
+      if (itemValue instanceof Set) return itemValue.has(opValue);
+      return false;
+    case "$beginsWith":
+      return typeof itemValue === "string" && itemValue.startsWith(opValue);
+    case "$exists":
+      if (typeof opValue !== "boolean") {
+        throw new ValidationError("$exists operator requires a boolean value");
+      }
+      const present = itemValue !== undefined && itemValue !== null;
+      return opValue ? present : !present;
+    case "$size":
+      const size = _sizeOf(itemValue);
+      if (typeof opValue === "number") return size === opValue;
+      if (typeof opValue === "object" && opValue !== null) {
+        const innerOps = Object.keys(opValue);
+        if (innerOps.length !== 1) {
+          throw new ValidationError(
+            "$size operator with object value must have exactly one comparison operator",
+          );
+        }
+        return _applyOperator(size, innerOps[0], opValue[innerOps[0]]);
+      }
+      throw new ValidationError(
+        "$size operator requires a number or object with comparison operators",
+      );
+    default:
+      throw new QueryError(`Unsupported operator: ${op}`);
+  }
+}
+
+function _sizeOf(v) {
+  if (Array.isArray(v) || typeof v === "string") return v.length;
+  if (v instanceof Set || v instanceof Map) return v.size;
+  if (v && typeof v === "object") return Object.keys(v).length;
+  return 0;
+}
+
+module.exports = { FilterExpressionBuilder, evaluateFilter };

@@ -349,6 +349,47 @@ class BaoModel {
     return tokenizeSearchQuery(queryString);
   }
 
+  // Normalize a single search term using the same rules the model used to
+  // build `_searchText`. Useful when post-filtering hydrated rows in JS:
+  //   const term = Post.normalizeSearchTerm(userInput);
+  //   results.filter(p => p._dyData._searchText?.includes(term));
+  static normalizeSearchTerm(term) {
+    const { normalizeSearchTerm } = require("./utils/search-text");
+    return normalizeSearchTerm(term, this.searchConfig || {});
+  }
+
+  // Attributes projected onto iter_search_index. The base table key (_pk/_sk)
+  // and the index key (_iter_pk/_iter_sk) are always projected by DynamoDB;
+  // _searchText is the explicit INCLUDE attribute.
+  static _ITER_SEARCH_INDEX_PROJECTED_ATTRS = new Set([
+    "_pk",
+    "_sk",
+    ITERATION_PK_FIELD,
+    ITERATION_SK_FIELD,
+    SEARCH_TEXT_FIELD,
+  ]);
+
+  static _assertFilterFitsIterSearchIndex(expressionAttributeNames) {
+    const referenced = Object.values(expressionAttributeNames);
+    const unprojected = referenced.filter(
+      (name) => !this._ITER_SEARCH_INDEX_PROJECTED_ATTRS.has(name),
+    );
+    if (unprojected.length === 0) return;
+    const list = unprojected.join(", ");
+    const example = unprojected[0];
+    throw new Error(
+      `Filter on '${ITERATION_INDEX_NAME}' references attribute(s) that ` +
+        `aren't projected: [${list}]. The index only projects ${SEARCH_TEXT_FIELD} ` +
+        `(and the index/base keys), so DynamoDB can't filter on anything else ` +
+        `at the index level. Filter the hydrated batch in JS instead, e.g.:\n` +
+        `  for await (const batch of Model.iterateAll()) {\n` +
+        `    for (const item of batch) {\n` +
+        `      if (item.${example} === ...) { /* keep */ }\n` +
+        `    }\n` +
+        `  }`,
+    );
+  }
+
   static _getIterationPk(bucketNum) {
     const tenantId = this.manager.getTenantId();
     if (this.iterationBuckets === 1) {
@@ -391,6 +432,16 @@ class BaoModel {
         const filterBuilder = new FilterExpressionBuilder();
         const filterExpression = filterBuilder.build(filter, this);
         if (filterExpression) {
+          // Preflight: when running against iter_search_index, the GSI's
+          // INCLUDE projection only covers _searchText (plus the index/base
+          // keys). Filtering on any other attribute would fail at DynamoDB
+          // with an opaque "does not project one or more filter attributes"
+          // ValidationException — preempt that with a clearer error.
+          if (indexName === ITERATION_INDEX_NAME) {
+            this._assertFilterFitsIterSearchIndex(
+              filterExpression.ExpressionAttributeNames,
+            );
+          }
           filterParts.push(filterExpression.FilterExpression);
           Object.assign(
             params.ExpressionAttributeNames,

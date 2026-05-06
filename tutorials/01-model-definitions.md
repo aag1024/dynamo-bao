@@ -364,7 +364,13 @@ const buckets = await Promise.all(
 const terms = Post.tokenizeSearchQuery('"hello world" foo'); // => ["hello world", "foo"]
 ```
 
-`searchAll` accepts an `options.filter` that's combined with the search predicate, but DynamoDB only allows the index-level filter to reference attributes that are projected onto the GSI. The `iter_search_index` projects `_searchText` and the iteration keys, so filters on those work — for any other attribute, filter the hydrated batch in JS:
+`searchAll` accepts an `options.filter` that's combined with the search predicate, but DynamoDB only allows the index-level filter to reference attributes that are *projected* onto the GSI. The `iter_search_index` projects only `_searchText` (plus the index/base keys) — anything else throws a clear error before the round-trip:
+
+```
+Filter on 'iter_search_index' references attribute(s) that aren't projected: [status]. ...
+```
+
+For non-projected attributes, filter the hydrated batch in JS:
 
 ```javascript
 for await (const batch of Post.searchAll(["alice"])) {
@@ -376,7 +382,18 @@ for await (const batch of Post.searchAll(["alice"])) {
 
 ### Searchable + non-iterable models
 
-`searchable` works without `iterable: true` — `_searchText` is still populated on every save and you can reference it in any `query`/`queryByIndex` filter (all GSIs project `_searchText` automatically because their projection is `ALL`). The `searchAll`/`searchBucket` API only works on iterable models, since it relies on the bucketed iter_search_index.
+`searchable` works without `iterable: true` — `_searchText` is still populated on every save and exists on the row's raw data. The `searchAll`/`searchBucket` API only works on iterable models (it relies on the bucketed iter_search_index), so for non-iterable models you'd typically:
+
+1. `query` or `queryByIndex` on a known partition.
+2. Filter the hydrated results in JS using `Model.normalizeSearchTerm(query)` to normalize the search input the same way `_searchText` was built.
+
+```javascript
+const term = Post.normalizeSearchTerm(userQuery);
+const { items } = await Post.queryByIndex("byUser", userId);
+const matches = items.filter((p) => p._dyData._searchText?.includes(term));
+```
+
+(Direct filtering on `_searchText` via the standard filter API is a planned enhancement — `FilterExpressionBuilder` currently only accepts user-defined fields.)
 
 ### Multilingual support
 

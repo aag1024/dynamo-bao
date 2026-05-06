@@ -106,6 +106,118 @@ describe("missing iter_search_index → friendly error", () => {
   });
 });
 
+describe("filter on non-projected attribute → friendly error before round-trip", () => {
+  let testId, ModelClass;
+
+  class IterableForFilterCheck extends dynamoBao.BaoModel {
+    static modelPrefix = "ifc";
+    static iterable = true;
+    static iterationBuckets = 1;
+    static searchable = true;
+    static searchConfig = {
+      fields: ["title"],
+      caseSensitive: false,
+      minTermLength: 1,
+      dedupe: false,
+    };
+    static fields = {
+      id: dynamoBao.fields.UlidField({ autoAssign: true, required: true }),
+      title: dynamoBao.fields.StringField(),
+      status: dynamoBao.fields.StringField(),
+    };
+    static primaryKey = dynamoBao.PrimaryKeyConfig("id", "modelPrefix");
+  }
+
+  beforeEach(() => {
+    testId = ulid();
+    const manager = initTestModelsWithTenant(testConfig, testId);
+    manager.registerModel(IterableForFilterCheck);
+    ModelClass = manager.getModel("IterableForFilterCheck");
+  });
+
+  test("iterateAll throws clear error before hitting DynamoDB", async () => {
+    const sendCalls = [];
+    const realSend = ModelClass.documentClient.send.bind(
+      ModelClass.documentClient,
+    );
+    ModelClass.documentClient.send = async (cmd) => {
+      sendCalls.push(cmd);
+      return realSend(cmd);
+    };
+
+    try {
+      await expect(async () => {
+        for await (const _ of ModelClass.iterateAll({
+          filter: { status: "active" },
+        })) {
+          // unreachable
+        }
+      }).rejects.toThrow(
+        /references attribute\(s\) that aren't projected.*\[status\]/i,
+      );
+      // Confirm the failure happened pre-flight, no Query was issued.
+      expect(sendCalls.length).toBe(0);
+    } finally {
+      ModelClass.documentClient.send = realSend;
+    }
+  });
+
+  test("searchAll throws clear error before hitting DynamoDB", async () => {
+    const sendCalls = [];
+    const realSend = ModelClass.documentClient.send.bind(
+      ModelClass.documentClient,
+    );
+    ModelClass.documentClient.send = async (cmd) => {
+      sendCalls.push(cmd);
+      return realSend(cmd);
+    };
+
+    try {
+      await expect(async () => {
+        for await (const _ of ModelClass.searchAll(["foo"], {
+          filter: { status: "active" },
+        })) {
+          // unreachable
+        }
+      }).rejects.toThrow(/aren't projected.*\[status\]/i);
+      expect(sendCalls.length).toBe(0);
+    } finally {
+      ModelClass.documentClient.send = realSend;
+    }
+  });
+
+  test("error message lists every offending attribute", async () => {
+    await expect(async () => {
+      for await (const _ of ModelClass.iterateAll({
+        filter: { status: "active", title: "x" },
+      })) {
+        // unreachable — title is also not in the iter_search_index projection
+      }
+    }).rejects.toThrow(/\[(?:status, title|title, status)\]/);
+  });
+
+  test("preflight unit-test on the allowlist directly", () => {
+    // Direct unit test of _assertFilterFitsIterSearchIndex so we can confirm
+    // each projected attribute is allowed without going through the user-facing
+    // filter API (FilterExpressionBuilder's own validation rejects raw system
+    // field names — that's tracked as a separate enhancement).
+    expect(() =>
+      ModelClass._assertFilterFitsIterSearchIndex({ "#n1": "_searchText" }),
+    ).not.toThrow();
+    expect(() =>
+      ModelClass._assertFilterFitsIterSearchIndex({
+        "#n1": "_pk",
+        "#n2": "_sk",
+        "#n3": "_iter_pk",
+        "#n4": "_iter_sk",
+      }),
+    ).not.toThrow();
+    expect(() =>
+      ModelClass._assertFilterFitsIterSearchIndex({ "#n1": "title" }),
+    ).toThrow(/aren't projected.*\[title\]/i);
+  });
+});
+
 describe("searchable: true but searchConfig missing → registration fails", () => {
   test("registering a model with searchable=true and searchConfig=null throws", () => {
     class BrokenSearchable extends dynamoBao.BaoModel {

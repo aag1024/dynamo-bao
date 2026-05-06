@@ -474,13 +474,15 @@ class BaoModel {
       } catch (error) {
         // DynamoDB reports a missing index as a ValidationException with a
         // message like "The table does not have the specified index: <name>".
-        // ResourceNotFoundException is included for completeness in case
-        // future SDK versions change the error class.
+        // We only translate when the message explicitly references an index
+        // — translating raw ResourceNotFoundException would mask a missing
+        // *table* with a "run bao-update-table" hint that wouldn't help.
         const message = error.message || "";
         const isMissingIndex =
-          error.name === "ResourceNotFoundException" ||
           /does not have the specified index/i.test(message) ||
-          message.includes(`specified index: ${indexName}`);
+          message.includes(`specified index: ${indexName}`) ||
+          (error.name === "ResourceNotFoundException" &&
+            message.toLowerCase().includes("index"));
         if (isMissingIndex) {
           throw new Error(
             `Index '${indexName}' is missing on table '${this.table}'. ` +

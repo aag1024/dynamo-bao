@@ -63,12 +63,12 @@ describe("missing iter_search_index → friendly error", () => {
     }
   });
 
-  test("translates ResourceNotFoundException by name", async () => {
+  test("translates ResourceNotFoundException only if message mentions an index", async () => {
     const realSend = ModelClass.documentClient.send.bind(
       ModelClass.documentClient,
     );
     ModelClass.documentClient.send = async () => {
-      const err = new Error("Requested resource not found");
+      const err = new Error("Requested index not found");
       err.name = "ResourceNotFoundException";
       throw err;
     };
@@ -79,6 +79,29 @@ describe("missing iter_search_index → friendly error", () => {
           // unreachable
         }
       }).rejects.toThrow(/Index 'iter_search_index' is missing/i);
+    } finally {
+      ModelClass.documentClient.send = realSend;
+    }
+  });
+
+  test("does NOT translate ResourceNotFoundException for missing table (no 'index' in message)", async () => {
+    // Critical: a missing-table error must surface as-is, not get masked as a
+    // missing-index error with the wrong remediation.
+    const realSend = ModelClass.documentClient.send.bind(
+      ModelClass.documentClient,
+    );
+    ModelClass.documentClient.send = async () => {
+      const err = new Error("Cannot do operations on a non-existent table");
+      err.name = "ResourceNotFoundException";
+      throw err;
+    };
+
+    try {
+      await expect(async () => {
+        for await (const _ of ModelClass.iterateAll()) {
+          // unreachable
+        }
+      }).rejects.toThrow(/non-existent table/i);
     } finally {
       ModelClass.documentClient.send = realSend;
     }

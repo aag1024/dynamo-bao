@@ -336,6 +336,15 @@ Codegen validates that every name in `searchable.fields` is defined on the model
 - Untouched source fields are backfilled from the current row, so you never lose part of the searchable text just because you only updated one field.
 - If the recomputed value is empty (all sources cleared), `_searchText` is `REMOVE`d and the row drops out of search results.
 
+### Eventual consistency
+
+`searchAll` and `searchBucket` read from the `iter_search_index` GSI. DynamoDB GSIs are eventually consistent, so a row whose `_searchText` was just updated may briefly:
+
+- still appear under its **old** value (false positive: row matches the old terms for a few seconds after the update); or
+- not yet appear under its **new** value (false negative: row doesn't match the new terms until the index catches up).
+
+The same window applies to `iterateAll({ filter: ... })`. If you need stronger guarantees for a destructive bulk operation, re-read each item via `find()` (strongly consistent base read) and re-check the predicate yourself before acting.
+
 ### Searching iterable models
 
 ```javascript

@@ -1,6 +1,4 @@
-const {
-  buildSearchPredicate,
-} = require("../src/utils/search-text");
+const { buildSearchPredicate } = require("../src/utils/search-text");
 
 const config = {
   fields: ["title"],
@@ -123,4 +121,5 @@ describe("buildSearchPredicate", () => {
       expect(p.ExpressionAttributeValues[":st0"]).toBe("苹果");
     });
   });
+
 });

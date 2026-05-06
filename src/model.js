@@ -421,10 +421,16 @@ class BaoModel {
       try {
         response = await this.documentClient.send(new QueryCommand(params));
       } catch (error) {
-        if (
+        // DynamoDB reports a missing index as a ValidationException with a
+        // message like "The table does not have the specified index: <name>".
+        // ResourceNotFoundException is included for completeness in case
+        // future SDK versions change the error class.
+        const message = error.message || "";
+        const isMissingIndex =
           error.name === "ResourceNotFoundException" ||
-          /index.*not.*found/i.test(error.message || "")
-        ) {
+          /does not have the specified index/i.test(message) ||
+          message.includes(`specified index: ${indexName}`);
+        if (isMissingIndex) {
           throw new Error(
             `Index '${indexName}' is missing on table '${this.table}'. ` +
               `Run 'bao-update-table' to add it.`,

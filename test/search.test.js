@@ -89,7 +89,10 @@ describe("Searchable models", () => {
         SearchablePost,
         NonSearchablePost,
       ]);
-      // NonIterableSearchable cleanup: scan via known ids — handled by global cleanup
+      // NonIterableSearchable can't be cleaned up via iteration (it's not
+      // iterable). Tenant isolation prevents cross-test pollution; a small
+      // amount of accumulation across runs against the same tenant prefix
+      // is acceptable for a test fixture.
       await cleanupTestData(testId);
     }
   });

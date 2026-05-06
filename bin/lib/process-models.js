@@ -9,7 +9,7 @@ const SEARCHABLE_KNOWN_OPTIONS = new Set([
   "dedupe",
 ]);
 
-function applyIterableDefaults(modelName, modelDef) {
+function applyIterableDefaults(modelDef) {
   if (modelDef.iterable === undefined) {
     modelDef.iterable = modelDef.tableType !== "mapping";
   }
@@ -105,7 +105,7 @@ function validateSearchable(modelName, modelDef) {
 
 function applyModelDefaults(models) {
   for (const [modelName, modelDef] of Object.entries(models)) {
-    applyIterableDefaults(modelName, modelDef);
+    applyIterableDefaults(modelDef);
     validateSearchable(modelName, modelDef);
   }
   return models;

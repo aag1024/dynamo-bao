@@ -1,5 +1,29 @@
 const { defaultLogger: logger } = require("./utils/logger");
 const { QueryError, ValidationError } = require("./exceptions");
+const { SEARCH_TEXT_FIELD } = require("./constants");
+
+// System fields that don't appear in `model.fields` but are still allowed
+// targets for FilterExpressions. _searchText is the auto-populated search
+// column on `searchable` models — see src/utils/search-text.js. The values
+// here describe how to convert the user-supplied filter value into the
+// shape stored on the row, since system fields don't have a Field instance
+// with `.toDy()` to do that for us.
+const SYSTEM_FILTERABLE_FIELDS = {
+  [SEARCH_TEXT_FIELD]: {
+    convertValue(value, model) {
+      // Mirror the write-time normalization so user input matches what's
+      // stored. `normalizeSearchTerm` is idempotent so callers who already
+      // normalized the value pay no penalty for re-running it. Falls back
+      // to a plain String() when the model has no searchConfig (e.g. the
+      // model is non-searchable but its rows happen to carry the attribute).
+      if (model.searchConfig) {
+        const { normalizeSearchTerm } = require("./utils/search-text");
+        return normalizeSearchTerm(String(value), model.searchConfig);
+      }
+      return String(value);
+    },
+  },
+};
 
 /**
  * Supporting class for building DynamoDB filter expressions.
@@ -34,6 +58,10 @@ class FilterExpressionBuilder {
 
   // Simplified value conversion - let the field handle it
   convertValue(value, model, fieldName) {
+    const systemField = SYSTEM_FILTERABLE_FIELDS[fieldName];
+    if (systemField) {
+      return systemField.convertValue(value, model);
+    }
     const field = model.fields[fieldName];
     return field.toDy(value);
   }
@@ -262,10 +290,17 @@ class FilterExpressionBuilder {
           continue;
         }
 
-        // Validate field exists in model
-        const field = model.fields[key];
-        if (!field) {
-          throw new QueryError(`Unknown field in filter: ${key}`);
+        // Allow whitelisted system fields (e.g., _searchText) without
+        // requiring a matching entry in model.fields. Operator validation
+        // below still runs so bad operators are rejected the same way.
+        const isSystemField = !!SYSTEM_FILTERABLE_FIELDS[key];
+
+        if (!isSystemField) {
+          // Validate field exists in model
+          const field = model.fields[key];
+          if (!field) {
+            throw new QueryError(`Unknown field in filter: ${key}`);
+          }
         }
 
         // Recursively validate nested conditions

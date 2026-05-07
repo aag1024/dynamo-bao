@@ -391,18 +391,27 @@ for await (const batch of Post.searchAll(["alice"])) {
 
 ### Searchable + non-iterable models
 
-`searchable` works without `iterable: true` — `_searchText` is still populated on every save and exists on the row's raw data. The `searchAll`/`searchBucket` API only works on iterable models (it relies on the bucketed iter_search_index), so for non-iterable models you'd typically:
+`searchable` works without `iterable: true` — `_searchText` is still populated on every save and exists on the row's raw data. The `searchAll`/`searchBucket` API only works on iterable models (it relies on the bucketed `iter_search_index`), so for non-iterable models you can either:
 
-1. `query` or `queryByIndex` on a known partition.
-2. Filter the hydrated results in JS using `Model.normalizeSearchTerm(query)` to normalize the search input the same way `_searchText` was built.
+**Filter on `_searchText` directly via the standard filter API.** All filter operators that take a string work, and the value is auto-normalized using the model's `searchConfig` so user input matches what was stored:
+
+```javascript
+const { items } = await Post.queryByIndex("byUser", userId, {
+  filter: { _searchText: { $contains: "Hello, World!" } },
+});
+// 'Hello, World!' is auto-normalized to 'hello world' before being sent
+// to DynamoDB, matching what _searchText looks like on disk.
+```
+
+This works on any standard filter context: `query`, `queryByIndex`, `iterateAll({ filter: ... })`, and condition expressions in `update`/`delete`. Operators supported: `$contains`, `$beginsWith`, `$eq`, `$ne`, `$exists`. Values are auto-normalized for string-comparison ops; `$exists` doesn't take a value.
+
+**Or filter post-fetch in JS** when you want the normalization but not the index-side filter (e.g., post-fetch ranking):
 
 ```javascript
 const term = Post.normalizeSearchTerm(userQuery);
 const { items } = await Post.queryByIndex("byUser", userId);
 const matches = items.filter((p) => p._dyData._searchText?.includes(term));
 ```
-
-(Direct filtering on `_searchText` via the standard filter API is a planned enhancement — `FilterExpressionBuilder` currently only accepts user-defined fields.)
 
 ### Multilingual support
 

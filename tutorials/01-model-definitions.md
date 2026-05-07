@@ -372,14 +372,31 @@ const buckets = await Promise.all(
 // Helper: split a free-form query string into terms (honors quoted phrases)
 const terms = Post.tokenizeSearchQuery('"hello world" foo'); // => ["hello world", "foo"]
 
-// Cap total results. Default limit is 100; pass Infinity to scan everything.
-for await (const batch of Post.searchAll(["alice"], { limit: 25 })) { /* ... */ }
-for await (const batch of Post.searchAll(["alice"], { limit: Infinity })) {
-  // unbounded — for admin/cleanup scripts that need every match
-}
+// Cap total results. Default limit is 100; pass Infinity for unbounded.
+const { items, cursor } = await Post.searchAll(["alice"], { limit: 25 });
+
+// Pagination: pass the cursor back to get the next page. cursor === null
+// when the search is exhausted.
+const next = await Post.searchAll(["alice"], { limit: 25, cursor });
+
+// Drain everything (admin / cleanup scripts):
+let cur = null, all = [];
+do {
+  const page = await Post.searchAll(["alice"], { limit: 100, cursor: cur });
+  all.push(...page.items);
+  cur = page.cursor;
+} while (cur);
 ```
 
-`limit` defaults to **100** total items across all buckets and pages. The generator stops pulling new pages once the cap is hit (no further DynamoDB Query calls), and the last batch is sliced to fit so callers never see more than `limit` items in total. To opt out of the cap entirely, pass `Infinity`.
+`searchAll` returns `{ items, cursor }`. `items` is never longer than `limit`. `cursor` is an opaque string you pass back on the next call to resume; `null` means the search is exhausted.
+
+Other options:
+
+- **`parallel: true`** (default) fans out across every unexhausted bucket concurrently per round; faster wall-clock at the cost of more concurrent capacity. Pass `parallel: false` for a sequential walk if you want predictable per-bucket-then-objectId order or you're hitting throttling on a small table.
+- **`maxQueriesPerBucket: 50`** (default) bounds DynamoDB Query roundtrips per call **per bucket**. With 5 buckets that's up to 250 Queries per call worst-case. For sparse-match searches this caps capacity per call — if we hit the cap without filling `limit`, the call returns whatever it found plus a non-null cursor pointing at the next page so the caller can continue with another call.
+- **`limit: Infinity`** opts out of the cap. Combine with `cursor` chaining to drain.
+
+The cursor encodes which buckets are unexhausted and where they left off, plus a hash of the search predicate (terms + operator + searchConfig). Resuming with different terms or operator throws — the cursor is only valid for the exact query that produced it.
 
 `searchAll` accepts an `options.filter` that's combined with the search predicate, but DynamoDB only allows the index-level filter to reference attributes that are *projected* onto the GSI. The `iter_search_index` projects only `_searchText` (plus the index/base keys) — anything else throws a clear error before the round-trip:
 

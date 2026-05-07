@@ -128,6 +128,36 @@ class TestMinTermLengthPost extends dynamoBao.BaoModel {
   static primaryKey = dynamoBao.PrimaryKeyConfig("postId", "modelPrefix");
 }
 
+// Test helper: page through searchAll with cursors until exhausted.
+// Equivalent to the old `for await (const batch of searchAll(...))`
+// behavior for tests that want every match regardless of the new default
+// limit. Pass `limit: Infinity` to opt out of capping per page.
+async function drainAll(model, terms, options = {}) {
+  const out = [];
+  let cursor = null;
+  do {
+    const page = await model.searchAll(terms, { ...options, cursor });
+    out.push(...page.items);
+    cursor = page.cursor;
+  } while (cursor);
+  return out;
+}
+
+// Same idea for searchBucket: scoped to one bucket.
+async function drainBucket(model, bucketNum, terms, options = {}) {
+  const out = [];
+  let cursor = null;
+  do {
+    const page = await model.searchBucket(bucketNum, terms, {
+      ...options,
+      cursor,
+    });
+    out.push(...page.items);
+    cursor = page.cursor;
+  } while (cursor);
+  return out;
+}
+
 // Search-enabled tests need the runtime to resolve the iteration index to
 // `iter_search_index` (the new INCLUDE-projection GSI). Opt in via config —
 // the package default is the legacy `iter_index` for backwards compatibility.
@@ -191,12 +221,13 @@ describe("Searchable models", () => {
         body: "A classic recipe.",
       });
 
-      const found = [];
-      for await (const batch of SearchablePost.searchAll(["banana"])) {
-        found.push(...batch);
-      }
+      const { items: found, cursor } = await SearchablePost.searchAll([
+        "banana",
+      ]);
       const ids = found.map((p) => p.postId).sort();
       expect(ids).toEqual([b.postId].sort());
+      // Single page, all matches found, cursor is null.
+      expect(cursor).toBeNull();
     });
 
     test("$and matches only rows containing every term", async () => {
@@ -213,36 +244,30 @@ describe("Searchable models", () => {
         body: "no phones",
       });
 
-      const found = [];
-      for await (const batch of SearchablePost.searchAll(
+      const { items: found } = await SearchablePost.searchAll(
         ["iphone", "banana"],
         { operator: "$and" },
-      )) {
-        found.push(...batch);
-      }
+      );
       expect(found.map((p) => p.postId)).toEqual([both.postId]);
     });
 
     test("$or matches rows containing any term", async () => {
-      const a = await SearchablePost.create({ title: "Apple", body: null});
-      const b = await SearchablePost.create({ title: "Banana", body: null});
-      await SearchablePost.create({ title: "Carrot", body: null});
+      const a = await SearchablePost.create({ title: "Apple", body: null });
+      const b = await SearchablePost.create({ title: "Banana", body: null });
+      await SearchablePost.create({ title: "Carrot", body: null });
 
-      const found = [];
-      for await (const batch of SearchablePost.searchAll(
+      const { items: found } = await SearchablePost.searchAll(
         ["apple", "banana"],
         { operator: "$or" },
-      )) {
-        found.push(...batch);
-      }
+      );
       const ids = found.map((p) => p.postId).sort();
       expect(ids).toEqual([a.postId, b.postId].sort());
     });
 
     test("non-projected attributes can be filtered post-iteration", async () => {
       // iter_search_index only projects _searchText, so filters on other
-      // attributes have to be applied to hydrated items in JS (same rule as
-      // iterateAll). This is the recommended pattern.
+      // attributes have to be applied to hydrated items in JS. The
+      // recommended pattern is to loop over page.items.
       await SearchablePost.create({
         title: "alice the explorer",
         status: "draft",
@@ -252,23 +277,19 @@ describe("Searchable models", () => {
         status: "active",
       });
 
-      const found = [];
-      for await (const batch of SearchablePost.searchAll(["alice"])) {
-        for (const item of batch) {
-          if (item.status === "active") found.push(item);
-        }
-      }
+      const { items: page } = await SearchablePost.searchAll(["alice"]);
+      const found = page.filter((item) => item.status === "active");
       expect(found.map((p) => p.postId)).toEqual([active.postId]);
     });
 
     test("returns empty when no rows match", async () => {
-      await SearchablePost.create({ title: "Apple", body: null});
+      await SearchablePost.create({ title: "Apple", body: null });
 
-      const found = [];
-      for await (const batch of SearchablePost.searchAll(["nonexistent"])) {
-        found.push(...batch);
-      }
+      const { items: found, cursor } = await SearchablePost.searchAll([
+        "nonexistent",
+      ]);
       expect(found).toEqual([]);
+      expect(cursor).toBeNull();
     });
 
     test("multilingual: matches CJK substring", async () => {
@@ -276,12 +297,9 @@ describe("Searchable models", () => {
         title: "苹果手机评测",
         body: "iPhone 15 上市了。",
       });
-      await SearchablePost.create({ title: "Banana", body: null});
+      await SearchablePost.create({ title: "Banana", body: null });
 
-      const found = [];
-      for await (const batch of SearchablePost.searchAll(["苹果"])) {
-        found.push(...batch);
-      }
+      const { items: found } = await SearchablePost.searchAll(["苹果"]);
       expect(found.map((p) => p.postId)).toEqual([cjk.postId]);
     });
   });
@@ -299,17 +317,13 @@ describe("Searchable models", () => {
       }
       // a few non-matching
       for (let i = 0; i < 5; i++) {
-        await SearchablePost.create({ title: `bob number ${i}`, body: null});
+        await SearchablePost.create({ title: `bob number ${i}`, body: null });
       }
 
       const bucketResults = await Promise.all(
-        Array.from({ length: SearchablePost.iterationBuckets }, async (_, b) => {
-          const out = [];
-          for await (const batch of SearchablePost.searchBucket(b, ["alice"])) {
-            out.push(...batch);
-          }
-          return out;
-        }),
+        Array.from({ length: SearchablePost.iterationBuckets }, (_, b) =>
+          drainBucket(SearchablePost, b, ["alice"]),
+        ),
       );
       const flat = bucketResults
         .flat()
@@ -334,13 +348,13 @@ describe("Searchable models", () => {
       }
       await Promise.all(creates);
 
-      const found = [];
-      for await (const batch of SearchablePost.searchAll(["alice"], {
-        limit: 10,
-      })) {
-        found.push(...batch);
-      }
+      const { items: found, cursor } = await SearchablePost.searchAll(
+        ["alice"],
+        { limit: 10 },
+      );
       expect(found.length).toBe(10);
+      // Cursor is non-null because there are more matches to find.
+      expect(cursor).not.toBeNull();
       // Every returned id is a real alice id (not a stray).
       for (const p of found) {
         expect(aliceIds).toContain(p.postId);
@@ -350,8 +364,8 @@ describe("Searchable models", () => {
     }, 120000);
 
     test("default limit is 100 when not specified", async () => {
-      // Create 110 matches. With the default limit of 100, searchAll
-      // should return exactly 100, not all 110.
+      // Create 110 matches. With the default limit of 100, one searchAll
+      // call returns exactly 100 plus a non-null cursor.
       const creates = [];
       for (let i = 0; i < 110; i++) {
         creates.push(
@@ -360,15 +374,13 @@ describe("Searchable models", () => {
       }
       await Promise.all(creates);
 
-      const found = [];
-      for await (const batch of SearchablePost.searchAll(["alice"])) {
-        found.push(...batch);
-      }
-      expect(found.length).toBe(100);
+      const { items, cursor } = await SearchablePost.searchAll(["alice"]);
+      expect(items.length).toBe(100);
+      expect(cursor).not.toBeNull();
     }, 180000);
 
-    test("limit: Infinity returns every match (opt-out of cap)", async () => {
-      // Create 110 matches. Explicit Infinity overrides the default cap.
+    test("limit: Infinity drained returns every match", async () => {
+      // 110 matches, drain across pages until cursor is null.
       const aliceIds = [];
       const creates = [];
       for (let i = 0; i < 110; i++) {
@@ -380,41 +392,33 @@ describe("Searchable models", () => {
       }
       await Promise.all(creates);
 
-      const found = [];
-      for await (const batch of SearchablePost.searchAll(["alice"], {
+      const found = await drainAll(SearchablePost, ["alice"], {
         limit: Infinity,
-      })) {
-        found.push(...batch);
-      }
+      });
       expect(found.length).toBe(110);
       expect(found.map((p) => p.postId).sort()).toEqual(aliceIds.slice().sort());
     }, 180000);
 
-    test("limit hit mid-page yields a partial last batch", async () => {
-      // 12 matches, batchSize=5, limit=7. We expect the generator to yield
-      // [5 items], then [2 items, partial], then stop. Total = 7.
+    test("limit returns exactly the requested count, even when matches per bucket exceed it", async () => {
+      // 12 matches, batchSize=5, limit=7. Result must be exactly 7 items;
+      // any over-pull from parallel rounds is sliced and stashed in the cursor.
       for (let i = 0; i < 12; i++) {
         await SearchablePost.create({ title: `alice ${i}`, body: null });
       }
 
-      const batchSizes = [];
-      let total = 0;
-      for await (const batch of SearchablePost.searchAll(["alice"], {
+      const { items, cursor } = await SearchablePost.searchAll(["alice"], {
         batchSize: 5,
         limit: 7,
-      })) {
-        batchSizes.push(batch.length);
-        total += batch.length;
-      }
-      expect(total).toBe(7);
-      // Last batch must be smaller than batchSize, proving slicing happened.
-      expect(batchSizes[batchSizes.length - 1]).toBeLessThan(5);
+      });
+      expect(items.length).toBe(7);
+      // Cursor non-null because there are still 5 unreturned matches.
+      expect(cursor).not.toBeNull();
     }, 120000);
 
-    test("searchAll stops issuing Query calls once limit is reached", async () => {
-      // Create 30 alice rows across 5 buckets. With limit=5 and a single
-      // bucket likely having all 5 matches, we should make far fewer
-      // Query calls than the iterationBuckets count.
+    test("searchAll stops issuing Query calls once limit is reached (sequential mode)", async () => {
+      // Create 30 alice rows across 5 buckets. Sequential mode with limit=5
+      // typically finishes in the first 1-2 buckets — far fewer Query calls
+      // than the bucket count would imply if we walked everything.
       for (let i = 0; i < 30; i++) {
         await SearchablePost.create({ title: `alice ${i}`, body: null });
       }
@@ -434,17 +438,12 @@ describe("Searchable models", () => {
       };
 
       try {
-        const found = [];
-        for await (const batch of SearchablePost.searchAll(["alice"], {
+        const { items } = await SearchablePost.searchAll(["alice"], {
           limit: 5,
-        })) {
-          found.push(...batch);
-        }
-        expect(found.length).toBe(5);
+          parallel: false,
+        });
+        expect(items.length).toBe(5);
         // We did not exhaust all 5 buckets — far fewer Query calls.
-        // (Exact count varies with hash distribution, but it must be
-        // strictly less than what unbounded search would do, which is
-        // >= iterationBuckets.)
         expect(queryCount).toBeLessThan(SearchablePost.iterationBuckets);
       } finally {
         SearchablePost.documentClient.send = realSend;
@@ -458,12 +457,11 @@ describe("Searchable models", () => {
         await SearchablePost.create({ title: `alice ${i}`, body: null });
       }
 
-      const bucket0 = [];
-      for await (const batch of SearchablePost.searchBucket(0, ["alice"], {
-        limit: 3,
-      })) {
-        bucket0.push(...batch);
-      }
+      const { items: bucket0 } = await SearchablePost.searchBucket(
+        0,
+        ["alice"],
+        { limit: 3 },
+      );
       expect(bucket0.length).toBeLessThanOrEqual(3);
     }, 120000);
 
@@ -481,13 +479,9 @@ describe("Searchable models", () => {
 
       try {
         for (const bad of [0, -1, 1.5, NaN, "10"]) {
-          await expect(async () => {
-            for await (const _ of SearchablePost.searchAll(["alice"], {
-              limit: bad,
-            })) {
-              // unreachable
-            }
-          }).rejects.toThrow(/limit must be a positive integer or Infinity/i);
+          await expect(
+            SearchablePost.searchAll(["alice"], { limit: bad }),
+          ).rejects.toThrow(/limit must be a positive integer or Infinity/i);
         }
         expect(sendCalls).toBe(0);
       } finally {
@@ -549,21 +543,17 @@ describe("Searchable models", () => {
 
         const counter = installQueryCounter(SearchablePost);
         try {
-          const found = [];
-          for await (const batch of SearchablePost.searchAll(["alice"], {
+          const found = await drainAll(SearchablePost, ["alice"], {
             batchSize: 5,
-          })) {
-            found.push(...batch);
-          }
+            limit: Infinity,
+          });
 
           const foundIds = found.map((p) => p.postId).sort();
           expect(foundIds).toEqual(aliceIds.slice().sort());
           // No duplicates — pagination must not double-yield rows.
           expect(new Set(foundIds).size).toBe(foundIds.length);
           // Pagination actually happened. With 5 buckets and batchSize 5
-          // against a dataset of ~75 rows, we expect at least one extra
-          // Query per bucket. The exact count varies with hash distribution,
-          // but it must be strictly more than the bucket count.
+          // against ~75 rows, we expect strictly more Queries than buckets.
           expect(counter.count).toBeGreaterThan(
             SearchablePost.iterationBuckets,
           );
@@ -577,10 +567,9 @@ describe("Searchable models", () => {
     test(
       "searchAll keeps paginating when most pages are empty after the FilterExpression",
       async () => {
-        // 5 matching needles in a haystack of 75. With batchSize=5 the GSI
-        // Query returns up to 5 items per page, then the contains() filter
-        // throws away most of them. The pagination loop must keep going on
-        // LastEvaluatedKey across many empty/sparse pages until exhausted.
+        // 5 needles in a haystack of 75. With batchSize=5 the GSI Query
+        // returns up to 5 items per page, then contains() throws most away.
+        // Pagination must survive mostly-empty pages (across calls now).
         const needleIds = [];
         const creates = [];
         for (let i = 0; i < 5; i++) {
@@ -600,19 +589,16 @@ describe("Searchable models", () => {
 
         const counter = installQueryCounter(SearchablePost);
         try {
-          const found = [];
-          for await (const batch of SearchablePost.searchAll(
+          const found = await drainAll(
+            SearchablePost,
             ["unique-marker-xyz"],
-            { batchSize: 5 },
-          )) {
-            found.push(...batch);
-          }
+            { batchSize: 5, limit: Infinity },
+          );
 
           const foundIds = found.map((p) => p.postId).sort();
           expect(foundIds).toEqual(needleIds.slice().sort());
-          // 80 total rows / 5 per page = 16+ pages spread across 5 buckets.
-          // At minimum we must have made far more Query calls than buckets,
-          // confirming the pagination loop survives mostly-empty pages.
+          // 80 rows / 5 per page = 16+ pages across 5 buckets — must have
+          // made many more Queries than buckets to drain everything.
           expect(counter.count).toBeGreaterThan(
             SearchablePost.iterationBuckets * 2,
           );
@@ -634,17 +620,11 @@ describe("Searchable models", () => {
       expect(lower._dyData._searchText).toBe("hello world");
 
       // Mixed-case query matches only the row with that exact case.
-      let found = [];
-      for await (const batch of CaseSensitivePost.searchAll(["Hello"])) {
-        found.push(...batch);
-      }
+      let { items: found } = await CaseSensitivePost.searchAll(["Hello"]);
       expect(found.map((p) => p.postId)).toEqual([upper.postId]);
 
       // Lowercase query matches only the lowercase row.
-      found = [];
-      for await (const batch of CaseSensitivePost.searchAll(["hello"])) {
-        found.push(...batch);
-      }
+      ({ items: found } = await CaseSensitivePost.searchAll(["hello"]));
       expect(found.map((p) => p.postId)).toEqual([lower.postId]);
     });
 
@@ -656,57 +636,39 @@ describe("Searchable models", () => {
       expect(repeated._dyData._searchText).toBe("foo bar baz");
 
       // Searches still work against the deduped storage.
-      let found = [];
-      for await (const batch of DedupePost.searchAll(["foo", "baz"])) {
-        found.push(...batch);
-      }
+      let { items: found } = await DedupePost.searchAll(["foo", "baz"]);
       expect(found.map((p) => p.postId)).toEqual([repeated.postId]);
 
       // A token that appeared only as a duplicate in input is still findable.
-      found = [];
-      for await (const batch of DedupePost.searchAll(["bar"])) {
-        found.push(...batch);
-      }
+      ({ items: found } = await DedupePost.searchAll(["bar"]));
       expect(found.map((p) => p.postId)).toEqual([repeated.postId]);
     });
 
     test("minTermLength drops short tokens at write AND at query time", async () => {
-      // Source has a mix of short and long tokens. minTermLength=3 means
-      // 'a', 'is', 'go' get dropped from _searchText.
       const row = await MinTermLengthPost.create({
         title: "a fox is here go now seriously",
       });
       const stored = row._dyData._searchText.split(" ");
-      // Long tokens kept...
       expect(stored).toEqual(
         expect.arrayContaining(["fox", "here", "now", "seriously"]),
       );
-      // ...and short ones dropped.
       expect(stored).not.toContain("a");
       expect(stored).not.toContain("is");
       expect(stored).not.toContain("go");
 
       // Searching for a long token still works.
-      let found = [];
-      for await (const batch of MinTermLengthPost.searchAll(["seriously"])) {
-        found.push(...batch);
-      }
+      let { items: found } = await MinTermLengthPost.searchAll(["seriously"]);
       expect(found.map((p) => p.postId)).toEqual([row.postId]);
 
-      // Query terms are normalized too: a too-short term is dropped from
-      // the predicate. With ['a', 'fox'] passed in, only 'fox' survives.
-      found = [];
-      for await (const batch of MinTermLengthPost.searchAll(["a", "fox"])) {
-        found.push(...batch);
-      }
+      // Query terms are normalized too: a too-short term drops from the
+      // predicate. With ['a', 'fox'] passed in, only 'fox' survives.
+      ({ items: found } = await MinTermLengthPost.searchAll(["a", "fox"]));
       expect(found.map((p) => p.postId)).toEqual([row.postId]);
 
       // A query with only short terms throws (no usable terms remain).
-      await expect(async () => {
-        for await (const _ of MinTermLengthPost.searchAll(["a", "is"])) {
-          // unreachable
-        }
-      }).rejects.toThrow(/at least one non-empty term/i);
+      await expect(
+        MinTermLengthPost.searchAll(["a", "is"]),
+      ).rejects.toThrow(/at least one non-empty term/i);
     });
   });
 
@@ -773,19 +735,13 @@ describe("Searchable models", () => {
         title: "alice the great",
         body: null,
       });
-      const found = [];
-      for await (const batch of SearchablePost.searchAll(["alice"])) {
-        found.push(...batch);
-      }
+      const { items: found } = await SearchablePost.searchAll(["alice"]);
       expect(found.map((x) => x.postId)).toEqual([p.postId]);
 
       // Update only status — _searchText must stay
       await SearchablePost.update(p.postId, { status: "archived" });
 
-      const after = [];
-      for await (const batch of SearchablePost.searchAll(["alice"])) {
-        after.push(...batch);
-      }
+      const { items: after } = await SearchablePost.searchAll(["alice"]);
       expect(after.map((x) => x.postId)).toEqual([p.postId]);
     });
 
@@ -794,33 +750,21 @@ describe("Searchable models", () => {
         title: "first version",
         body: "with extra context",
       });
-      let found = [];
-      for await (const batch of SearchablePost.searchAll(["first"])) {
-        found.push(...batch);
-      }
-      expect(found.length).toBe(1);
+      let res = await SearchablePost.searchAll(["first"]);
+      expect(res.items.length).toBe(1);
 
       await SearchablePost.update(p.postId, { title: "second version" });
 
-      // 'first' no longer matches title; body still contains "extra"
-      found = [];
-      for await (const batch of SearchablePost.searchAll(["first"])) {
-        found.push(...batch);
-      }
-      expect(found.length).toBe(0);
+      // 'first' no longer matches title; body still contains 'extra'
+      res = await SearchablePost.searchAll(["first"]);
+      expect(res.items.length).toBe(0);
 
-      found = [];
-      for await (const batch of SearchablePost.searchAll(["second"])) {
-        found.push(...batch);
-      }
-      expect(found.map((x) => x.postId)).toEqual([p.postId]);
+      res = await SearchablePost.searchAll(["second"]);
+      expect(res.items.map((x) => x.postId)).toEqual([p.postId]);
 
       // Body backfilled — searching for it still finds the row
-      found = [];
-      for await (const batch of SearchablePost.searchAll(["extra"])) {
-        found.push(...batch);
-      }
-      expect(found.map((x) => x.postId)).toEqual([p.postId]);
+      res = await SearchablePost.searchAll(["extra"]);
+      expect(res.items.map((x) => x.postId)).toEqual([p.postId]);
     });
 
     test("clearing all source fields REMOVEs _searchText (row drops out of search)", async () => {
@@ -828,19 +772,13 @@ describe("Searchable models", () => {
         title: "deletable",
         body: "stuff",
       });
-      let found = [];
-      for await (const batch of SearchablePost.searchAll(["deletable"])) {
-        found.push(...batch);
-      }
-      expect(found.length).toBe(1);
+      let res = await SearchablePost.searchAll(["deletable"]);
+      expect(res.items.length).toBe(1);
 
       await SearchablePost.update(p.postId, { title: null, body: null });
 
-      found = [];
-      for await (const batch of SearchablePost.searchAll(["deletable"])) {
-        found.push(...batch);
-      }
-      expect(found.length).toBe(0);
+      res = await SearchablePost.searchAll(["deletable"]);
+      expect(res.items.length).toBe(0);
     });
   });
 
@@ -848,32 +786,18 @@ describe("Searchable models", () => {
     test("NonIterableSearchable populates _searchText and is filterable", async () => {
       const p = await NonIterableSearchable.create({ title: "Hello, World!" });
       const fetched = await NonIterableSearchable.find(p.postId);
-      // _searchText is internal but should be set on the row's raw data
       expect(fetched._dyData._searchText).toBe("hello world");
     });
 
     test("searchAll throws on non-iterable searchable model", async () => {
-      await expect(async () => {
-        for await (const _ of NonIterableSearchable.searchAll(["foo"])) {
-          // unreachable
-        }
-      }).rejects.toThrow(/searchAll requires iterable/i);
+      await expect(NonIterableSearchable.searchAll(["foo"])).rejects.toThrow(
+        /searchAll requires iterable/i,
+      );
     });
 
-    test("filtering on _searchText via find() round-trip works (auto-normalize)", async () => {
-      // The whole point of allowing _searchText in filters: a non-iterable
-      // searchable model can be searched via the standard query API.
-      // Here we use find() with a condition since NonIterableSearchable has
-      // a single-field PK and no GSIs — it's the closest standard query
-      // path that exercises FilterExpressionBuilder against _searchText
-      // without needing iterable. The actual condition fires on
-      // ConditionExpression but the same builder path is used.
+    test("filtering on _searchText via condition expression works (auto-normalize)", async () => {
       const p = await NonIterableSearchable.create({ title: "Hello, World!" });
 
-      // Simulate a user-driven update with a _searchText condition. This
-      // proves FilterExpressionBuilder accepts _searchText end-to-end.
-      // The condition matches because the raw user value 'Hello, World!'
-      // is auto-normalized to 'hello world' to match what's stored.
       const updated = await NonIterableSearchable.update(
         p.postId,
         { title: "Hello, World!" },
@@ -881,63 +805,207 @@ describe("Searchable models", () => {
       );
       expect(updated.postId).toBe(p.postId);
 
-      // A non-matching condition should fail.
-      await expect(async () => {
-        await NonIterableSearchable.update(
+      await expect(
+        NonIterableSearchable.update(
           p.postId,
           { title: "Hello, World!" },
           { condition: { _searchText: { $contains: "nonexistent" } } },
+        ),
+      ).rejects.toThrow();
+    });
+  });
+
+  describe("cursor / resume (real DynamoDB)", () => {
+    test("draining via cursors yields the same set as a single Infinity call", async () => {
+      const aliceIds = [];
+      const creates = [];
+      for (let i = 0; i < 60; i++) {
+        creates.push(
+          SearchablePost.create({ title: `alice ${i}`, body: null }).then((p) =>
+            aliceIds.push(p.postId),
+          ),
         );
-      }).rejects.toThrow();
+      }
+      await Promise.all(creates);
+
+      // Drain via cursors with a small per-page limit.
+      const drained = [];
+      let cursor = null;
+      let pages = 0;
+      do {
+        const page = await SearchablePost.searchAll(["alice"], {
+          limit: 7,
+          cursor,
+        });
+        drained.push(...page.items);
+        cursor = page.cursor;
+        pages++;
+        // Safety against infinite loops in case of a bug.
+        expect(pages).toBeLessThan(200);
+      } while (cursor);
+
+      const drainedIds = drained.map((p) => p.postId).sort();
+      expect(drainedIds).toEqual(aliceIds.slice().sort());
+      // No duplicates across pages — cursor mechanics must not double-yield.
+      expect(new Set(drainedIds).size).toBe(drainedIds.length);
+      // Drained at least the expected number of pages (60 / 7 ≈ 9).
+      expect(pages).toBeGreaterThan(5);
+    }, 240000);
+
+    test("cursor is null when the search is fully exhausted", async () => {
+      await SearchablePost.create({ title: "alice", body: null });
+      const { items, cursor } = await SearchablePost.searchAll(["alice"], {
+        limit: 100,
+      });
+      expect(items.length).toBe(1);
+      expect(cursor).toBeNull();
+    });
+
+    test("zero matches anywhere returns empty + null cursor", async () => {
+      await SearchablePost.create({ title: "bob", body: null });
+      const { items, cursor } = await SearchablePost.searchAll(["zzz-no-match-here"]);
+      expect(items).toEqual([]);
+      expect(cursor).toBeNull();
+    });
+
+    test("cursor with different terms throws (predicate-hash mismatch)", async () => {
+      await SearchablePost.create({ title: "alice", body: null });
+      await SearchablePost.create({ title: "bob", body: null });
+      const { cursor } = await SearchablePost.searchAll(["alice"], { limit: 1 });
+      // Even if no cursor is returned (single match exhausted), this test
+      // requires a non-null cursor — so make sure we have one.
+      const second = await SearchablePost.create({
+        title: "alice extra",
+        body: null,
+      });
+      const { cursor: c2 } = await SearchablePost.searchAll(["alice"], {
+        limit: 1,
+      });
+      // c2 might be null if hash distribution puts both alices in the
+      // same first-page bucket. Use whichever is non-null.
+      const usable = c2 || cursor;
+      if (!usable) return; // skip — would only happen if ≤1 match across all buckets
+      await expect(
+        SearchablePost.searchAll(["bob"], { cursor: usable }),
+      ).rejects.toThrow(/different query/i);
+      // Keep `second` referenced so it's not GC-stripped from intent.
+      expect(second.postId).toBeTruthy();
+    });
+
+    test("cursor with different operator throws", async () => {
+      // Create enough matches that limit:1 produces a non-null cursor.
+      for (let i = 0; i < 5; i++) {
+        await SearchablePost.create({ title: `alice ${i}`, body: null });
+      }
+      const { cursor } = await SearchablePost.searchAll(["alice", "bob"], {
+        operator: "$or",
+        limit: 1,
+      });
+      if (!cursor) return; // unlikely
+      await expect(
+        SearchablePost.searchAll(["alice", "bob"], {
+          operator: "$and",
+          cursor,
+        }),
+      ).rejects.toThrow(/different query/i);
+    });
+
+    test("malformed cursor throws", async () => {
+      await SearchablePost.create({ title: "alice", body: null });
+      await expect(
+        SearchablePost.searchAll(["alice"], { cursor: "$$$bogus$$$" }),
+      ).rejects.toThrow(/cursor/i);
+    });
+
+    test("parallel and sequential modes return the same set when fully drained", async () => {
+      const aliceIds = [];
+      const creates = [];
+      for (let i = 0; i < 30; i++) {
+        creates.push(
+          SearchablePost.create({ title: `alice ${i}`, body: null }).then(
+            (p) => aliceIds.push(p.postId),
+          ),
+        );
+      }
+      await Promise.all(creates);
+
+      const par = await drainAll(SearchablePost, ["alice"], {
+        parallel: true,
+        limit: 8,
+      });
+      const seq = await drainAll(SearchablePost, ["alice"], {
+        parallel: false,
+        limit: 8,
+      });
+
+      const expected = aliceIds.slice().sort();
+      expect(par.map((p) => p.postId).sort()).toEqual(expected);
+      expect(seq.map((p) => p.postId).sort()).toEqual(expected);
+    }, 240000);
+
+    test("maxQueriesPerBucket caps capacity for sparse-match searches", async () => {
+      // Lots of haystack rows, no matching needles. With a low
+      // maxQueriesPerBucket, each call returns empty + a non-null cursor
+      // pointing to where the next call should pick up.
+      for (let i = 0; i < 60; i++) {
+        await SearchablePost.create({ title: `haystack ${i}`, body: null });
+      }
+
+      const { items, cursor } = await SearchablePost.searchAll(
+        ["nomatchterm-zzz"],
+        { batchSize: 5, maxQueriesPerBucket: 1 },
+      );
+      expect(items).toEqual([]);
+      // With matches=0 but unexhausted buckets (capped at 1 query each),
+      // cursor must be non-null so the caller can continue.
+      expect(cursor).not.toBeNull();
+    }, 120000);
+
+    test("invalid maxQueriesPerBucket throws synchronously", async () => {
+      await expect(
+        SearchablePost.searchAll(["alice"], { maxQueriesPerBucket: 0 }),
+      ).rejects.toThrow(/maxQueriesPerBucket must be a positive integer/i);
+      await expect(
+        SearchablePost.searchAll(["alice"], { maxQueriesPerBucket: -1 }),
+      ).rejects.toThrow(/maxQueriesPerBucket must be a positive integer/i);
+      await expect(
+        SearchablePost.searchAll(["alice"], { maxQueriesPerBucket: 1.5 }),
+      ).rejects.toThrow(/maxQueriesPerBucket must be a positive integer/i);
     });
   });
 
   describe("error paths", () => {
     test("searchAll throws on non-searchable model", async () => {
-      await expect(async () => {
-        for await (const _ of NonSearchablePost.searchAll(["foo"])) {
-          // unreachable
-        }
-      }).rejects.toThrow(/not configured as searchable/i);
+      await expect(NonSearchablePost.searchAll(["foo"])).rejects.toThrow(
+        /not configured as searchable/i,
+      );
     });
 
     test("searchAll throws on empty terms", async () => {
-      await expect(async () => {
-        for await (const _ of SearchablePost.searchAll([])) {
-          // unreachable
-        }
-      }).rejects.toThrow(/at least one non-empty term/i);
+      await expect(SearchablePost.searchAll([])).rejects.toThrow(
+        /at least one non-empty term/i,
+      );
     });
 
     test("searchAll throws on bad operator", async () => {
-      await expect(async () => {
-        for await (const _ of SearchablePost.searchAll(["foo"], {
-          operator: "AND",
-        })) {
-          // unreachable
-        }
-      }).rejects.toThrow(/operator must be one of/i);
+      await expect(
+        SearchablePost.searchAll(["foo"], { operator: "AND" }),
+      ).rejects.toThrow(/operator must be one of/i);
     });
 
     test("searchAll throws on non-array terms", async () => {
-      await expect(async () => {
-        for await (const _ of SearchablePost.searchAll("foo")) {
-          // unreachable
-        }
-      }).rejects.toThrow(/terms must be an array/i);
+      await expect(SearchablePost.searchAll("foo")).rejects.toThrow(
+        /terms must be an array/i,
+      );
     });
 
     test("searchBucket validates bucket number", async () => {
-      await expect(async () => {
-        for await (const _ of SearchablePost.searchBucket(-1, ["foo"])) {
-          // unreachable
-        }
-      }).rejects.toThrow(/Invalid bucket number/i);
-      await expect(async () => {
-        for await (const _ of SearchablePost.searchBucket(99, ["foo"])) {
-          // unreachable
-        }
-      }).rejects.toThrow(/Invalid bucket number/i);
+      await expect(
+        SearchablePost.searchBucket(-1, ["foo"]),
+      ).rejects.toThrow(/Invalid bucket number/i);
+      await expect(
+        SearchablePost.searchBucket(99, ["foo"]),
+      ).rejects.toThrow(/Invalid bucket number/i);
     });
   });
 

@@ -205,13 +205,9 @@ describe("filter on non-projected attribute → friendly error before round-trip
     };
 
     try {
-      await expect(async () => {
-        for await (const _ of ModelClass.searchAll(["foo"], {
-          filter: { status: "active" },
-        })) {
-          // unreachable
-        }
-      }).rejects.toThrow(/aren't projected.*\[status\]/i);
+      await expect(
+        ModelClass.searchAll(["foo"], { filter: { status: "active" } }),
+      ).rejects.toThrow(/aren't projected.*\[status\]/i);
       expect(sendCalls.length).toBe(0);
     } finally {
       ModelClass.documentClient.send = realSend;
@@ -294,17 +290,12 @@ describe("searchAll without iter_search_index config → friendly migration hint
     manager.registerModel(SearchableButDefaultConfig);
     const ModelClass = manager.getModel("SearchableButDefaultConfig");
 
-    await expect(async () => {
-      for await (const _ of ModelClass.searchAll(["foo"])) {
-        // unreachable
-      }
-    }).rejects.toThrow(/searchAll requires the 'iter_search_index' GSI/i);
-
-    await expect(async () => {
-      for await (const _ of ModelClass.searchAll(["foo"])) {
-        // unreachable
-      }
-    }).rejects.toThrow(/iterationIndexName.*iter_search_index/i);
+    await expect(ModelClass.searchAll(["foo"])).rejects.toThrow(
+      /searchAll requires the 'iter_search_index' GSI/i,
+    );
+    await expect(ModelClass.searchAll(["foo"])).rejects.toThrow(
+      /iterationIndexName.*iter_search_index/i,
+    );
   });
 });
 

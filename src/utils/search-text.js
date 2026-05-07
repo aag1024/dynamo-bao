@@ -247,6 +247,80 @@ async function* applyLimit(asyncIterable, limit) {
   }
 }
 
+// Stable, deterministic hash of a search predicate. Used to invalidate a
+// cursor if the caller resumes with different terms / operator / config —
+// otherwise a continuation key from the old query would silently splice
+// rows from a different result set into the new one. Not cryptographic;
+// just a reliable equality check.
+function predicateHash(terms, operator, searchConfig) {
+  const cfg = searchConfig || {};
+  const normalized = (terms || []).map((t) =>
+    normalizeSearchTerm(String(t), cfg),
+  );
+  const payload = JSON.stringify({
+    terms: normalized,
+    operator: operator || "$and",
+    caseSensitive: !!cfg.caseSensitive,
+    minTermLength: cfg.minTermLength || 1,
+    dedupe: !!cfg.dedupe,
+  });
+  // Simple FNV-1a 32-bit. Collisions are astronomically rare for our
+  // input space and we don't need cryptographic strength.
+  let h = 0x811c9dc5;
+  for (let i = 0; i < payload.length; i++) {
+    h ^= payload.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(36);
+}
+
+const CURSOR_REQUIRED_FIELDS = ["bucketCursors", "predicateHash", "modelPrefix"];
+
+function encodeCursor(state) {
+  if (!state || typeof state !== "object") {
+    throw new Error("encodeCursor: invalid state.");
+  }
+  for (const f of CURSOR_REQUIRED_FIELDS) {
+    if (!(f in state)) {
+      throw new Error(`encodeCursor: missing required field "${f}".`);
+    }
+  }
+  const json = JSON.stringify({
+    bucketCursors: state.bucketCursors,
+    predicateHash: state.predicateHash,
+    modelPrefix: state.modelPrefix,
+    pendingItemKeys: state.pendingItemKeys || [],
+  });
+  return Buffer.from(json, "utf8").toString("base64url");
+}
+
+function decodeCursor(encoded) {
+  if (typeof encoded !== "string" || encoded.length === 0) {
+    throw new Error("Invalid cursor: must be a non-empty string.");
+  }
+  let json;
+  try {
+    json = Buffer.from(encoded, "base64url").toString("utf8");
+  } catch (e) {
+    throw new Error("Invalid cursor: not valid base64url.");
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(json);
+  } catch (e) {
+    throw new Error("Invalid cursor: payload is not valid JSON.");
+  }
+  if (!parsed || typeof parsed !== "object") {
+    throw new Error("Invalid cursor: payload is not an object.");
+  }
+  for (const f of CURSOR_REQUIRED_FIELDS) {
+    if (!(f in parsed)) {
+      throw new Error(`Invalid cursor: missing required field "${f}".`);
+    }
+  }
+  return parsed;
+}
+
 module.exports = {
   buildSearchText,
   normalizeSearchTerm,
@@ -255,4 +329,7 @@ module.exports = {
   buildSearchPredicate,
   applyLimit,
   validateLimit,
+  predicateHash,
+  encodeCursor,
+  decodeCursor,
 };

@@ -7,7 +7,7 @@ models:
   ModelName:
     modelPrefix: "x" # Required: short (1-4 unique character prefix) for the model. This must be unique and cannot change later. It is not user visible.
     tableType: "standard" # Optional: "standard" (default) or "mapping"
-    iterable: true # Optional: "true" (default) or "false". See notes on iteration.
+    iterable: false # Optional: "true" or "false" (default). See notes on iteration.
     iterationBuckets: 10 # Optional: number of buckets for iteration. Default is 10.
     searchable: false # Optional: see "Searchable Models" for the object form.
     fields: {} # Required: field definitions
@@ -248,39 +248,34 @@ Adding the `primaryKey` to the index is a shorthand that allows you to give the 
 
 ### Iterating Over All Objects for a Model
 
-By default, all models in DynamoBao are iterable. This feature is designed to be a safe default, allowing you to perform full-table scans for administrative tasks, data migrations, or reporting without worrying about whether you enabled it during model creation.
+DynamoBao supports full-model iteration for tasks like data migration, backfills, and reporting. Iteration is **opt-in** because it adds a per-row write to a dedicated GSI on every save, which doubles the write cost of the model.
 
-When `iterable` is `true` (the default), an `all` index is automatically created for the model. This enables the `iterateAll()` method, which returns an async generator to efficiently page through every object.
-
-**Cost and Performance Considerations**
-This convenience comes with a trade-off. To maintain the iteration index, every `create`, `update`, or `delete` operation requires a second write to the database. This effectively doubles the write cost for every item in your model.
-
-**Opting Out of Iteration**
-For high-volume, write-heavy models where you are certain you will never need to iterate over all items (e.g., logging tables, event streams), you can and should disable this feature to save costs.
-
-To disable iteration, explicitly set `iterable: false`:
-
-```yaml
-models:
-  AnalyticsEvent:
-    modelPrefix: "ae"
-    iterable: false # Disabling iteration for this write-heavy model
-    fields:
-      # ...
-```
-
-#### Handling Large Models with Iteration Buckets
-
-To prevent "hot partition" issues on large iterable models, DynamoBao automatically splits the iteration index into multiple partitions. The number of partitions is determined by `iterationBuckets`, which defaults to **10**.
-
-This provides a good balance of write scalability and read performance out of the box. If you need to change the number of buckets, you can specify it:
+To enable, set `iterable: true`:
 
 ```yaml
 models:
   User:
     modelPrefix: "u"
-    iterable: true # This is the default, so it's not strictly needed
-    iterationBuckets: 20 # Overriding the default of 10 for a very large model
+    iterable: true # opt in
+    fields:
+      # ...
+```
+
+Once enabled, the `iterateAll()` method on the model class returns an async generator that pages through every row. Iterable models are also a prerequisite for `searchAll`/`searchBucket` (see Searchable Models above).
+
+**Cost and Performance Considerations**
+Each `create`, `update`, or `delete` on an iterable model writes one extra row to the iteration GSI. Doubles the write cost. Worth it for `User` or `Post`-shaped models where reads/migrations matter; not worth it for high-volume logging tables, event streams, or anything you're sure you'll only access by primary key.
+
+#### Handling Large Models with Iteration Buckets
+
+To prevent "hot partition" issues on large iterable models, DynamoBao splits the iteration index across multiple partitions. The number of partitions is set by `iterationBuckets`, which defaults to **10** when `iterable: true`.
+
+```yaml
+models:
+  User:
+    modelPrefix: "u"
+    iterable: true
+    iterationBuckets: 20 # Override the default of 10 for a very large model
     fields:
       # ...
 ```

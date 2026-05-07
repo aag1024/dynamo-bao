@@ -10,8 +10,11 @@ const SEARCHABLE_KNOWN_OPTIONS = new Set([
 ]);
 
 function applyIterableDefaults(modelDef) {
+  // Default `iterable` to false. Iteration adds a per-row write to the
+  // iter_search_index GSI on every save, doubling write cost — opt-in is
+  // safer than opt-out. Mapping tables default to false either way.
   if (modelDef.iterable === undefined) {
-    modelDef.iterable = modelDef.tableType !== "mapping";
+    modelDef.iterable = false;
   }
   if (modelDef.iterationBuckets === undefined) {
     modelDef.iterationBuckets = modelDef.iterable ? 10 : 0;

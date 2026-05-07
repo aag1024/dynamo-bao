@@ -396,7 +396,11 @@ Other options:
 - **`maxQueriesPerBucket: 50`** (default) bounds DynamoDB Query roundtrips per call **per bucket**. With 5 buckets that's up to 250 Queries per call worst-case. For sparse-match searches this caps capacity per call — if we hit the cap without filling `limit`, the call returns whatever it found plus a non-null cursor pointing at the next page so the caller can continue with another call.
 - **`limit: Infinity`** opts out of the cap. Combine with `cursor` chaining to drain.
 
-The cursor encodes which buckets are unexhausted and where they left off, plus a hash of the search predicate (terms + operator + searchConfig). Resuming with different terms or operator throws — the cursor is only valid for the exact query that produced it.
+The cursor encodes which buckets are unexhausted and where they left off, the bucket scope it was generated for, plus a hash of the search predicate (terms + operator + searchConfig). Resume validates all of these:
+
+- different terms / operator / searchConfig → throws.
+- different model → throws.
+- cursor from `searchAll` passed to `searchBucket` (or vice versa) → throws with "Cursor scope mismatch". Use the same API call that generated the cursor.
 
 `searchAll` accepts an `options.filter` that's combined with the search predicate, but DynamoDB only allows the index-level filter to reference attributes that are *projected* onto the GSI. The `iter_search_index` projects only `_searchText` (plus the index/base keys) — anything else throws a clear error before the round-trip:
 

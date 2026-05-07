@@ -459,16 +459,24 @@ class BaoModel {
           `Cursor was generated for model "${decoded.modelPrefix}", not "${this.modelPrefix}".`,
         );
       }
-      // Restrict the resumed bucketCursors to activeBucketIndices. Without
-      // this, a cursor produced by searchAll passed into searchBucket(N)
-      // would silently scan every bucket in the cursor instead of just N.
-      // Object.keys returns strings; convert to compare against the
-      // numeric activeBucketIndices.
-      const allowed = new Set(activeBucketIndices.map(String));
-      bucketCursors = {};
-      for (const [k, v] of Object.entries(decoded.bucketCursors)) {
-        if (allowed.has(k)) bucketCursors[k] = v;
+      // Cursors are scoped to the bucket set used to generate them, so a
+      // searchAll cursor can't be passed into searchBucket(N) (and vice
+      // versa) without silently mixing items across scopes via
+      // pendingItemKeys. Reject mismatch with a clear message.
+      const decodedScope = (decoded.scope || []).slice().sort((a, b) => a - b);
+      const expectedScope = activeBucketIndices.slice().sort((a, b) => a - b);
+      const scopesMatch =
+        decodedScope.length === expectedScope.length &&
+        decodedScope.every((s, i) => s === expectedScope[i]);
+      if (!scopesMatch) {
+        throw new Error(
+          `Cursor scope mismatch. Cursor was generated for buckets ` +
+            `[${decodedScope.join(", ")}], but this call covers ` +
+            `[${expectedScope.join(", ")}]. Resume the cursor with the same ` +
+            `API call (searchAll or searchBucket) that produced it.`,
+        );
       }
+      bucketCursors = { ...decoded.bucketCursors };
       pendingItemKeys = decoded.pendingItemKeys || [];
     } else {
       bucketCursors = {};
@@ -558,6 +566,7 @@ class BaoModel {
           bucketCursors,
           predicateHash: expectedHash,
           modelPrefix: this.modelPrefix,
+          scope: activeBucketIndices,
           pendingItemKeys: overflowKeys,
         })
       : null;

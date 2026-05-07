@@ -63,6 +63,7 @@ describe("encodeCursor / decodeCursor", () => {
     },
     predicateHash: "abc123",
     modelPrefix: "p",
+    scope: [0, 1, 2, 3, 4],
     pendingItemKeys: ["id1", "id2", "id3"],
   };
 
@@ -78,11 +79,17 @@ describe("encodeCursor / decodeCursor", () => {
     expect(decodeCursor(encodeCursor(state))).toEqual(state);
   });
 
+  test("round-trips with scope=[N] for searchBucket cursors", () => {
+    const state = { ...sampleState, scope: [2] };
+    expect(decodeCursor(encodeCursor(state))).toEqual(state);
+  });
+
   test("encodeCursor without explicit pendingItemKeys defaults to []", () => {
     const state = {
       bucketCursors: {},
       predicateHash: "x",
       modelPrefix: "p",
+      scope: [0],
     };
     const decoded = decodeCursor(encodeCursor(state));
     expect(decoded.pendingItemKeys).toEqual([]);
@@ -100,9 +107,42 @@ describe("encodeCursor / decodeCursor", () => {
       bucketCursors: {},
       predicateHash: "x",
       modelPrefix: "p",
+      scope: [3],
       pendingItemKeys: [],
     };
     expect(decodeCursor(encodeCursor(state))).toEqual(state);
+  });
+
+  test("base64url round-trip survives all base64-special characters", () => {
+    // Use a state whose JSON serialization contains characters that base64
+    // encodes to + and / — verifies our manual base64url variant correctly
+    // emits - and _ instead, and decodeCursor round-trips them.
+    const state = {
+      bucketCursors: { 0: { _iter_pk: "??>>>", _iter_sk: ">>>" } },
+      predicateHash: "h",
+      modelPrefix: "p",
+      scope: [0],
+      pendingItemKeys: [],
+    };
+    const encoded = encodeCursor(state);
+    expect(encoded).not.toMatch(/[+/]/); // url-safe alphabet only
+    expect(decodeCursor(encoded)).toEqual(state);
+  });
+
+  test("decodeCursor throws on cursor missing required scope field", () => {
+    // Simulate a cursor produced before the `scope` field existed.
+    const legacyJson = JSON.stringify({
+      bucketCursors: {},
+      predicateHash: "x",
+      modelPrefix: "p",
+      pendingItemKeys: [],
+    });
+    const legacyCursor = Buffer.from(legacyJson, "utf8")
+      .toString("base64")
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=+$/, "");
+    expect(() => decodeCursor(legacyCursor)).toThrow(/cursor.*scope/i);
   });
 
   test("decodeCursor throws on malformed input (truncated)", () => {

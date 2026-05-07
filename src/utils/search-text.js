@@ -274,7 +274,35 @@ function predicateHash(terms, operator, searchConfig) {
   return (h >>> 0).toString(36);
 }
 
-const CURSOR_REQUIRED_FIELDS = ["bucketCursors", "predicateHash", "modelPrefix"];
+const CURSOR_REQUIRED_FIELDS = [
+  "bucketCursors",
+  "predicateHash",
+  "modelPrefix",
+  "scope",
+];
+
+// URL-safe base64 with manual character replacement so we don't depend on
+// Node's "base64url" encoding token (Node 16+ only — README still claims
+// 12.17.0+ as the floor). Manual form works on every Node version that
+// supports Buffer.
+function _toBase64url(utf8) {
+  return Buffer.from(utf8, "utf8")
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+}
+
+function _fromBase64url(s) {
+  let padded = s.replace(/-/g, "+").replace(/_/g, "/");
+  while (padded.length % 4) padded += "=";
+  // Validate the input contains only base64-alphabet characters; otherwise
+  // Node's Buffer is permissive and silently drops garbage characters.
+  if (!/^[A-Za-z0-9+/=]*$/.test(padded)) {
+    throw new Error("Invalid cursor: not valid base64url.");
+  }
+  return Buffer.from(padded, "base64").toString("utf8");
+}
 
 function encodeCursor(state) {
   if (!state || typeof state !== "object") {
@@ -289,9 +317,10 @@ function encodeCursor(state) {
     bucketCursors: state.bucketCursors,
     predicateHash: state.predicateHash,
     modelPrefix: state.modelPrefix,
+    scope: state.scope,
     pendingItemKeys: state.pendingItemKeys || [],
   });
-  return Buffer.from(json, "utf8").toString("base64url");
+  return _toBase64url(json);
 }
 
 function decodeCursor(encoded) {
@@ -300,9 +329,9 @@ function decodeCursor(encoded) {
   }
   let json;
   try {
-    json = Buffer.from(encoded, "base64url").toString("utf8");
+    json = _fromBase64url(encoded);
   } catch (e) {
-    throw new Error("Invalid cursor: not valid base64url.");
+    throw new Error(e.message || "Invalid cursor: not valid base64url.");
   }
   let parsed;
   try {

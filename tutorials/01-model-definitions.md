@@ -371,7 +371,15 @@ const buckets = await Promise.all(
 
 // Helper: split a free-form query string into terms (honors quoted phrases)
 const terms = Post.tokenizeSearchQuery('"hello world" foo'); // => ["hello world", "foo"]
+
+// Cap total results. Default limit is 100; pass Infinity to scan everything.
+for await (const batch of Post.searchAll(["alice"], { limit: 25 })) { /* ... */ }
+for await (const batch of Post.searchAll(["alice"], { limit: Infinity })) {
+  // unbounded — for admin/cleanup scripts that need every match
+}
 ```
+
+`limit` defaults to **100** total items across all buckets and pages. The generator stops pulling new pages once the cap is hit (no further DynamoDB Query calls), and the last batch is sliced to fit so callers never see more than `limit` items in total. To opt out of the cap entirely, pass `Infinity`.
 
 `searchAll` accepts an `options.filter` that's combined with the search predicate, but DynamoDB only allows the index-level filter to reference attributes that are *projected* onto the GSI. The `iter_search_index` projects only `_searchText` (plus the index/base keys) — anything else throws a clear error before the round-trip:
 

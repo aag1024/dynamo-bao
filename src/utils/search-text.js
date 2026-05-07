@@ -203,10 +203,56 @@ function buildSearchPredicate(terms, searchConfig, options = {}) {
   };
 }
 
+// Validate a `limit` option value. Accepts positive integers and Infinity.
+// Anything else throws — saves the caller from passing 0 or a float and
+// silently getting weird behavior downstream.
+function validateLimit(limit) {
+  if (limit === Infinity) return;
+  if (
+    typeof limit !== "number" ||
+    Number.isNaN(limit) ||
+    !Number.isInteger(limit) ||
+    limit < 1
+  ) {
+    throw new Error("limit must be a positive integer or Infinity.");
+  }
+}
+
+// Take an async iterable of arrays (batches) and re-yield them, capping the
+// total flattened item count at `limit`. The last batch yielded is sliced to
+// fit so the consumer never sees more than `limit` items in total. Stops
+// pulling from the source once the cap is hit, so a generator-backed source
+// is suspended (no further DynamoDB Query calls, no further bucket scans).
+async function* applyLimit(asyncIterable, limit) {
+  if (limit === Infinity) {
+    yield* asyncIterable;
+    return;
+  }
+  let yielded = 0;
+  for await (const batch of asyncIterable) {
+    const room = limit - yielded;
+    if (room <= 0) return;
+    if (batch.length === 0) {
+      yield batch;
+      continue;
+    }
+    if (batch.length <= room) {
+      yield batch;
+      yielded += batch.length;
+      if (yielded >= limit) return;
+    } else {
+      yield batch.slice(0, room);
+      return;
+    }
+  }
+}
+
 module.exports = {
   buildSearchText,
   normalizeSearchTerm,
   tokenizeSearchQuery,
   computeSearchTextUpdate,
   buildSearchPredicate,
+  applyLimit,
+  validateLimit,
 };

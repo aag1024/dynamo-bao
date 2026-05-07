@@ -319,14 +319,19 @@ class BaoModel {
    *   are combined. `$and` requires every term to appear; `$or` requires any.
    * @param {number} [options.batchSize=100] - DynamoDB Query page size. Each
    *   bucket pages independently via `LastEvaluatedKey`.
+   * @param {number} [options.limit=100] - Maximum total items returned across
+   *   all batches and buckets. The generator stops pulling new pages once
+   *   the cap is hit (no further DynamoDB reads). Pass `Infinity` for the
+   *   unbounded scan-every-match behavior.
    * @param {Object} [options.filter] - Additional filter combined via AND
    *   with the search predicate. Limited to attributes projected on
    *   `iter_search_index` (i.e., `_searchText` and the index/base keys);
    *   see the misconfigured-filter error message for guidance.
    * @returns {AsyncGenerator<BaoModel[]>} Async generator yielding batches of
    *   hydrated model instances.
-   * @throws {Error} If the model is not `searchable`, not `iterable`, or if
-   *   the resolved iteration index is not `iter_search_index`.
+   * @throws {Error} If the model is not `searchable`, not `iterable`, the
+   *   resolved iteration index is not `iter_search_index`, or `limit` is not
+   *   a positive integer / Infinity.
    * @example
    * for await (const batch of Post.searchAll(["alice", "bob"], { operator: "$or" })) {
    *   for (const post of batch) console.log(post.title);
@@ -336,27 +341,37 @@ class BaoModel {
     this._assertSearchable();
     const {
       buildSearchPredicate,
+      applyLimit,
+      validateLimit,
     } = require("./utils/search-text");
-    const { operator = "$and", batchSize = 100, filter = null } = options;
+    const {
+      operator = "$and",
+      batchSize = 100,
+      filter = null,
+      limit = 100,
+    } = options;
+    validateLimit(limit);
     const searchPredicate = buildSearchPredicate(terms, this.searchConfig, {
       operator,
     });
 
-    if (this.iterationBuckets === 1) {
-      yield* this._iterateSingleBucket(null, {
-        batchSize,
-        filter,
-        searchPredicate,
-      });
-    } else {
-      for (let bucket = 0; bucket < this.iterationBuckets; bucket++) {
-        yield* this._iterateSingleBucket(bucket, {
+    const buckets =
+      this.iterationBuckets === 1
+        ? [null]
+        : Array.from({ length: this.iterationBuckets }, (_, b) => b);
+
+    const self = this;
+    async function* fanOut() {
+      for (const bucket of buckets) {
+        yield* self._iterateSingleBucket(bucket, {
           batchSize,
           filter,
           searchPredicate,
         });
       }
     }
+
+    yield* applyLimit(fanOut(), limit);
   }
 
   /**
@@ -367,9 +382,12 @@ class BaoModel {
    *
    * @param {number} bucketNum - Bucket index, in `[0, iterationBuckets)`.
    * @param {string[]} terms - Substring terms (see `searchAll`).
-   * @param {Object} [options] - Same options as `searchAll`.
+   * @param {Object} [options] - Same options as `searchAll`. `limit`
+   *   defaults to 100 and caps total items from this single bucket. Pass
+   *   `Infinity` to scan the entire bucket.
    * @returns {AsyncGenerator<BaoModel[]>}
-   * @throws {Error} On invalid bucket number, non-searchable model, etc.
+   * @throws {Error} On invalid bucket number, non-searchable model, or
+   *   invalid limit.
    * @example
    * const results = await Promise.all(
    *   Array.from({ length: Post.iterationBuckets }, async (_, b) => {
@@ -388,16 +406,27 @@ class BaoModel {
     }
     const {
       buildSearchPredicate,
+      applyLimit,
+      validateLimit,
     } = require("./utils/search-text");
-    const { operator = "$and", batchSize = 100, filter = null } = options;
+    const {
+      operator = "$and",
+      batchSize = 100,
+      filter = null,
+      limit = 100,
+    } = options;
+    validateLimit(limit);
     const searchPredicate = buildSearchPredicate(terms, this.searchConfig, {
       operator,
     });
-    yield* this._iterateSingleBucket(bucketNum, {
-      batchSize,
-      filter,
-      searchPredicate,
-    });
+    yield* applyLimit(
+      this._iterateSingleBucket(bucketNum, {
+        batchSize,
+        filter,
+        searchPredicate,
+      }),
+      limit,
+    );
   }
 
   /**

@@ -319,6 +319,183 @@ describe("Searchable models", () => {
     });
   });
 
+  describe("limit option (real DynamoDB)", () => {
+    test("limit caps total results across buckets", async () => {
+      // 30 matches spread across 5 buckets. With limit=10 we should get
+      // exactly 10 hydrated rows, no more.
+      const aliceIds = [];
+      const creates = [];
+      for (let i = 0; i < 30; i++) {
+        creates.push(
+          SearchablePost.create({ title: `alice ${i}`, body: null }).then(
+            (p) => aliceIds.push(p.postId),
+          ),
+        );
+      }
+      await Promise.all(creates);
+
+      const found = [];
+      for await (const batch of SearchablePost.searchAll(["alice"], {
+        limit: 10,
+      })) {
+        found.push(...batch);
+      }
+      expect(found.length).toBe(10);
+      // Every returned id is a real alice id (not a stray).
+      for (const p of found) {
+        expect(aliceIds).toContain(p.postId);
+      }
+      // Returned rows are unique.
+      expect(new Set(found.map((p) => p.postId)).size).toBe(10);
+    }, 120000);
+
+    test("default limit is 100 when not specified", async () => {
+      // Create 110 matches. With the default limit of 100, searchAll
+      // should return exactly 100, not all 110.
+      const creates = [];
+      for (let i = 0; i < 110; i++) {
+        creates.push(
+          SearchablePost.create({ title: `alice ${i}`, body: null }),
+        );
+      }
+      await Promise.all(creates);
+
+      const found = [];
+      for await (const batch of SearchablePost.searchAll(["alice"])) {
+        found.push(...batch);
+      }
+      expect(found.length).toBe(100);
+    }, 180000);
+
+    test("limit: Infinity returns every match (opt-out of cap)", async () => {
+      // Create 110 matches. Explicit Infinity overrides the default cap.
+      const aliceIds = [];
+      const creates = [];
+      for (let i = 0; i < 110; i++) {
+        creates.push(
+          SearchablePost.create({ title: `alice ${i}`, body: null }).then(
+            (p) => aliceIds.push(p.postId),
+          ),
+        );
+      }
+      await Promise.all(creates);
+
+      const found = [];
+      for await (const batch of SearchablePost.searchAll(["alice"], {
+        limit: Infinity,
+      })) {
+        found.push(...batch);
+      }
+      expect(found.length).toBe(110);
+      expect(found.map((p) => p.postId).sort()).toEqual(aliceIds.slice().sort());
+    }, 180000);
+
+    test("limit hit mid-page yields a partial last batch", async () => {
+      // 12 matches, batchSize=5, limit=7. We expect the generator to yield
+      // [5 items], then [2 items, partial], then stop. Total = 7.
+      for (let i = 0; i < 12; i++) {
+        await SearchablePost.create({ title: `alice ${i}`, body: null });
+      }
+
+      const batchSizes = [];
+      let total = 0;
+      for await (const batch of SearchablePost.searchAll(["alice"], {
+        batchSize: 5,
+        limit: 7,
+      })) {
+        batchSizes.push(batch.length);
+        total += batch.length;
+      }
+      expect(total).toBe(7);
+      // Last batch must be smaller than batchSize, proving slicing happened.
+      expect(batchSizes[batchSizes.length - 1]).toBeLessThan(5);
+    }, 120000);
+
+    test("searchAll stops issuing Query calls once limit is reached", async () => {
+      // Create 30 alice rows across 5 buckets. With limit=5 and a single
+      // bucket likely having all 5 matches, we should make far fewer
+      // Query calls than the iterationBuckets count.
+      for (let i = 0; i < 30; i++) {
+        await SearchablePost.create({ title: `alice ${i}`, body: null });
+      }
+
+      let queryCount = 0;
+      const realSend = SearchablePost.documentClient.send.bind(
+        SearchablePost.documentClient,
+      );
+      SearchablePost.documentClient.send = async (cmd) => {
+        if (
+          cmd?.constructor?.name === "QueryCommand" &&
+          cmd.input?.IndexName === "iter_search_index"
+        ) {
+          queryCount++;
+        }
+        return realSend(cmd);
+      };
+
+      try {
+        const found = [];
+        for await (const batch of SearchablePost.searchAll(["alice"], {
+          limit: 5,
+        })) {
+          found.push(...batch);
+        }
+        expect(found.length).toBe(5);
+        // We did not exhaust all 5 buckets — far fewer Query calls.
+        // (Exact count varies with hash distribution, but it must be
+        // strictly less than what unbounded search would do, which is
+        // >= iterationBuckets.)
+        expect(queryCount).toBeLessThan(SearchablePost.iterationBuckets);
+      } finally {
+        SearchablePost.documentClient.send = realSend;
+      }
+    }, 120000);
+
+    test("limit on searchBucket caps per-bucket results", async () => {
+      // Create lots of items so a single bucket has plenty of matches.
+      // iterationBuckets=5, so 50 creates → ~10 per bucket.
+      for (let i = 0; i < 50; i++) {
+        await SearchablePost.create({ title: `alice ${i}`, body: null });
+      }
+
+      const bucket0 = [];
+      for await (const batch of SearchablePost.searchBucket(0, ["alice"], {
+        limit: 3,
+      })) {
+        bucket0.push(...batch);
+      }
+      expect(bucket0.length).toBeLessThanOrEqual(3);
+    }, 120000);
+
+    test("invalid limit values throw before hitting DynamoDB", async () => {
+      // Confirm the validateLimit guard fires synchronously, not after
+      // any Query calls. Spy on send to make sure no calls happen.
+      let sendCalls = 0;
+      const realSend = SearchablePost.documentClient.send.bind(
+        SearchablePost.documentClient,
+      );
+      SearchablePost.documentClient.send = async (...args) => {
+        sendCalls++;
+        return realSend(...args);
+      };
+
+      try {
+        for (const bad of [0, -1, 1.5, NaN, "10"]) {
+          await expect(async () => {
+            for await (const _ of SearchablePost.searchAll(["alice"], {
+              limit: bad,
+            })) {
+              // unreachable
+            }
+          }).rejects.toThrow(/limit must be a positive integer or Infinity/i);
+        }
+        expect(sendCalls).toBe(0);
+      } finally {
+        SearchablePost.documentClient.send = realSend;
+      }
+    });
+  });
+
   describe("pagination across partitions (real DynamoDB)", () => {
     // Spies on documentClient.send to count GSI Query roundtrips. Used to
     // assert pagination actually happens (i.e., LastEvaluatedKey-driven

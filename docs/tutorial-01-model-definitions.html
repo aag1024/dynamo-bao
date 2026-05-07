@@ -168,7 +168,13 @@ const buckets = await Promise.all(
 
 // Helper: split a free-form query string into terms (honors quoted phrases)
 const terms = Post.tokenizeSearchQuery('&quot;hello world&quot; foo'); // => [&quot;hello world&quot;, &quot;foo&quot;]
-</code></pre><p><code>searchAll</code> accepts an <code>options.filter</code> that's combined with the search predicate, but DynamoDB only allows the index-level filter to reference attributes that are <em>projected</em> onto the GSI. The <code>iter_search_index</code> projects only <code>_searchText</code> (plus the index/base keys) — anything else throws a clear error before the round-trip:</p><pre class="prettyprint source"><code>Filter on 'iter_search_index' references attribute(s) that aren't projected: [status]. ...
+
+// Cap total results. Default limit is 100; pass Infinity to scan everything.
+for await (const batch of Post.searchAll([&quot;alice&quot;], { limit: 25 })) { /* ... */ }
+for await (const batch of Post.searchAll([&quot;alice&quot;], { limit: Infinity })) {
+  // unbounded — for admin/cleanup scripts that need every match
+}
+</code></pre><p><code>limit</code> defaults to <strong>100</strong> total items across all buckets and pages. The generator stops pulling new pages once the cap is hit (no further DynamoDB Query calls), and the last batch is sliced to fit so callers never see more than <code>limit</code> items in total. To opt out of the cap entirely, pass <code>Infinity</code>.</p><p><code>searchAll</code> accepts an <code>options.filter</code> that's combined with the search predicate, but DynamoDB only allows the index-level filter to reference attributes that are <em>projected</em> onto the GSI. The <code>iter_search_index</code> projects only <code>_searchText</code> (plus the index/base keys) — anything else throws a clear error before the round-trip:</p><pre class="prettyprint source"><code>Filter on 'iter_search_index' references attribute(s) that aren't projected: [status]. ...
 </code></pre><p>For non-projected attributes, filter the hydrated batch in JS:</p><pre class="prettyprint source lang-javascript"><code>for await (const batch of Post.searchAll([&quot;alice&quot;])) {
   for (const post of batch) {
     if (post.status === &quot;active&quot;) yieldOrCollect(post);

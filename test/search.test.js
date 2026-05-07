@@ -9,7 +9,13 @@ const {
 } = require("./utils/test-utils");
 const { ulid } = require("ulid");
 
-let testId, SearchablePost, NonSearchablePost, NonIterableSearchable;
+let testId,
+  SearchablePost,
+  NonSearchablePost,
+  NonIterableSearchable,
+  CaseSensitivePost,
+  DedupePost,
+  MinTermLengthPost;
 
 class TestSearchablePost extends dynamoBao.BaoModel {
   static modelPrefix = "tsp";
@@ -66,6 +72,62 @@ class TestNonIterableSearchable extends dynamoBao.BaoModel {
   static primaryKey = dynamoBao.PrimaryKeyConfig("postId", "modelPrefix");
 }
 
+// Variants exercising each searchConfig option end-to-end.
+
+class TestCaseSensitivePost extends dynamoBao.BaoModel {
+  static modelPrefix = "tcs";
+  static iterable = true;
+  static iterationBuckets = 3;
+  static searchable = true;
+  static searchConfig = {
+    fields: ["title"],
+    caseSensitive: true,
+    minTermLength: 1,
+    dedupe: false,
+  };
+  static fields = {
+    postId: dynamoBao.fields.UlidField({ autoAssign: true, required: true }),
+    title: dynamoBao.fields.StringField(),
+  };
+  static primaryKey = dynamoBao.PrimaryKeyConfig("postId", "modelPrefix");
+}
+
+class TestDedupePost extends dynamoBao.BaoModel {
+  static modelPrefix = "tdp";
+  static iterable = true;
+  static iterationBuckets = 3;
+  static searchable = true;
+  static searchConfig = {
+    fields: ["title"],
+    caseSensitive: false,
+    minTermLength: 1,
+    dedupe: true,
+  };
+  static fields = {
+    postId: dynamoBao.fields.UlidField({ autoAssign: true, required: true }),
+    title: dynamoBao.fields.StringField(),
+  };
+  static primaryKey = dynamoBao.PrimaryKeyConfig("postId", "modelPrefix");
+}
+
+class TestMinTermLengthPost extends dynamoBao.BaoModel {
+  static modelPrefix = "tmt";
+  static iterable = true;
+  static iterationBuckets = 3;
+  static searchable = true;
+  static searchConfig = {
+    fields: ["title"],
+    caseSensitive: false,
+    minTermLength: 3,
+    dedupe: false,
+  };
+  static fields = {
+    postId: dynamoBao.fields.UlidField({ autoAssign: true, required: true }),
+    title: dynamoBao.fields.StringField(),
+  };
+  static primaryKey = dynamoBao.PrimaryKeyConfig("postId", "modelPrefix");
+}
+
 // Search-enabled tests need the runtime to resolve the iteration index to
 // `iter_search_index` (the new INCLUDE-projection GSI). Opt in via config —
 // the package default is the legacy `iter_index` for backwards compatibility.
@@ -81,6 +143,9 @@ describe("Searchable models", () => {
     manager.registerModel(TestSearchablePost);
     manager.registerModel(TestNonSearchablePost);
     manager.registerModel(TestNonIterableSearchable);
+    manager.registerModel(TestCaseSensitivePost);
+    manager.registerModel(TestDedupePost);
+    manager.registerModel(TestMinTermLengthPost);
 
     await cleanupTestData(testId);
     await verifyCleanup(testId);
@@ -88,6 +153,9 @@ describe("Searchable models", () => {
     SearchablePost = manager.getModel("TestSearchablePost");
     NonSearchablePost = manager.getModel("TestNonSearchablePost");
     NonIterableSearchable = manager.getModel("TestNonIterableSearchable");
+    CaseSensitivePost = manager.getModel("TestCaseSensitivePost");
+    DedupePost = manager.getModel("TestDedupePost");
+    MinTermLengthPost = manager.getModel("TestMinTermLengthPost");
   });
 
   afterEach(async () => {
@@ -96,6 +164,9 @@ describe("Searchable models", () => {
       await cleanupTestDataByIteration(testId, [
         SearchablePost,
         NonSearchablePost,
+        CaseSensitivePost,
+        DedupePost,
+        MinTermLengthPost,
       ]);
       // NonIterableSearchable can't be cleaned up via iteration (it's not
       // iterable). Tenant isolation prevents cross-test pollution; a small
@@ -374,6 +445,92 @@ describe("Searchable models", () => {
       },
       180000,
     );
+  });
+
+  describe("searchConfig option round-trip (real DynamoDB)", () => {
+    test("caseSensitive: true preserves case at write AND respects case at search", async () => {
+      const upper = await CaseSensitivePost.create({ title: "Hello World" });
+      const lower = await CaseSensitivePost.create({ title: "hello world" });
+
+      // Stored verbatim (case preserved on write).
+      expect(upper._dyData._searchText).toBe("Hello World");
+      expect(lower._dyData._searchText).toBe("hello world");
+
+      // Mixed-case query matches only the row with that exact case.
+      let found = [];
+      for await (const batch of CaseSensitivePost.searchAll(["Hello"])) {
+        found.push(...batch);
+      }
+      expect(found.map((p) => p.postId)).toEqual([upper.postId]);
+
+      // Lowercase query matches only the lowercase row.
+      found = [];
+      for await (const batch of CaseSensitivePost.searchAll(["hello"])) {
+        found.push(...batch);
+      }
+      expect(found.map((p) => p.postId)).toEqual([lower.postId]);
+    });
+
+    test("dedupe: true collapses repeated tokens at write time", async () => {
+      const repeated = await DedupePost.create({
+        title: "foo foo foo bar baz baz",
+      });
+      // Tokens deduped in first-seen order; lowercase because caseSensitive=false.
+      expect(repeated._dyData._searchText).toBe("foo bar baz");
+
+      // Searches still work against the deduped storage.
+      let found = [];
+      for await (const batch of DedupePost.searchAll(["foo", "baz"])) {
+        found.push(...batch);
+      }
+      expect(found.map((p) => p.postId)).toEqual([repeated.postId]);
+
+      // A token that appeared only as a duplicate in input is still findable.
+      found = [];
+      for await (const batch of DedupePost.searchAll(["bar"])) {
+        found.push(...batch);
+      }
+      expect(found.map((p) => p.postId)).toEqual([repeated.postId]);
+    });
+
+    test("minTermLength drops short tokens at write AND at query time", async () => {
+      // Source has a mix of short and long tokens. minTermLength=3 means
+      // 'a', 'is', 'go' get dropped from _searchText.
+      const row = await MinTermLengthPost.create({
+        title: "a fox is here go now seriously",
+      });
+      const stored = row._dyData._searchText.split(" ");
+      // Long tokens kept...
+      expect(stored).toEqual(
+        expect.arrayContaining(["fox", "here", "now", "seriously"]),
+      );
+      // ...and short ones dropped.
+      expect(stored).not.toContain("a");
+      expect(stored).not.toContain("is");
+      expect(stored).not.toContain("go");
+
+      // Searching for a long token still works.
+      let found = [];
+      for await (const batch of MinTermLengthPost.searchAll(["seriously"])) {
+        found.push(...batch);
+      }
+      expect(found.map((p) => p.postId)).toEqual([row.postId]);
+
+      // Query terms are normalized too: a too-short term is dropped from
+      // the predicate. With ['a', 'fox'] passed in, only 'fox' survives.
+      found = [];
+      for await (const batch of MinTermLengthPost.searchAll(["a", "fox"])) {
+        found.push(...batch);
+      }
+      expect(found.map((p) => p.postId)).toEqual([row.postId]);
+
+      // A query with only short terms throws (no usable terms remain).
+      await expect(async () => {
+        for await (const _ of MinTermLengthPost.searchAll(["a", "is"])) {
+          // unreachable
+        }
+      }).rejects.toThrow(/at least one non-empty term/i);
+    });
   });
 
   describe("save-time _searchText behavior", () => {

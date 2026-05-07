@@ -166,10 +166,16 @@ function buildSearchPredicate(terms, searchConfig, options = {}) {
     );
   }
 
+  // Mirror the write-side filter: terms shorter than minTermLength are
+  // dropped from the predicate so the user can't silently get zero matches
+  // by querying for a term the index doesn't store. Length is counted in
+  // Unicode code points to match buildSearchText's [...tok].length check.
+  const minTermLength =
+    (searchConfig && searchConfig.minTermLength) || 1;
   const normalized = [];
   for (const t of terms) {
     const n = normalizeSearchTerm(t, searchConfig || {});
-    if (n) normalized.push(n);
+    if (n && [...n].length >= minTermLength) normalized.push(n);
   }
   if (normalized.length === 0) {
     throw new Error("searchAll requires at least one non-empty term.");

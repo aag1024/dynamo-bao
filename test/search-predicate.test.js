@@ -122,4 +122,31 @@ describe("buildSearchPredicate", () => {
     });
   });
 
+  describe("minTermLength filtering on query terms", () => {
+    const cfg = { ...config, minTermLength: 3 };
+
+    test("drops terms shorter than minTermLength", () => {
+      const p = buildSearchPredicate(["a", "fox", "is"], cfg);
+      // 'a' and 'is' dropped; only 'fox' kept.
+      expect(p.ExpressionAttributeValues).toEqual({ ":st0": "fox" });
+    });
+
+    test("counts Unicode code points, not bytes", () => {
+      // 中 (1 cp) and 中文 (2 cp) dropped; 中文字 (3 cp) kept.
+      const p = buildSearchPredicate(["中", "中文", "中文字"], cfg);
+      expect(p.ExpressionAttributeValues).toEqual({ ":st0": "中文字" });
+    });
+
+    test("throws when every term is below minTermLength", () => {
+      expect(() => buildSearchPredicate(["a", "is"], cfg)).toThrow(
+        /at least one non-empty term/i,
+      );
+    });
+
+    test("phrase terms longer than minTermLength survive even if individual words are short", () => {
+      // 'a fox' is 5 chars including the space — kept as a phrase substring.
+      const p = buildSearchPredicate(["a fox"], cfg);
+      expect(p.ExpressionAttributeValues).toEqual({ ":st0": "a fox" });
+    });
+  });
 });

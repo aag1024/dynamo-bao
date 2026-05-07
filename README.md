@@ -24,6 +24,7 @@ DynamoBao is the tool I wish I had when I started.
 - Return total read/write consumed capacity (even when multiple operations were performed)
 - Request-scoped capacity aggregation for usage metering and billing
 - Easily iterate over all items in a model for batch processing or migrations
+- Declarative substring search across iterable models with parallel cross-bucket fan-out (`searchAll`/`searchBucket`)
 - ESM (ECMAScript Modules) support for modern JavaScript projects
 - StringSetField for storing sets of strings with efficient diffing on save
 

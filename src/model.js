@@ -298,6 +298,40 @@ class BaoModel {
     }
   }
 
+  /**
+   * @description
+   * Search a `searchable: { fields: [...] }`-configured iterable model by
+   * substring(s) of `_searchText`. Each term becomes one
+   * `contains(_searchText, :term)` predicate. Multiple terms are combined
+   * with `$and` (default) or `$or`. Each term is normalized with the same
+   * rules used to build `_searchText` at write time, so user input matches
+   * what's stored.
+   *
+   * Reads from the bucketed `iter_search_index` GSI, fanning out across
+   * every bucket. For parallel processing across buckets, use
+   * {@link BaoModel.searchBucket} with `Promise.all` instead.
+   *
+   * @param {string[]} terms - One or more substring terms. Empty/whitespace
+   *   terms are dropped; throws if zero usable terms remain after
+   *   normalization.
+   * @param {Object} [options]
+   * @param {('$and'|'$or')} [options.operator='$and'] - How multi-term queries
+   *   are combined. `$and` requires every term to appear; `$or` requires any.
+   * @param {number} [options.batchSize=100] - DynamoDB Query page size. Each
+   *   bucket pages independently via `LastEvaluatedKey`.
+   * @param {Object} [options.filter] - Additional filter combined via AND
+   *   with the search predicate. Limited to attributes projected on
+   *   `iter_search_index` (i.e., `_searchText` and the index/base keys);
+   *   see the misconfigured-filter error message for guidance.
+   * @returns {AsyncGenerator<BaoModel[]>} Async generator yielding batches of
+   *   hydrated model instances.
+   * @throws {Error} If the model is not `searchable`, not `iterable`, or if
+   *   the resolved iteration index is not `iter_search_index`.
+   * @example
+   * for await (const batch of Post.searchAll(["alice", "bob"], { operator: "$or" })) {
+   *   for (const post of batch) console.log(post.title);
+   * }
+   */
   static async *searchAll(terms, options = {}) {
     this._assertSearchable();
     const {
@@ -325,6 +359,26 @@ class BaoModel {
     }
   }
 
+  /**
+   * @description
+   * Search a single iteration bucket. Same predicate semantics as
+   * {@link BaoModel.searchAll}, but scoped to one bucket so callers can fan
+   * out across buckets in parallel with `Promise.all`.
+   *
+   * @param {number} bucketNum - Bucket index, in `[0, iterationBuckets)`.
+   * @param {string[]} terms - Substring terms (see `searchAll`).
+   * @param {Object} [options] - Same options as `searchAll`.
+   * @returns {AsyncGenerator<BaoModel[]>}
+   * @throws {Error} On invalid bucket number, non-searchable model, etc.
+   * @example
+   * const results = await Promise.all(
+   *   Array.from({ length: Post.iterationBuckets }, async (_, b) => {
+   *     const out = [];
+   *     for await (const batch of Post.searchBucket(b, ["alice"])) out.push(...batch);
+   *     return out;
+   *   }),
+   * );
+   */
   static async *searchBucket(bucketNum, terms, options = {}) {
     this._assertSearchable();
     if (bucketNum < 0 || bucketNum >= this.iterationBuckets) {
@@ -346,15 +400,39 @@ class BaoModel {
     });
   }
 
+  /**
+   * @description
+   * Split a free-form query string into an array of terms suitable for
+   * passing to {@link BaoModel.searchAll}. Whitespace separates terms;
+   * double-quoted phrases are kept together as a single term.
+   *
+   * @param {string} queryString - Raw user input.
+   * @returns {string[]} Array of terms (possibly empty).
+   * @example
+   * Post.tokenizeSearchQuery('"hello world" foo');
+   * // => ["hello world", "foo"]
+   */
   static tokenizeSearchQuery(queryString) {
     const { tokenizeSearchQuery } = require("./utils/search-text");
     return tokenizeSearchQuery(queryString);
   }
 
-  // Normalize a single search term using the same rules the model used to
-  // build `_searchText`. Useful when post-filtering hydrated rows in JS:
-  //   const term = Post.normalizeSearchTerm(userInput);
-  //   results.filter(p => p._dyData._searchText?.includes(term));
+  /**
+   * @description
+   * Normalize a single search term using the same rules the model used to
+   * build `_searchText` at write time: lowercase (unless
+   * `caseSensitive: true`), strip punctuation, collapse whitespace. Useful
+   * when post-filtering hydrated rows in JS, or when manually constructing
+   * a `_searchText` filter against a model that has no `searchConfig`.
+   *
+   * Idempotent — calling multiple times returns the same result.
+   *
+   * @param {string} term - Raw user input.
+   * @returns {string} Normalized term.
+   * @example
+   * const term = Post.normalizeSearchTerm("Hello, World!"); // "hello world"
+   * results.filter((p) => p._dyData._searchText?.includes(term));
+   */
   static normalizeSearchTerm(term) {
     const { normalizeSearchTerm } = require("./utils/search-text");
     return normalizeSearchTerm(term, this.searchConfig || {});

@@ -370,7 +370,6 @@ class BaoModel {
         { length: this.iterationBuckets },
         (_, b) => b,
       ),
-      callerName: "searchAll",
     });
   }
 
@@ -402,7 +401,6 @@ class BaoModel {
       terms,
       options,
       activeBucketIndices: [bucketNum],
-      callerName: "searchBucket",
     });
   }
 
@@ -412,7 +410,7 @@ class BaoModel {
    * `parallel`, `limit`, `maxQueriesPerBucket`, and `cursor` options;
    * returns `{ items, cursor }` with `cursor === null` on exhaustion.
    */
-  static async _searchPaged({ terms, options, activeBucketIndices, callerName }) {
+  static async _searchPaged({ terms, options, activeBucketIndices }) {
     const {
       buildSearchPredicate,
       validateLimit,
@@ -463,7 +461,16 @@ class BaoModel {
           `Cursor was generated for model "${decoded.modelPrefix}", not "${this.modelPrefix}".`,
         );
       }
-      bucketCursors = { ...decoded.bucketCursors };
+      // Restrict the resumed bucketCursors to activeBucketIndices. Without
+      // this, a cursor produced by searchAll passed into searchBucket(N)
+      // would silently scan every bucket in the cursor instead of just N.
+      // Object.keys returns strings; convert to compare against the
+      // numeric activeBucketIndices.
+      const allowed = new Set(activeBucketIndices.map(String));
+      bucketCursors = {};
+      for (const [k, v] of Object.entries(decoded.bucketCursors)) {
+        if (allowed.has(k)) bucketCursors[k] = v;
+      }
       pendingItemKeys = decoded.pendingItemKeys || [];
     } else {
       bucketCursors = {};
@@ -532,9 +539,11 @@ class BaoModel {
       }
     }
 
-    // Slice to limit; over-pull from the last round (only possible in
-    // parallel mode) gets stashed in the cursor as pendingItemKeys for
-    // the next call to return first.
+    // Slice to limit; over-pull at the boundary gets stashed in the cursor
+    // as pendingItemKeys for the next call to return first. Both modes can
+    // over-pull: parallel mode by up to (active buckets - 1) × batchSize,
+    // sequential mode by up to one batchSize (its loop guard is at the top
+    // so the page that pushes us past `limit` is fully kept).
     let kept = items;
     let overflowKeys = [];
     if (items.length > limit) {

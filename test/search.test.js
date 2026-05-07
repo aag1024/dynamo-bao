@@ -248,6 +248,134 @@ describe("Searchable models", () => {
     });
   });
 
+  describe("pagination across partitions (real DynamoDB)", () => {
+    // Spies on documentClient.send to count GSI Query roundtrips. Used to
+    // assert pagination actually happens (i.e., LastEvaluatedKey-driven
+    // multi-page reads), not just that we get the right ids back.
+    function installQueryCounter(model) {
+      let count = 0;
+      const realSend = model.documentClient.send.bind(model.documentClient);
+      model.documentClient.send = async (cmd) => {
+        // Detect Query commands targeting the iter_search_index.
+        if (
+          cmd?.constructor?.name === "QueryCommand" &&
+          cmd.input?.IndexName === "iter_search_index"
+        ) {
+          count++;
+        }
+        return realSend(cmd);
+      };
+      return {
+        get count() {
+          return count;
+        },
+        restore() {
+          model.documentClient.send = realSend;
+        },
+      };
+    }
+
+    test(
+      "searchAll returns every match across paginated buckets (batchSize forces multiple pages per bucket)",
+      async () => {
+        // 5 buckets × ~10 alice items per bucket = 50 matching. Use a small
+        // batchSize so each bucket needs at least 2 Query roundtrips. We also
+        // sprinkle in non-matching items so the GSI returns rows the filter
+        // discards — exercising the "partial page after filter" case.
+        const aliceIds = [];
+        const creates = [];
+        for (let i = 0; i < 50; i++) {
+          creates.push(
+            SearchablePost.create({
+              title: `alice slot-${i}`,
+              body: null,
+            }).then((p) => aliceIds.push(p.postId)),
+          );
+        }
+        for (let i = 0; i < 25; i++) {
+          creates.push(
+            SearchablePost.create({ title: `bob slot-${i}`, body: null }),
+          );
+        }
+        await Promise.all(creates);
+
+        const counter = installQueryCounter(SearchablePost);
+        try {
+          const found = [];
+          for await (const batch of SearchablePost.searchAll(["alice"], {
+            batchSize: 5,
+          })) {
+            found.push(...batch);
+          }
+
+          const foundIds = found.map((p) => p.postId).sort();
+          expect(foundIds).toEqual(aliceIds.slice().sort());
+          // No duplicates — pagination must not double-yield rows.
+          expect(new Set(foundIds).size).toBe(foundIds.length);
+          // Pagination actually happened. With 5 buckets and batchSize 5
+          // against a dataset of ~75 rows, we expect at least one extra
+          // Query per bucket. The exact count varies with hash distribution,
+          // but it must be strictly more than the bucket count.
+          expect(counter.count).toBeGreaterThan(
+            SearchablePost.iterationBuckets,
+          );
+        } finally {
+          counter.restore();
+        }
+      },
+      120000,
+    );
+
+    test(
+      "searchAll keeps paginating when most pages are empty after the FilterExpression",
+      async () => {
+        // 5 matching needles in a haystack of 75. With batchSize=5 the GSI
+        // Query returns up to 5 items per page, then the contains() filter
+        // throws away most of them. The pagination loop must keep going on
+        // LastEvaluatedKey across many empty/sparse pages until exhausted.
+        const needleIds = [];
+        const creates = [];
+        for (let i = 0; i < 5; i++) {
+          creates.push(
+            SearchablePost.create({
+              title: `needle-${i} unique-marker-xyz`,
+              body: null,
+            }).then((p) => needleIds.push(p.postId)),
+          );
+        }
+        for (let i = 0; i < 75; i++) {
+          creates.push(
+            SearchablePost.create({ title: `haystack ${i}`, body: null }),
+          );
+        }
+        await Promise.all(creates);
+
+        const counter = installQueryCounter(SearchablePost);
+        try {
+          const found = [];
+          for await (const batch of SearchablePost.searchAll(
+            ["unique-marker-xyz"],
+            { batchSize: 5 },
+          )) {
+            found.push(...batch);
+          }
+
+          const foundIds = found.map((p) => p.postId).sort();
+          expect(foundIds).toEqual(needleIds.slice().sort());
+          // 80 total rows / 5 per page = 16+ pages spread across 5 buckets.
+          // At minimum we must have made far more Query calls than buckets,
+          // confirming the pagination loop survives mostly-empty pages.
+          expect(counter.count).toBeGreaterThan(
+            SearchablePost.iterationBuckets * 2,
+          );
+        } finally {
+          counter.restore();
+        }
+      },
+      180000,
+    );
+  });
+
   describe("save-time _searchText behavior", () => {
     test("update touching no source field does not rewrite _searchText", async () => {
       const p = await SearchablePost.create({

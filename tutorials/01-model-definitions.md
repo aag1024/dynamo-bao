@@ -395,6 +395,7 @@ The cursor encodes which buckets are unexhausted and where they left off, the bu
 
 - different terms / operator / searchConfig → throws.
 - different model → throws.
+- different tenant → throws (cursors are tenant-scoped).
 - cursor from `searchAll` passed to `searchBucket` (or vice versa) → throws with "Cursor scope mismatch". Use the same API call that generated the cursor.
 
 `searchAll` accepts an `options.filter` that's combined with the search predicate, but DynamoDB only allows the index-level filter to reference attributes that are *projected* onto the GSI. The `iter_search_index` projects only `_searchText` (plus the index/base keys) — anything else throws a clear error before the round-trip:

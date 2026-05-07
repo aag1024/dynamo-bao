@@ -443,6 +443,10 @@ class BaoModel {
       operator,
     });
     const expectedHash = predicateHash(terms, operator, this.searchConfig);
+    // Tenant is baked into iter_pk values stashed in bucketCursors, so a
+    // cursor from one tenant can't safely be resumed under another. Capture
+    // the current tenant for write-side; validate on resume below.
+    const currentTenantId = this.manager.getTenantId() || null;
 
     // Decode the cursor or initialize per-bucket state for a fresh call.
     // bucketCursors maps bucketIdx -> lek (or null for "start of bucket").
@@ -459,6 +463,15 @@ class BaoModel {
       if (decoded.modelPrefix !== this.modelPrefix) {
         throw new Error(
           `Cursor was generated for model "${decoded.modelPrefix}", not "${this.modelPrefix}".`,
+        );
+      }
+      // Cross-tenant cursor reuse would Query under tenant B with a
+      // tenant-A iter_pk in ExclusiveStartKey — DynamoDB rejects with an
+      // opaque ValidationException. Surface a clear error first.
+      if (decoded.tenantId !== currentTenantId) {
+        throw new Error(
+          `Cursor was generated under tenant "${decoded.tenantId || "(none)"}", ` +
+            `not "${currentTenantId || "(none)"}". Cursors are tenant-scoped.`,
         );
       }
       // Cursors are scoped to the bucket set used to generate them, so a
@@ -569,6 +582,7 @@ class BaoModel {
           predicateHash: expectedHash,
           modelPrefix: this.modelPrefix,
           scope: activeBucketIndices,
+          tenantId: currentTenantId,
           pendingItemKeys: overflowKeys,
         })
       : null;

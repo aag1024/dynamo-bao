@@ -1035,6 +1035,36 @@ describe("Searchable models", () => {
       ).rejects.toThrow(/Cursor scope mismatch/i);
     }, 240000);
 
+    test("cursor from one tenant rejected when used under a different tenant", async () => {
+      // Generate a real cursor, decode it, swap the tenantId for a foreign
+      // value, re-encode, and verify resume throws with a clear message
+      // (instead of letting DynamoDB return an opaque ValidationException
+      // when the ExclusiveStartKey's iter_pk encodes a different tenant).
+      const {
+        encodeCursor,
+        decodeCursor,
+      } = require("../src/utils/search-text");
+
+      for (let i = 0; i < 30; i++) {
+        await SearchablePost.create({ title: `alice ${i}`, body: null });
+      }
+      const { cursor } = await SearchablePost.searchAll(["alice"], {
+        limit: 5,
+      });
+      expect(cursor).not.toBeNull();
+
+      // Forge a cursor whose tenantId doesn't match the active tenant.
+      const decoded = decodeCursor(cursor);
+      const forged = encodeCursor({
+        ...decoded,
+        tenantId: "some-foreign-tenant",
+      });
+
+      await expect(
+        SearchablePost.searchAll(["alice"], { cursor: forged }),
+      ).rejects.toThrow(/Cursor.*tenant/i);
+    }, 120000);
+
     test("invalid maxQueriesPerBucket throws synchronously", async () => {
       await expect(
         SearchablePost.searchAll(["alice"], { maxQueriesPerBucket: 0 }),

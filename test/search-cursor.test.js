@@ -64,6 +64,7 @@ describe("encodeCursor / decodeCursor", () => {
     predicateHash: "abc123",
     modelPrefix: "p",
     scope: [0, 1, 2, 3, 4],
+    tenantId: "tenant-a",
     pendingItemKeys: ["id1", "id2", "id3"],
   };
 
@@ -90,6 +91,7 @@ describe("encodeCursor / decodeCursor", () => {
       predicateHash: "x",
       modelPrefix: "p",
       scope: [0],
+      tenantId: null,
     };
     const decoded = decodeCursor(encodeCursor(state));
     expect(decoded.pendingItemKeys).toEqual([]);
@@ -108,8 +110,14 @@ describe("encodeCursor / decodeCursor", () => {
       predicateHash: "x",
       modelPrefix: "p",
       scope: [3],
+      tenantId: "tenant-b",
       pendingItemKeys: [],
     };
+    expect(decodeCursor(encodeCursor(state))).toEqual(state);
+  });
+
+  test("round-trips with tenantId: null (single-tenant deployment)", () => {
+    const state = { ...sampleState, tenantId: null };
     expect(decodeCursor(encodeCursor(state))).toEqual(state);
   });
 
@@ -122,6 +130,7 @@ describe("encodeCursor / decodeCursor", () => {
       predicateHash: "h",
       modelPrefix: "p",
       scope: [0],
+      tenantId: "??tenant>>>",
       pendingItemKeys: [],
     };
     const encoded = encodeCursor(state);
@@ -130,11 +139,12 @@ describe("encodeCursor / decodeCursor", () => {
   });
 
   test("decodeCursor throws on cursor missing required scope field", () => {
-    // Simulate a cursor produced before the `scope` field existed.
+    // Simulate a cursor produced before the `scope`/`tenantId` fields existed.
     const legacyJson = JSON.stringify({
       bucketCursors: {},
       predicateHash: "x",
       modelPrefix: "p",
+      tenantId: null,
       pendingItemKeys: [],
     });
     const legacyCursor = Buffer.from(legacyJson, "utf8")
@@ -143,6 +153,23 @@ describe("encodeCursor / decodeCursor", () => {
       .replace(/\//g, "_")
       .replace(/=+$/, "");
     expect(() => decodeCursor(legacyCursor)).toThrow(/cursor.*scope/i);
+  });
+
+  test("decodeCursor throws on cursor missing required tenantId field", () => {
+    // Pre-tenant-validation cursors don't have a tenantId field.
+    const legacyJson = JSON.stringify({
+      bucketCursors: {},
+      predicateHash: "x",
+      modelPrefix: "p",
+      scope: [0],
+      pendingItemKeys: [],
+    });
+    const legacyCursor = Buffer.from(legacyJson, "utf8")
+      .toString("base64")
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=+$/, "");
+    expect(() => decodeCursor(legacyCursor)).toThrow(/cursor.*tenantId/i);
   });
 
   test("decodeCursor throws on malformed input (truncated)", () => {

@@ -279,6 +279,7 @@ const CURSOR_REQUIRED_FIELDS = [
   "predicateHash",
   "modelPrefix",
   "scope",
+  "tenantId",
 ];
 
 // URL-safe base64 with manual character replacement so we don't depend on
@@ -318,6 +319,7 @@ function encodeCursor(state) {
     predicateHash: state.predicateHash,
     modelPrefix: state.modelPrefix,
     scope: state.scope,
+    tenantId: state.tenantId,
     pendingItemKeys: state.pendingItemKeys || [],
   });
   return _toBase64url(json);

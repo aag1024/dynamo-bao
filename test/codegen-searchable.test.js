@@ -243,6 +243,57 @@ describe("model generator emits searchable static properties", () => {
   });
 });
 
+describe("applyModelDefaults — searchable + iterable interaction", () => {
+  let warnSpy;
+  beforeEach(() => {
+    warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+  });
+  afterEach(() => {
+    warnSpy.mockRestore();
+  });
+
+  test("warns when searchable is configured on a non-iterable model", () => {
+    // searchable+non-iterable IS supported (partition-scoped filter),
+    // but searchAll/searchBucket won't work — easy to forget to opt in
+    // to iteration. Warn at codegen so the gotcha surfaces early.
+    const models = makePost({
+      modelOverrides: { searchable: { fields: ["title"] } },
+    });
+    applyModelDefaults(models);
+    expect(warnSpy).toHaveBeenCalled();
+    const messages = warnSpy.mock.calls.map((c) => c.join(" "));
+    expect(messages.some((m) => /Post/.test(m))).toBe(true);
+    expect(
+      messages.some((m) => /searchable.*iterable/i.test(m)),
+    ).toBe(true);
+  });
+
+  test("does NOT warn when searchable+iterable are both set", () => {
+    const models = makePost({
+      modelOverrides: {
+        iterable: true,
+        searchable: { fields: ["title"] },
+      },
+    });
+    applyModelDefaults(models);
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
+
+  test("does NOT warn when searchable is false (default)", () => {
+    const models = makePost();
+    applyModelDefaults(models);
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
+
+  test("does NOT warn when searchable is explicitly false", () => {
+    const models = makePost({
+      modelOverrides: { iterable: false, searchable: false },
+    });
+    applyModelDefaults(models);
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
+});
+
 describe("applyModelDefaults — searchable: true shortcut", () => {
   // Plan v1 says searchable is YAML-driven; the boolean true form would need a
   // plugin override which we explicitly cut from v1. So `searchable: true`

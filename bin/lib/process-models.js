@@ -110,6 +110,22 @@ function applyModelDefaults(models) {
   for (const [modelName, modelDef] of Object.entries(models)) {
     applyIterableDefaults(modelDef);
     validateSearchable(modelName, modelDef);
+    // searchable on a non-iterable model is a supported combination
+    // (partition-scoped _searchText filtering), but searchAll/searchBucket
+    // require iteration buckets and will throw at runtime. Warn so users
+    // who forgot to opt into iteration find out at codegen, not in prod.
+    if (
+      modelDef.searchable &&
+      typeof modelDef.searchable === "object" &&
+      !modelDef.iterable
+    ) {
+      console.warn(
+        `[dynamo-bao] Model "${modelName}" has \`searchable\` configured but ` +
+          `\`iterable\` is false. _searchText will populate and filter on it ` +
+          `via the standard query API works, but searchAll/searchBucket will ` +
+          `throw. Set \`iterable: true\` to enable cross-bucket parallel search.`,
+      );
+    }
   }
   return models;
 }

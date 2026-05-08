@@ -416,19 +416,31 @@ for await (const batch of Post.searchAll(["alice"])) {
 
 ### Searchable + non-iterable models
 
-`searchable` works without `iterable: true` — `_searchText` is still populated on every save and exists on the row's raw data. The `searchAll`/`searchBucket` API only works on iterable models (it relies on the bucketed `iter_search_index`), so for non-iterable models you can either:
+`iterable` and `searchable` are independent flags. A model that's `searchable` without `iterable: true` is fully supported and useful — typical use case is **partition-scoped substring search**: comments under a post, items under a user, anything where you already have a known partition key and want to narrow within it by text content.
 
-**Filter on `_searchText` directly via the standard filter API.** All filter operators that take a string work, and the value is auto-normalized using the model's `searchConfig` so user input matches what was stored:
+How it works mechanically:
+
+- `_searchText` is populated on every save (the save-time logic doesn't depend on `iterable`).
+- The row is **not** in `iter_search_index` (no `_iter_pk`/`_iter_sk` keys), so no extra GSI write per save.
+- All user-defined GSIs use `Projection: ALL`, so `_searchText` rides along on whichever index you query.
+- `searchAll`/`searchBucket` are unavailable (they require `iterable: true` for the bucketed fan-out). At codegen time you'll get a warning if `searchable` is configured without `iterable: true`, in case you forgot.
+
+Two patterns for searching:
+
+**Filter on `_searchText` directly via the standard filter API.** The value is auto-normalized using the model's `searchConfig` so user input matches what was stored. The third arg to `queryByIndex` is the sort-key condition (pass `null` if none); the fourth is options:
 
 ```javascript
-const { items } = await Post.queryByIndex("byUser", userId, {
-  filter: { _searchText: { $contains: "Hello, World!" } },
-});
+const { items } = await Post.queryByIndex(
+  "byUser",
+  userId,
+  null,
+  { filter: { _searchText: { $contains: "Hello, World!" } } },
+);
 // 'Hello, World!' is auto-normalized to 'hello world' before being sent
 // to DynamoDB, matching what _searchText looks like on disk.
 ```
 
-This works on any standard filter context: `query`, `queryByIndex`, `iterateAll({ filter: ... })`, and condition expressions in `update`/`delete`. Operators supported: `$contains`, `$beginsWith`, `$eq`, `$ne`, `$exists`. Values are auto-normalized for string-comparison ops; `$exists` doesn't take a value.
+This works on any standard filter context: `query`, `queryByIndex`, `iterateAll({ filter: ... })`, and condition expressions in `update`/`delete`. Operators supported on `_searchText`: `$contains`, `$beginsWith`, `$eq`, `$ne`, `$in`, `$exists`. Values are auto-normalized for string-comparison ops; `$exists` doesn't take a value.
 
 **Or filter post-fetch in JS** when you want the normalization but not the index-side filter (e.g., post-fetch ranking):
 

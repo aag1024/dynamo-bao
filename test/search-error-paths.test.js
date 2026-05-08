@@ -116,6 +116,54 @@ describe("missing iter_search_index → friendly error", () => {
     }
   });
 
+  test("translates missing-index error through the searchAll path too", async () => {
+    // searchAll/_searchSingleBucketPage and iterateAll/_iterateSingleBucket
+    // share _runIterationQuery for the translation. This test exercises
+    // the searchAll flow specifically to lock in shared-helper coverage.
+    class SearchableForMissingIndex extends dynamoBao.BaoModel {
+      static modelPrefix = "smix";
+      static iterable = true;
+      static iterationBuckets = 1;
+      static searchable = true;
+      static searchConfig = {
+        fields: ["title"],
+        caseSensitive: false,
+        minTermLength: 1,
+        dedupe: false,
+      };
+      static fields = {
+        id: dynamoBao.fields.UlidField({ autoAssign: true, required: true }),
+        title: dynamoBao.fields.StringField(),
+      };
+      static primaryKey = dynamoBao.PrimaryKeyConfig("id", "modelPrefix");
+    }
+
+    const localTestId = ulid();
+    const localManager = initTestModelsWithTenant(
+      searchEnabledConfig,
+      localTestId,
+    );
+    localManager.registerModel(SearchableForMissingIndex);
+    const Model = localManager.getModel("SearchableForMissingIndex");
+
+    const realSend = Model.documentClient.send.bind(Model.documentClient);
+    Model.documentClient.send = async () => {
+      const err = new Error(
+        "The table does not have the specified index: iter_search_index",
+      );
+      err.name = "ValidationException";
+      throw err;
+    };
+
+    try {
+      await expect(Model.searchAll(["alice"])).rejects.toThrow(
+        /Index 'iter_search_index' is missing.*Run 'bao-update-table'/i,
+      );
+    } finally {
+      Model.documentClient.send = realSend;
+    }
+  });
+
   test("does not translate unrelated errors", async () => {
     const realSend = ModelClass.documentClient.send.bind(
       ModelClass.documentClient,
@@ -205,13 +253,9 @@ describe("filter on non-projected attribute → friendly error before round-trip
     };
 
     try {
-      await expect(async () => {
-        for await (const _ of ModelClass.searchAll(["foo"], {
-          filter: { status: "active" },
-        })) {
-          // unreachable
-        }
-      }).rejects.toThrow(/aren't projected.*\[status\]/i);
+      await expect(
+        ModelClass.searchAll(["foo"], { filter: { status: "active" } }),
+      ).rejects.toThrow(/aren't projected.*\[status\]/i);
       expect(sendCalls.length).toBe(0);
     } finally {
       ModelClass.documentClient.send = realSend;
@@ -294,17 +338,12 @@ describe("searchAll without iter_search_index config → friendly migration hint
     manager.registerModel(SearchableButDefaultConfig);
     const ModelClass = manager.getModel("SearchableButDefaultConfig");
 
-    await expect(async () => {
-      for await (const _ of ModelClass.searchAll(["foo"])) {
-        // unreachable
-      }
-    }).rejects.toThrow(/searchAll requires the 'iter_search_index' GSI/i);
-
-    await expect(async () => {
-      for await (const _ of ModelClass.searchAll(["foo"])) {
-        // unreachable
-      }
-    }).rejects.toThrow(/iterationIndexName.*iter_search_index/i);
+    await expect(ModelClass.searchAll(["foo"])).rejects.toThrow(
+      /searchAll requires the 'iter_search_index' GSI/i,
+    );
+    await expect(ModelClass.searchAll(["foo"])).rejects.toThrow(
+      /iterationIndexName.*iter_search_index/i,
+    );
   });
 });
 

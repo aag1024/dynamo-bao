@@ -4,7 +4,7 @@
   ModelName:
     modelPrefix: &quot;x&quot; # Required: short (1-4 unique character prefix) for the model. This must be unique and cannot change later. It is not user visible.
     tableType: &quot;standard&quot; # Optional: &quot;standard&quot; (default) or &quot;mapping&quot;
-    iterable: true # Optional: &quot;true&quot; (default) or &quot;false&quot;. See notes on iteration.
+    iterable: false # Optional: &quot;true&quot; or &quot;false&quot; (default). See notes on iteration.
     iterationBuckets: 10 # Optional: number of buckets for iteration. Default is 10.
     searchable: false # Optional: see &quot;Searchable Models&quot; for the object form.
     fields: {} # Required: field definitions
@@ -118,17 +118,17 @@ const usersWithManyTags = await User.scan({
 
   # Reference to primary key
   postsForTag: primaryKey
-</code></pre><p>Adding the <code>primaryKey</code> to the index is a shorthand that allows you to give the primary key a name and let you query by it. It does not create a new index. If you plan to query by the primary key, it is recommended to name it this way.</p><h3 id="iterating-over-all-objects-for-a-model">Iterating Over All Objects for a Model</h3><p>By default, all models in DynamoBao are iterable. This feature is designed to be a safe default, allowing you to perform full-table scans for administrative tasks, data migrations, or reporting without worrying about whether you enabled it during model creation.</p><p>When <code>iterable</code> is <code>true</code> (the default), an <code>all</code> index is automatically created for the model. This enables the <code>iterateAll()</code> method, which returns an async generator to efficiently page through every object.</p><p><strong>Cost and Performance Considerations</strong> This convenience comes with a trade-off. To maintain the iteration index, every <code>create</code>, <code>update</code>, or <code>delete</code> operation requires a second write to the database. This effectively doubles the write cost for every item in your model.</p><p><strong>Opting Out of Iteration</strong> For high-volume, write-heavy models where you are certain you will never need to iterate over all items (e.g., logging tables, event streams), you can and should disable this feature to save costs.</p><p>To disable iteration, explicitly set <code>iterable: false</code>:</p><pre class="prettyprint source lang-yaml"><code>models:
-  AnalyticsEvent:
-    modelPrefix: &quot;ae&quot;
-    iterable: false # Disabling iteration for this write-heavy model
-    fields:
-      # ...
-</code></pre><h4 id="handling-large-models-with-iteration-buckets">Handling Large Models with Iteration Buckets</h4><p>To prevent &quot;hot partition&quot; issues on large iterable models, DynamoBao automatically splits the iteration index into multiple partitions. The number of partitions is determined by <code>iterationBuckets</code>, which defaults to <strong>10</strong>.</p><p>This provides a good balance of write scalability and read performance out of the box. If you need to change the number of buckets, you can specify it:</p><pre class="prettyprint source lang-yaml"><code>models:
+</code></pre><p>Adding the <code>primaryKey</code> to the index is a shorthand that allows you to give the primary key a name and let you query by it. It does not create a new index. If you plan to query by the primary key, it is recommended to name it this way.</p><h3 id="iterating-over-all-objects-for-a-model">Iterating Over All Objects for a Model</h3><p>DynamoBao supports full-model iteration for tasks like data migration, backfills, and reporting. Iteration is <strong>opt-in</strong> because it adds a per-row write to a dedicated GSI on every save, which doubles the write cost of the model.</p><p>To enable, set <code>iterable: true</code>:</p><pre class="prettyprint source lang-yaml"><code>models:
   User:
     modelPrefix: &quot;u&quot;
-    iterable: true # This is the default, so it's not strictly needed
-    iterationBuckets: 20 # Overriding the default of 10 for a very large model
+    iterable: true # opt in
+    fields:
+      # ...
+</code></pre><p>Once enabled, the <code>iterateAll()</code> method on the model class returns an async generator that pages through every row. Iterable models are also a prerequisite for <code>searchAll</code>/<code>searchBucket</code> (see Searchable Models above).</p><p><strong>Cost and Performance Considerations</strong> Each <code>create</code>, <code>update</code>, or <code>delete</code> on an iterable model writes one extra row to the iteration GSI. Doubles the write cost. Worth it for <code>User</code> or <code>Post</code>-shaped models where reads/migrations matter; not worth it for high-volume logging tables, event streams, or anything you're sure you'll only access by primary key.</p><h4 id="handling-large-models-with-iteration-buckets">Handling Large Models with Iteration Buckets</h4><p>To prevent &quot;hot partition&quot; issues on large iterable models, DynamoBao splits the iteration index across multiple partitions. The number of partitions is set by <code>iterationBuckets</code>, which defaults to <strong>10</strong> when <code>iterable: true</code>.</p><pre class="prettyprint source lang-yaml"><code>models:
+  User:
+    modelPrefix: &quot;u&quot;
+    iterable: true
+    iterationBuckets: 20 # Override the default of 10 for a very large model
     fields:
       # ...
 </code></pre><p>The <code>iterateAll</code> method handles iterating over all buckets automatically. For parallel processing, you can iterate a specific partition using the <code>iterateBucket(bucketNum)</code> method.</p><p>Choosing the number of buckets:</p><ul><li><code>1</code>: Use for small models or when parallel iteration is not needed. All items in one partition.</li><li><code>10</code> (default): Good for most models, providing a solid baseline for scalability.</li><li><code>20+</code>: For very large models or high-throughput parallel processing scenarios.</li></ul><p>A good root model isn't too large and doesn't get written to frequently. For instance, a <code>User</code> model may be a good candidate, since you typically have many fewer users than posts, messages, or other objects in the system. Users also don't get written to as frequently as other objects, so it's a good fit for iteration. Since iteration defaults to using 10 buckets, write capacity is automatically distributed, but you should still be mindful of very high-velocity writes (e.g. bulk importing users without rate limiting).</p><p>It is not recommended to use the <code>modelPrefix</code> as the primaryKey's partitionKey, since it cannot be changed later. The <code>iterable</code> feature provides a safer and more flexible way to enable iteration.</p><h2 id="searchable-models">Searchable Models</h2><p>Models can declare a <code>searchable</code> block to auto-populate a <code>_searchText</code> attribute on every save. The framework concatenates the listed string fields, normalizes the result (lowercased by default, punctuation stripped, whitespace collapsed), and stores it on the row. You can then query against it from inside any filter, or use the dedicated <code>searchAll</code>/<code>searchBucket</code> API on iterable models for parallel cross-bucket search.</p><pre class="prettyprint source lang-yaml"><code>models:
@@ -168,7 +168,22 @@ const buckets = await Promise.all(
 
 // Helper: split a free-form query string into terms (honors quoted phrases)
 const terms = Post.tokenizeSearchQuery('&quot;hello world&quot; foo'); // => [&quot;hello world&quot;, &quot;foo&quot;]
-</code></pre><p><code>searchAll</code> accepts an <code>options.filter</code> that's combined with the search predicate, but DynamoDB only allows the index-level filter to reference attributes that are <em>projected</em> onto the GSI. The <code>iter_search_index</code> projects only <code>_searchText</code> (plus the index/base keys) — anything else throws a clear error before the round-trip:</p><pre class="prettyprint source"><code>Filter on 'iter_search_index' references attribute(s) that aren't projected: [status]. ...
+
+// Cap total results. Default limit is 100; pass Infinity for unbounded.
+const { items, cursor } = await Post.searchAll([&quot;alice&quot;], { limit: 25 });
+
+// Pagination: pass the cursor back to get the next page. cursor === null
+// when the search is exhausted.
+const next = await Post.searchAll([&quot;alice&quot;], { limit: 25, cursor });
+
+// Drain everything (admin / cleanup scripts):
+let cur = null, all = [];
+do {
+  const page = await Post.searchAll([&quot;alice&quot;], { limit: 100, cursor: cur });
+  all.push(...page.items);
+  cur = page.cursor;
+} while (cur);
+</code></pre><p><code>searchAll</code> returns <code>{ items, cursor }</code>. <code>items</code> is never longer than <code>limit</code>. <code>cursor</code> is an opaque string you pass back on the next call to resume; <code>null</code> means the search is exhausted.</p><p>Other options:</p><ul><li><strong><code>parallel: true</code></strong> (default) fans out across every unexhausted bucket concurrently per round; faster wall-clock at the cost of more concurrent capacity. Pass <code>parallel: false</code> for a sequential walk if you want predictable per-bucket-then-objectId order or you're hitting throttling on a small table.</li><li><strong><code>maxQueriesPerBucket: 50</code></strong> (default) bounds DynamoDB Query roundtrips per call <strong>per bucket</strong>. With 5 buckets that's up to 250 Queries per call worst-case. For sparse-match searches this caps capacity per call — if we hit the cap without filling <code>limit</code>, the call returns whatever it found plus a non-null cursor pointing at the next page so the caller can continue with another call.</li><li><strong><code>limit: Infinity</code></strong> opts out of the cap. Combine with <code>cursor</code> chaining to drain.</li></ul><p>The cursor encodes which buckets are unexhausted and where they left off, the bucket scope it was generated for, plus a hash of the search predicate (terms + operator + searchConfig). Resume validates all of these:</p><ul><li>different terms / operator / searchConfig → throws.</li><li>different model → throws.</li><li>different tenant → throws (cursors are tenant-scoped).</li><li>cursor from <code>searchAll</code> passed to <code>searchBucket</code> (or vice versa) → throws with &quot;Cursor scope mismatch&quot;. Use the same API call that generated the cursor.</li></ul><p><code>searchAll</code> accepts an <code>options.filter</code> that's combined with the search predicate, but DynamoDB only allows the index-level filter to reference attributes that are <em>projected</em> onto the GSI. The <code>iter_search_index</code> projects only <code>_searchText</code> (plus the index/base keys) — anything else throws a clear error before the round-trip:</p><pre class="prettyprint source"><code>Filter on 'iter_search_index' references attribute(s) that aren't projected: [status]. ...
 </code></pre><p>For non-projected attributes, filter the hydrated batch in JS:</p><pre class="prettyprint source lang-javascript"><code>for await (const batch of Post.searchAll([&quot;alice&quot;])) {
   for (const post of batch) {
     if (post.status === &quot;active&quot;) yieldOrCollect(post);

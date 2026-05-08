@@ -203,10 +203,217 @@ function buildSearchPredicate(terms, searchConfig, options = {}) {
   };
 }
 
+// Validate a `limit` option value. Accepts positive integers and Infinity.
+// Anything else throws — saves the caller from passing 0 or a float and
+// silently getting weird behavior downstream.
+function validateLimit(limit) {
+  if (limit === Infinity) return;
+  if (
+    typeof limit !== "number" ||
+    Number.isNaN(limit) ||
+    !Number.isInteger(limit) ||
+    limit < 1
+  ) {
+    throw new Error("limit must be a positive integer or Infinity.");
+  }
+}
+
+// Take an async iterable of arrays (batches) and re-yield them, capping the
+// total flattened item count at `limit`. The last batch yielded is sliced to
+// fit so the consumer never sees more than `limit` items in total. Stops
+// pulling from the source once the cap is hit, so a generator-backed source
+// is suspended (no further DynamoDB Query calls, no further bucket scans).
+async function* applyLimit(asyncIterable, limit) {
+  if (limit === Infinity) {
+    yield* asyncIterable;
+    return;
+  }
+  let yielded = 0;
+  for await (const batch of asyncIterable) {
+    const room = limit - yielded;
+    if (room <= 0) return;
+    if (batch.length === 0) {
+      yield batch;
+      continue;
+    }
+    if (batch.length <= room) {
+      yield batch;
+      yielded += batch.length;
+      if (yielded >= limit) return;
+    } else {
+      yield batch.slice(0, room);
+      return;
+    }
+  }
+}
+
+// Stable, deterministic hash of a search predicate. Used to invalidate a
+// cursor if the caller resumes with different terms / operator / config —
+// otherwise a continuation key from the old query would silently splice
+// rows from a different result set into the new one. Not cryptographic;
+// just a reliable equality check.
+function predicateHash(terms, operator, searchConfig) {
+  const cfg = searchConfig || {};
+  const normalized = (terms || []).map((t) =>
+    normalizeSearchTerm(String(t), cfg),
+  );
+  const payload = JSON.stringify({
+    terms: normalized,
+    operator: operator || "$and",
+    caseSensitive: !!cfg.caseSensitive,
+    minTermLength: cfg.minTermLength || 1,
+    dedupe: !!cfg.dedupe,
+  });
+  // Simple FNV-1a 32-bit. Collisions are astronomically rare for our
+  // input space and we don't need cryptographic strength.
+  let h = 0x811c9dc5;
+  for (let i = 0; i < payload.length; i++) {
+    h ^= payload.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(36);
+}
+
+const CURSOR_REQUIRED_FIELDS = [
+  "bucketCursors",
+  "predicateHash",
+  "modelPrefix",
+  "scope",
+  "tenantId",
+];
+
+// URL-safe base64 with manual character replacement so we don't depend on
+// Node's "base64url" encoding token (Node 16+ only — README still claims
+// 12.17.0+ as the floor). Manual form works on every Node version that
+// supports Buffer.
+function _toBase64url(utf8) {
+  return Buffer.from(utf8, "utf8")
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+}
+
+function _fromBase64url(s) {
+  let padded = s.replace(/-/g, "+").replace(/_/g, "/");
+  while (padded.length % 4) padded += "=";
+  // Validate the input contains only base64-alphabet characters; otherwise
+  // Node's Buffer is permissive and silently drops garbage characters.
+  if (!/^[A-Za-z0-9+/=]*$/.test(padded)) {
+    throw new Error("Invalid cursor: not valid base64url.");
+  }
+  return Buffer.from(padded, "base64").toString("utf8");
+}
+
+function encodeCursor(state) {
+  if (!state || typeof state !== "object") {
+    throw new Error("encodeCursor: invalid state.");
+  }
+  for (const f of CURSOR_REQUIRED_FIELDS) {
+    if (!(f in state)) {
+      throw new Error(`encodeCursor: missing required field "${f}".`);
+    }
+  }
+  const json = JSON.stringify({
+    bucketCursors: state.bucketCursors,
+    predicateHash: state.predicateHash,
+    modelPrefix: state.modelPrefix,
+    scope: state.scope,
+    tenantId: state.tenantId,
+    pendingItemKeys: state.pendingItemKeys || [],
+  });
+  return _toBase64url(json);
+}
+
+function decodeCursor(encoded) {
+  if (typeof encoded !== "string" || encoded.length === 0) {
+    throw new Error("Invalid cursor: must be a non-empty string.");
+  }
+  let json;
+  try {
+    json = _fromBase64url(encoded);
+  } catch (e) {
+    throw new Error(e.message || "Invalid cursor: not valid base64url.");
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(json);
+  } catch (e) {
+    throw new Error("Invalid cursor: payload is not valid JSON.");
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("Invalid cursor: payload is not an object.");
+  }
+  for (const f of CURSOR_REQUIRED_FIELDS) {
+    if (!(f in parsed)) {
+      throw new Error(`Invalid cursor: missing required field "${f}".`);
+    }
+  }
+  // Defense-in-depth: validate field types. Cursors round-trip through
+  // user-controlled storage, so a malformed payload that parses as JSON
+  // shouldn't crash deep in _searchPaged with an opaque TypeError —
+  // surface the shape problem at decode.
+  if (
+    !parsed.bucketCursors ||
+    typeof parsed.bucketCursors !== "object" ||
+    Array.isArray(parsed.bucketCursors)
+  ) {
+    throw new Error(
+      "Invalid cursor: bucketCursors must be an object map.",
+    );
+  }
+  if (typeof parsed.predicateHash !== "string") {
+    throw new Error("Invalid cursor: predicateHash must be a string.");
+  }
+  if (
+    parsed.modelPrefix !== null &&
+    typeof parsed.modelPrefix !== "string"
+  ) {
+    throw new Error("Invalid cursor: modelPrefix must be a string or null.");
+  }
+  if (!Array.isArray(parsed.scope)) {
+    throw new Error("Invalid cursor: scope must be an array.");
+  }
+  for (const s of parsed.scope) {
+    if (!Number.isInteger(s) || s < 0) {
+      throw new Error(
+        "Invalid cursor: scope must contain non-negative integers.",
+      );
+    }
+  }
+  if (
+    parsed.tenantId !== null &&
+    typeof parsed.tenantId !== "string"
+  ) {
+    throw new Error("Invalid cursor: tenantId must be a string or null.");
+  }
+  if (
+    parsed.pendingItemKeys !== undefined &&
+    !Array.isArray(parsed.pendingItemKeys)
+  ) {
+    throw new Error("Invalid cursor: pendingItemKeys must be an array.");
+  }
+  if (Array.isArray(parsed.pendingItemKeys)) {
+    for (const k of parsed.pendingItemKeys) {
+      if (typeof k !== "string") {
+        throw new Error(
+          "Invalid cursor: pendingItemKeys must contain strings.",
+        );
+      }
+    }
+  }
+  return parsed;
+}
+
 module.exports = {
   buildSearchText,
   normalizeSearchTerm,
   tokenizeSearchQuery,
   computeSearchTextUpdate,
   buildSearchPredicate,
+  applyLimit,
+  validateLimit,
+  predicateHash,
+  encodeCursor,
+  decodeCursor,
 };

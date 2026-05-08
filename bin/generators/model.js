@@ -119,9 +119,15 @@ function generateModelClass(
         .join("\n")
     : "";
 
-  // Handle iteration configuration
+  // Handle iteration configuration. `??` (not `||`) so a deliberate 0
+  // from applyModelDefaults (non-iterable models get iterationBuckets=0)
+  // isn't silently bumped back to 100.
   const iterable = modelConfig.iterable === true;
-  const iterationBuckets = modelConfig.iterationBuckets || 100;
+  const iterationBuckets =
+    modelConfig.iterationBuckets !== undefined &&
+    modelConfig.iterationBuckets !== null
+      ? modelConfig.iterationBuckets
+      : 100;
 
   // Handle searchable configuration. modelConfig.searchable is either `false`
   // or a fully-validated object (validated by applyModelDefaults in

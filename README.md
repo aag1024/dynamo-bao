@@ -320,7 +320,7 @@ app.use(async (req, res, next) => {
 
 DynamoBao makes it easy to iterate over all items in a model, which is useful for tasks like data migration, backfills, or reporting.
 
-By default, all models are created with `iterable: true`. This automatically sets up a dedicated index that allows you to use the `iterateAll()` method on the model class.
+Iteration is **opt-in** — set `iterable: true` in the model's YAML to enable the dedicated index that backs `iterateAll()`. Iteration adds one GSI write per row mutation, so leaving it off is the safer default; turn it on when you actually need to scan the model.
 
 #### Basic Usage
 
@@ -411,15 +411,15 @@ This convenience comes at a cost: every `create`, `update`, or `delete` operatio
 
 To prevent "hot partitions" on large models, the iteration index is automatically split into 10 "buckets" or partitions. The `iterateAll()` method handles fetching from all buckets seamlessly.
 
-**Opting Out**
+**Default**
 
-For high-volume, write-heavy models where you know you will never need to iterate (e.g., logging tables), you can disable this feature to save costs:
+`iterable` defaults to `false`. To opt in, set it explicitly in the YAML — high-volume models like logging tables can leave it off; models you'll need to scan should set `iterable: true`:
 
 ```yaml
 models:
   AnalyticsEvent:
     modelPrefix: "ae"
-    iterable: false # Disabling iteration for this write-heavy model
+    # iterable defaults to false — leave it off for write-heavy logs
     fields:
       # ...
 ```

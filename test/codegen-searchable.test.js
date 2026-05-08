@@ -23,20 +23,35 @@ function makePost(overrides = {}) {
   };
 }
 
-describe("applyModelDefaults — iterable/iterationBuckets defaults (existing behavior preserved)", () => {
-  test("defaults iterable to true for standard tables", () => {
+describe("applyModelDefaults — iterable/iterationBuckets defaults", () => {
+  test("defaults iterable to false when not specified (opt-in)", () => {
     const models = makePost();
     applyModelDefaults(models);
-    expect(models.Post.iterable).toBe(true);
+    expect(models.Post.iterable).toBe(false);
   });
 
-  test("defaults iterationBuckets to 10 when iterable is true", () => {
+  test("defaults iterationBuckets to 0 when iterable is false (default)", () => {
     const models = makePost();
     applyModelDefaults(models);
+    expect(models.Post.iterationBuckets).toBe(0);
+  });
+
+  test("defaults iterationBuckets to 10 when iterable is explicitly true", () => {
+    const models = makePost({ modelOverrides: { iterable: true } });
+    applyModelDefaults(models);
+    expect(models.Post.iterable).toBe(true);
     expect(models.Post.iterationBuckets).toBe(10);
   });
 
-  test("defaults iterable to false for mapping tables", () => {
+  test("preserves explicit iterationBuckets override", () => {
+    const models = makePost({
+      modelOverrides: { iterable: true, iterationBuckets: 25 },
+    });
+    applyModelDefaults(models);
+    expect(models.Post.iterationBuckets).toBe(25);
+  });
+
+  test("defaults iterable to false for mapping tables (unchanged)", () => {
     const models = makePost({ modelOverrides: { tableType: "mapping" } });
     applyModelDefaults(models);
     expect(models.Post.iterable).toBe(false);
@@ -225,6 +240,57 @@ describe("model generator emits searchable static properties", () => {
     expect(code).toMatch(/"minTermLength":2/);
     expect(code).toMatch(/"caseSensitive":false/);
     expect(code).toMatch(/"dedupe":false/);
+  });
+});
+
+describe("applyModelDefaults — searchable + iterable interaction", () => {
+  let warnSpy;
+  beforeEach(() => {
+    warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+  });
+  afterEach(() => {
+    warnSpy.mockRestore();
+  });
+
+  test("warns when searchable is configured on a non-iterable model", () => {
+    // searchable+non-iterable IS supported (partition-scoped filter),
+    // but searchAll/searchBucket won't work — easy to forget to opt in
+    // to iteration. Warn at codegen so the gotcha surfaces early.
+    const models = makePost({
+      modelOverrides: { searchable: { fields: ["title"] } },
+    });
+    applyModelDefaults(models);
+    expect(warnSpy).toHaveBeenCalled();
+    const messages = warnSpy.mock.calls.map((c) => c.join(" "));
+    expect(messages.some((m) => /Post/.test(m))).toBe(true);
+    expect(
+      messages.some((m) => /searchable.*iterable/i.test(m)),
+    ).toBe(true);
+  });
+
+  test("does NOT warn when searchable+iterable are both set", () => {
+    const models = makePost({
+      modelOverrides: {
+        iterable: true,
+        searchable: { fields: ["title"] },
+      },
+    });
+    applyModelDefaults(models);
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
+
+  test("does NOT warn when searchable is false (default)", () => {
+    const models = makePost();
+    applyModelDefaults(models);
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
+
+  test("does NOT warn when searchable is explicitly false", () => {
+    const models = makePost({
+      modelOverrides: { iterable: false, searchable: false },
+    });
+    applyModelDefaults(models);
+    expect(warnSpy).not.toHaveBeenCalled();
   });
 });
 

@@ -10,8 +10,11 @@ const SEARCHABLE_KNOWN_OPTIONS = new Set([
 ]);
 
 function applyIterableDefaults(modelDef) {
+  // Default `iterable` to false. Iteration adds a per-row write to the
+  // iter_search_index GSI on every save, doubling write cost — opt-in is
+  // safer than opt-out. Mapping tables default to false either way.
   if (modelDef.iterable === undefined) {
-    modelDef.iterable = modelDef.tableType !== "mapping";
+    modelDef.iterable = false;
   }
   if (modelDef.iterationBuckets === undefined) {
     modelDef.iterationBuckets = modelDef.iterable ? 10 : 0;
@@ -107,6 +110,22 @@ function applyModelDefaults(models) {
   for (const [modelName, modelDef] of Object.entries(models)) {
     applyIterableDefaults(modelDef);
     validateSearchable(modelName, modelDef);
+    // searchable on a non-iterable model is a supported combination
+    // (partition-scoped _searchText filtering), but searchAll/searchBucket
+    // require iteration buckets and will throw at runtime. Warn so users
+    // who forgot to opt into iteration find out at codegen, not in prod.
+    if (
+      modelDef.searchable &&
+      typeof modelDef.searchable === "object" &&
+      !modelDef.iterable
+    ) {
+      console.warn(
+        `[dynamo-bao] Model "${modelName}" has \`searchable\` configured but ` +
+          `\`iterable\` is false. _searchText will populate and filter on it ` +
+          `via the standard query API works, but searchAll/searchBucket will ` +
+          `throw. Set \`iterable: true\` to enable cross-bucket parallel search.`,
+      );
+    }
   }
   return models;
 }

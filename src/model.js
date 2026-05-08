@@ -307,97 +307,285 @@ class BaoModel {
    * rules used to build `_searchText` at write time, so user input matches
    * what's stored.
    *
-   * Reads from the bucketed `iter_search_index` GSI, fanning out across
-   * every bucket. For parallel processing across buckets, use
-   * {@link BaoModel.searchBucket} with `Promise.all` instead.
+   * Reads from the bucketed `iter_search_index` GSI. By default fans out
+   * across every bucket in parallel; sequential mode is available via
+   * `parallel: false`. Returns one page of results plus an opaque cursor
+   * for resumption. To paginate, pass the cursor back on subsequent calls;
+   * `cursor === null` indicates the search is exhausted.
    *
    * @param {string[]} terms - One or more substring terms. Empty/whitespace
    *   terms are dropped; throws if zero usable terms remain after
    *   normalization.
    * @param {Object} [options]
    * @param {('$and'|'$or')} [options.operator='$and'] - How multi-term queries
-   *   are combined. `$and` requires every term to appear; `$or` requires any.
-   * @param {number} [options.batchSize=100] - DynamoDB Query page size. Each
-   *   bucket pages independently via `LastEvaluatedKey`.
+   *   are combined.
+   * @param {number} [options.batchSize=100] - DynamoDB Query Limit per page.
+   *   Each Query examines up to this many items before applying
+   *   FilterExpression.
+   * @param {number} [options.limit=100] - Maximum total items returned by
+   *   this call. Pass `Infinity` to opt out (caller is responsible for
+   *   ensuring the call doesn't exhaust capacity).
+   * @param {number} [options.maxQueriesPerBucket=50] - Per-bucket cap on
+   *   DynamoDB Query roundtrips per call. Bounds worst-case capacity for
+   *   sparse-match searches. When hit, the call returns whatever it found
+   *   plus a non-null cursor pointing at the next page.
+   * @param {boolean} [options.parallel=true] - When true, all unexhausted
+   *   buckets are queried concurrently in rounds; results are interleaved.
+   *   When false, buckets are walked sequentially in order.
+   * @param {string|null} [options.cursor=null] - Opaque cursor from a
+   *   previous call. Pass to resume; omit (or pass `null`) for a fresh
+   *   search. Cursor is invalidated if `terms`, `operator`, or the model's
+   *   `searchConfig` change.
    * @param {Object} [options.filter] - Additional filter combined via AND
-   *   with the search predicate. Limited to attributes projected on
-   *   `iter_search_index` (i.e., `_searchText` and the index/base keys);
-   *   see the misconfigured-filter error message for guidance.
-   * @returns {AsyncGenerator<BaoModel[]>} Async generator yielding batches of
-   *   hydrated model instances.
-   * @throws {Error} If the model is not `searchable`, not `iterable`, or if
-   *   the resolved iteration index is not `iter_search_index`.
+   *   with the search predicate. Must reference only attributes projected
+   *   on `iter_search_index` (i.e., `_searchText` and the index/base keys).
+   * @returns {Promise<{items: BaoModel[], cursor: string|null}>} `items` is
+   *   never longer than `limit`. `cursor` is `null` when the search is
+   *   fully exhausted; otherwise pass it back to get the next page.
+   * @throws {Error} If the model is not `searchable`, not `iterable`, the
+   *   resolved iteration index is not `iter_search_index`, `limit` is
+   *   invalid, the cursor is malformed, or the cursor was generated for a
+   *   different query.
    * @example
-   * for await (const batch of Post.searchAll(["alice", "bob"], { operator: "$or" })) {
-   *   for (const post of batch) console.log(post.title);
-   * }
+   * // First page
+   * const { items, cursor } = await Post.searchAll(["alice"], { limit: 50 });
+   * // "Load more"
+   * const next = await Post.searchAll(["alice"], { limit: 50, cursor });
+   * // Drain everything
+   * let cur = null, all = [];
+   * do {
+   *   const page = await Post.searchAll(["alice"], { limit: 100, cursor: cur });
+   *   all.push(...page.items);
+   *   cur = page.cursor;
+   * } while (cur);
    */
-  static async *searchAll(terms, options = {}) {
+  static async searchAll(terms, options = {}) {
     this._assertSearchable();
-    const {
-      buildSearchPredicate,
-    } = require("./utils/search-text");
-    const { operator = "$and", batchSize = 100, filter = null } = options;
-    const searchPredicate = buildSearchPredicate(terms, this.searchConfig, {
-      operator,
+    return this._searchPaged({
+      terms,
+      options,
+      activeBucketIndices: Array.from(
+        { length: this.iterationBuckets },
+        (_, b) => b,
+      ),
     });
-
-    if (this.iterationBuckets === 1) {
-      yield* this._iterateSingleBucket(null, {
-        batchSize,
-        filter,
-        searchPredicate,
-      });
-    } else {
-      for (let bucket = 0; bucket < this.iterationBuckets; bucket++) {
-        yield* this._iterateSingleBucket(bucket, {
-          batchSize,
-          filter,
-          searchPredicate,
-        });
-      }
-    }
   }
 
   /**
    * @description
-   * Search a single iteration bucket. Same predicate semantics as
-   * {@link BaoModel.searchAll}, but scoped to one bucket so callers can fan
-   * out across buckets in parallel with `Promise.all`.
+   * Search a single iteration bucket. Same predicate semantics and return
+   * shape as {@link BaoModel.searchAll}, but scoped to one bucket. Useful
+   * for partitioned workers (each handles a subset of buckets).
    *
    * @param {number} bucketNum - Bucket index, in `[0, iterationBuckets)`.
    * @param {string[]} terms - Substring terms (see `searchAll`).
-   * @param {Object} [options] - Same options as `searchAll`.
-   * @returns {AsyncGenerator<BaoModel[]>}
+   * @param {Object} [options] - Same options as `searchAll` (cursor scoped
+   *   to this bucket).
+   * @returns {Promise<{items: BaoModel[], cursor: string|null}>}
    * @throws {Error} On invalid bucket number, non-searchable model, etc.
-   * @example
-   * const results = await Promise.all(
-   *   Array.from({ length: Post.iterationBuckets }, async (_, b) => {
-   *     const out = [];
-   *     for await (const batch of Post.searchBucket(b, ["alice"])) out.push(...batch);
-   *     return out;
-   *   }),
-   * );
    */
-  static async *searchBucket(bucketNum, terms, options = {}) {
+  static async searchBucket(bucketNum, terms, options = {}) {
     this._assertSearchable();
-    if (bucketNum < 0 || bucketNum >= this.iterationBuckets) {
+    if (
+      !Number.isInteger(bucketNum) ||
+      bucketNum < 0 ||
+      bucketNum >= this.iterationBuckets
+    ) {
       throw new Error(
         `Invalid bucket number ${bucketNum}. Must be 0-${this.iterationBuckets - 1}`,
       );
     }
+    return this._searchPaged({
+      terms,
+      options,
+      activeBucketIndices: [bucketNum],
+    });
+  }
+
+  /**
+   * @private
+   * Shared paged-search engine for searchAll and searchBucket. Honors the
+   * `parallel`, `limit`, `maxQueriesPerBucket`, and `cursor` options;
+   * returns `{ items, cursor }` with `cursor === null` on exhaustion.
+   */
+  static async _searchPaged({ terms, options, activeBucketIndices }) {
     const {
       buildSearchPredicate,
+      validateLimit,
+      predicateHash,
+      encodeCursor,
+      decodeCursor,
     } = require("./utils/search-text");
-    const { operator = "$and", batchSize = 100, filter = null } = options;
+
+    const {
+      operator = "$and",
+      batchSize = 100,
+      filter = null,
+      limit = 100,
+      maxQueriesPerBucket = 50,
+      parallel = true,
+      cursor: incomingCursor = null,
+    } = options;
+
+    validateLimit(limit);
+    if (
+      !Number.isInteger(maxQueriesPerBucket) ||
+      maxQueriesPerBucket < 1
+    ) {
+      throw new Error(
+        "maxQueriesPerBucket must be a positive integer.",
+      );
+    }
+
     const searchPredicate = buildSearchPredicate(terms, this.searchConfig, {
       operator,
     });
-    yield* this._iterateSingleBucket(bucketNum, {
-      batchSize,
-      filter,
-      searchPredicate,
-    });
+    const expectedHash = predicateHash(terms, operator, this.searchConfig);
+    // Tenant is baked into iter_pk values stashed in bucketCursors, so a
+    // cursor from one tenant can't safely be resumed under another. Capture
+    // the current tenant for write-side; validate on resume below.
+    const currentTenantId = this.manager.getTenantId() || null;
+
+    // Decode the cursor or initialize per-bucket state for a fresh call.
+    // bucketCursors maps bucketIdx -> lek (or null for "start of bucket").
+    // pendingItemKeys is the over-pull from a previous parallel round.
+    let bucketCursors;
+    let pendingItemKeys = [];
+    if (incomingCursor) {
+      const decoded = decodeCursor(incomingCursor);
+      if (decoded.predicateHash !== expectedHash) {
+        throw new Error(
+          `Cursor was generated for a different query (terms/operator/searchConfig changed). Start a new search.`,
+        );
+      }
+      if (decoded.modelPrefix !== this.modelPrefix) {
+        throw new Error(
+          `Cursor was generated for model "${decoded.modelPrefix}", not "${this.modelPrefix}".`,
+        );
+      }
+      // Cross-tenant cursor reuse would Query under tenant B with a
+      // tenant-A iter_pk in ExclusiveStartKey — DynamoDB rejects with an
+      // opaque ValidationException. Surface a clear error first.
+      if (decoded.tenantId !== currentTenantId) {
+        throw new Error(
+          `Cursor was generated under tenant "${decoded.tenantId || "(none)"}", ` +
+            `not "${currentTenantId || "(none)"}". Cursors are tenant-scoped.`,
+        );
+      }
+      // Cursors are scoped to the bucket set used to generate them, so a
+      // searchAll cursor can't be passed into searchBucket(N) (and vice
+      // versa) without silently mixing items across scopes via
+      // pendingItemKeys. Reject mismatch with a clear message.
+      const decodedScope = (decoded.scope || []).slice().sort((a, b) => a - b);
+      const expectedScope = activeBucketIndices.slice().sort((a, b) => a - b);
+      const scopesMatch =
+        decodedScope.length === expectedScope.length &&
+        decodedScope.every((s, i) => s === expectedScope[i]);
+      if (!scopesMatch) {
+        throw new Error(
+          `Cursor scope mismatch. Cursor was generated for buckets ` +
+            `[${decodedScope.join(", ")}], but this call covers ` +
+            `[${expectedScope.join(", ")}]. Resume the cursor with the same ` +
+            `API call (searchAll or searchBucket) that produced it.`,
+        );
+      }
+      bucketCursors = { ...decoded.bucketCursors };
+      pendingItemKeys = decoded.pendingItemKeys || [];
+    } else {
+      bucketCursors = {};
+      for (const b of activeBucketIndices) bucketCursors[b] = null;
+    }
+
+    const items = [];
+
+    // Phase 1: drain pending items from a prior over-pull. Hydrate via
+    // batchFind (current row state — deletions surface as missing items).
+    // Preserve insertion order from the original pendingItemKeys list so
+    // the user sees a deterministic page-to-page sequence.
+    if (pendingItemKeys.length > 0) {
+      const { items: found } = await this.batchFind(pendingItemKeys);
+      for (const k of pendingItemKeys) {
+        if (found[k]) items.push(found[k]);
+      }
+    }
+
+    const queriesByBucket = {};
+    for (const b of Object.keys(bucketCursors)) queriesByBucket[b] = 0;
+
+    // Collapse the iterationBuckets===1 case: PK shape uses null bucketArg,
+    // but we still index state by 0 internally for consistency.
+    const bucketArg = (b) => (this.iterationBuckets === 1 ? null : b);
+
+    const pullPage = async (bucketIdx) => {
+      const lek = bucketCursors[bucketIdx];
+      queriesByBucket[bucketIdx] = (queriesByBucket[bucketIdx] || 0) + 1;
+      const page = await this._searchSingleBucketPage(bucketArg(bucketIdx), {
+        batchSize,
+        filter,
+        searchPredicate,
+        exclusiveStartKey: lek || null,
+      });
+      if (page.lek) bucketCursors[bucketIdx] = page.lek;
+      else delete bucketCursors[bucketIdx]; // exhausted
+      return page.items;
+    };
+
+    const eligibleBuckets = () =>
+      Object.keys(bucketCursors)
+        .map((b) => parseInt(b, 10))
+        .filter((b) => (queriesByBucket[b] || 0) < maxQueriesPerBucket)
+        .sort((a, b) => a - b);
+
+    if (parallel) {
+      while (items.length < limit && eligibleBuckets().length > 0) {
+        const round = eligibleBuckets();
+        const pages = await Promise.all(round.map(pullPage));
+        for (const pageItems of pages) items.push(...pageItems);
+      }
+    } else {
+      // Sequential: walk eligible buckets in order, pulling pages until
+      // exhausted / per-bucket cap / global limit hit.
+      for (const bucket of eligibleBuckets()) {
+        while (
+          bucketCursors[bucket] !== undefined &&
+          (queriesByBucket[bucket] || 0) < maxQueriesPerBucket &&
+          items.length < limit
+        ) {
+          const pageItems = await pullPage(bucket);
+          items.push(...pageItems);
+        }
+        if (items.length >= limit) break;
+      }
+    }
+
+    // Slice to limit; over-pull at the boundary gets stashed in the cursor
+    // as pendingItemKeys for the next call to return first. Both modes can
+    // over-pull: parallel mode by up to (active buckets - 1) × batchSize,
+    // sequential mode by up to one batchSize (its loop guard is at the top
+    // so the page that pushes us past `limit` is fully kept).
+    let kept = items;
+    let overflowKeys = [];
+    if (items.length > limit) {
+      kept = items.slice(0, limit);
+      overflowKeys = items
+        .slice(limit)
+        .map((m) => m.getPrimaryId());
+    }
+
+    const bucketsRemaining = Object.keys(bucketCursors).length > 0;
+    const hasMore = bucketsRemaining || overflowKeys.length > 0;
+    const cursorOut = hasMore
+      ? encodeCursor({
+          bucketCursors,
+          predicateHash: expectedHash,
+          modelPrefix: this.modelPrefix,
+          scope: activeBucketIndices,
+          tenantId: currentTenantId,
+          pendingItemKeys: overflowKeys,
+        })
+      : null;
+
+    return { items: kept, cursor: cursorOut };
   }
 
   /**
@@ -493,6 +681,130 @@ class BaoModel {
       : `${this.modelPrefix}#iter#${bucket}`;
   }
 
+  /**
+   * @private
+   * Send a Query against the iteration GSI, translating DynamoDB's
+   * "missing index" ValidationException into a friendlier error pointing
+   * at `bao-update-table`. Single source of truth for both the streaming
+   * `_iterateSingleBucket` and the paged `_searchSingleBucketPage` paths
+   * — keeping the translation in one place prevents the two from drifting.
+   *
+   * @param {Object} params - Full QueryCommand input.
+   * @param {string} indexName - The expected index (used in the error
+   *   message; pre-resolved by callers via getIterationIndexName()).
+   * @returns {Promise<Object>} The raw QueryCommand response.
+   */
+  static async _runIterationQuery(params, indexName) {
+    const { QueryCommand } = require("./dynamodb-client");
+    try {
+      return await this.documentClient.send(new QueryCommand(params));
+    } catch (error) {
+      // DynamoDB reports a missing index as a ValidationException with a
+      // message like "The table does not have the specified index: <name>".
+      // We only translate when the message explicitly references an index
+      // — translating raw ResourceNotFoundException would mask a missing
+      // *table* with a "run bao-update-table" hint that wouldn't help.
+      const message = error.message || "";
+      const isMissingIndex =
+        /does not have the specified index/i.test(message) ||
+        message.includes(`specified index: ${indexName}`) ||
+        (error.name === "ResourceNotFoundException" &&
+          message.toLowerCase().includes("index"));
+      if (isMissingIndex) {
+        throw new Error(
+          `Index '${indexName}' is missing on table '${this.table}'. ` +
+            `Run 'bao-update-table' to add it.`,
+        );
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * @private
+   * Single Query roundtrip against the iter_search_index for one bucket.
+   * Returns hydrated items + lastEvaluatedKey. Used by the paged
+   * searchAll/searchBucket implementation that needs explicit page-by-page
+   * control (instead of the do/while loop in _iterateSingleBucket).
+   *
+   * @param {number|null} bucketNum - Bucket index, or `null` for single-bucket models.
+   * @param {Object} options
+   * @param {number} options.batchSize - DynamoDB Query Limit.
+   * @param {Object} [options.filter] - User filter.
+   * @param {Object} [options.searchPredicate] - Predicate from buildSearchPredicate.
+   * @param {Object} [options.exclusiveStartKey] - DynamoDB LEK to resume from.
+   * @returns {Promise<{items: BaoModel[], lek: Object|null}>}
+   */
+  static async _searchSingleBucketPage(bucketNum, options = {}) {
+    const {
+      batchSize = 100,
+      filter = null,
+      searchPredicate = null,
+      exclusiveStartKey = null,
+    } = options;
+    const iterPk = this._getIterationPk(bucketNum);
+    const indexName = this.manager.getIterationIndexName();
+
+    const params = {
+      TableName: this.table,
+      IndexName: indexName,
+      KeyConditionExpression: "#pk = :pk",
+      ExpressionAttributeNames: { "#pk": ITERATION_PK_FIELD },
+      ExpressionAttributeValues: { ":pk": iterPk },
+      Limit: batchSize,
+      ReturnConsumedCapacity: "TOTAL",
+    };
+    if (exclusiveStartKey) params.ExclusiveStartKey = exclusiveStartKey;
+
+    const filterParts = [];
+    if (filter) {
+      const { FilterExpressionBuilder } = require("./filter-expression");
+      const filterBuilder = new FilterExpressionBuilder();
+      const filterExpression = filterBuilder.build(filter, this);
+      if (filterExpression) {
+        this._assertFilterFitsIterIndex(
+          indexName,
+          filterExpression.ExpressionAttributeNames,
+        );
+        filterParts.push(filterExpression.FilterExpression);
+        Object.assign(
+          params.ExpressionAttributeNames,
+          filterExpression.ExpressionAttributeNames,
+        );
+        Object.assign(
+          params.ExpressionAttributeValues,
+          filterExpression.ExpressionAttributeValues,
+        );
+      }
+    }
+    if (searchPredicate) {
+      filterParts.push(searchPredicate.FilterExpression);
+      Object.assign(
+        params.ExpressionAttributeNames,
+        searchPredicate.ExpressionAttributeNames,
+      );
+      Object.assign(
+        params.ExpressionAttributeValues,
+        searchPredicate.ExpressionAttributeValues,
+      );
+    }
+    if (filterParts.length > 0) {
+      params.FilterExpression = filterParts
+        .map((p) => `(${p})`)
+        .join(" AND ");
+    }
+
+    const response = await this._runIterationQuery(params, indexName);
+
+    let items = [];
+    if (response.Items && response.Items.length > 0) {
+      const objectIds = response.Items.map((item) => item[ITERATION_SK_FIELD]);
+      const { items: found } = await this.batchFind(objectIds);
+      items = Object.values(found);
+    }
+    return { items, lek: response.LastEvaluatedKey || null };
+  }
+
   static async *_iterateSingleBucket(bucketNum, options = {}) {
     const { batchSize = 100, filter = null, searchPredicate = null } = options;
     const iterPk = this._getIterationPk(bucketNum);
@@ -501,7 +813,6 @@ class BaoModel {
     let lastEvaluatedKey = null;
 
     do {
-      const { QueryCommand } = require("./dynamodb-client");
       const params = {
         TableName: this.table,
         IndexName: indexName,
@@ -556,29 +867,7 @@ class BaoModel {
         params.FilterExpression = filterParts.map((p) => `(${p})`).join(" AND ");
       }
 
-      let response;
-      try {
-        response = await this.documentClient.send(new QueryCommand(params));
-      } catch (error) {
-        // DynamoDB reports a missing index as a ValidationException with a
-        // message like "The table does not have the specified index: <name>".
-        // We only translate when the message explicitly references an index
-        // — translating raw ResourceNotFoundException would mask a missing
-        // *table* with a "run bao-update-table" hint that wouldn't help.
-        const message = error.message || "";
-        const isMissingIndex =
-          /does not have the specified index/i.test(message) ||
-          message.includes(`specified index: ${indexName}`) ||
-          (error.name === "ResourceNotFoundException" &&
-            message.toLowerCase().includes("index"));
-        if (isMissingIndex) {
-          throw new Error(
-            `Index '${indexName}' is missing on table '${this.table}'. ` +
-              `Run 'bao-update-table' to add it.`,
-          );
-        }
-        throw error;
-      }
+      const response = await this._runIterationQuery(params, indexName);
 
       if (response.Items && response.Items.length > 0) {
         const objectIds = response.Items.map(

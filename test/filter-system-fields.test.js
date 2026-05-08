@@ -105,6 +105,43 @@ describe("FilterExpressionBuilder — _searchText system field", () => {
     });
   });
 
+  describe("$in normalizes each value", () => {
+    test("$in array values auto-normalize for _searchText", () => {
+      const cfg = {
+        fields: ["title"],
+        caseSensitive: false,
+        minTermLength: 1,
+        dedupe: false,
+      };
+      const b = new FilterExpressionBuilder();
+      const e = b.build(
+        { _searchText: { $in: ["Hello, World!", "FOO"] } },
+        makeModel({ searchConfig: cfg }),
+      );
+      expect(e.FilterExpression).toMatch(/IN \(/);
+      // Both values normalized — punctuation stripped, lowercase.
+      expect(Object.values(e.ExpressionAttributeValues).sort()).toEqual([
+        "foo",
+        "hello world",
+      ]);
+    });
+
+    test("$in with single-element array still goes through convertValue", () => {
+      const cfg = {
+        fields: ["title"],
+        caseSensitive: false,
+        minTermLength: 1,
+        dedupe: false,
+      };
+      const b = new FilterExpressionBuilder();
+      const e = b.build(
+        { _searchText: { $in: ["BAR"] } },
+        makeModel({ searchConfig: cfg }),
+      );
+      expect(Object.values(e.ExpressionAttributeValues)).toEqual(["bar"]);
+    });
+  });
+
   describe("$beginsWith / $eq / $ne also normalize", () => {
     const cfg = {
       fields: ["title"],

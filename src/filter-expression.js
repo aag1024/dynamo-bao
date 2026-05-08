@@ -93,7 +93,12 @@ class FilterExpressionBuilder {
         if (!Array.isArray(value)) {
           throw new ValidationError("$in operator requires an array value");
         }
-        const valueKeys = value.map((v) => this.generateValue(v));
+        // Run each element through convertValue (same as $eq does) so
+        // system fields like _searchText auto-normalize their values and
+        // user fields with meaningful toDy() (dates, etc.) get coerced.
+        const valueKeys = value.map((v) =>
+          this.generateValue(this.convertValue(v, model, fieldName)),
+        );
         return `${nameKey} IN (${valueKeys.join(", ")})`;
       case "$exists":
         if (typeof value !== "boolean") {

@@ -53,6 +53,9 @@ class TestNonSearchablePost extends dynamoBao.BaoModel {
   static primaryKey = dynamoBao.PrimaryKeyConfig("postId", "modelPrefix");
 }
 
+// Non-iterable + searchable. Has a GSI so we can exercise the canonical
+// "queryByIndex on a partition, filter by _searchText" flow that's the
+// whole point of searchable on non-iterable models.
 class TestNonIterableSearchable extends dynamoBao.BaoModel {
   static modelPrefix = "tni";
   static iterable = false;
@@ -66,10 +69,19 @@ class TestNonIterableSearchable extends dynamoBao.BaoModel {
 
   static fields = {
     postId: dynamoBao.fields.UlidField({ autoAssign: true, required: true }),
+    category: dynamoBao.fields.StringField(),
     title: dynamoBao.fields.StringField({ required: true }),
   };
 
   static primaryKey = dynamoBao.PrimaryKeyConfig("postId", "modelPrefix");
+
+  static indexes = {
+    byCategory: dynamoBao.IndexConfig(
+      "category",
+      "postId",
+      dynamoBao.constants.GSI_INDEX_ID1,
+    ),
+  };
 }
 
 // Variants exercising each searchConfig option end-to-end.
@@ -812,6 +824,108 @@ describe("Searchable models", () => {
           { condition: { _searchText: { $contains: "nonexistent" } } },
         ),
       ).rejects.toThrow();
+    });
+
+    test("queryByIndex on a partition with _searchText filter returns matching rows", async () => {
+      // The canonical use case for non-iterable + searchable: queries are
+      // already partition-scoped (here, by category), and _searchText
+      // narrows results within that partition. _searchText is auto-
+      // projected onto the GSI because all user GSIs use Projection: ALL,
+      // so the filter applies at the index level — no second roundtrip.
+      const a = await NonIterableSearchable.create({
+        category: "tech",
+        title: "Apple announces new iPhone",
+      });
+      const b = await NonIterableSearchable.create({
+        category: "tech",
+        title: "Samsung Galaxy review",
+      });
+      await NonIterableSearchable.create({
+        category: "tech",
+        title: "Banana farming methods",
+      });
+      // Different partition — must NOT be returned even if title matches.
+      await NonIterableSearchable.create({
+        category: "food",
+        title: "Apple pie recipe",
+      });
+
+      const { items } = await NonIterableSearchable.queryByIndex(
+        "byCategory",
+        "tech",
+        null,
+        {
+          filter: { _searchText: { $contains: "Apple" } },
+        },
+      );
+      // 'Apple announces new iPhone' matches; the food/Apple-pie row must
+      // not, because it's in a different category partition.
+      expect(items.map((p) => p.postId)).toEqual([a.postId]);
+
+      // Multi-term filter via $and / $or works the same way.
+      const { items: orItems } = await NonIterableSearchable.queryByIndex(
+        "byCategory",
+        "tech",
+        null,
+        {
+          filter: {
+            $or: [
+              { _searchText: { $contains: "iphone" } },
+              { _searchText: { $contains: "galaxy" } },
+            ],
+          },
+        },
+      );
+      const orIds = orItems.map((p) => p.postId).sort();
+      expect(orIds).toEqual([a.postId, b.postId].sort());
+
+      // No-match returns an empty page, not an error.
+      const { items: empty } = await NonIterableSearchable.queryByIndex(
+        "byCategory",
+        "tech",
+        null,
+        { filter: { _searchText: { $contains: "zzz-no-such-term" } } },
+      );
+      expect(empty).toEqual([]);
+    });
+
+    test("queryByIndex with _searchText filter respects auto-normalization", async () => {
+      // User input "Apple, Inc.!" auto-normalizes to "apple inc" before
+      // hitting DynamoDB, matching what's stored on _searchText.
+      const target = await NonIterableSearchable.create({
+        category: "tech",
+        title: "Apple, Inc. announces something",
+      });
+      await NonIterableSearchable.create({
+        category: "tech",
+        title: "Banana split recipe",
+      });
+
+      const { items } = await NonIterableSearchable.queryByIndex(
+        "byCategory",
+        "tech",
+        null,
+        {
+          filter: { _searchText: { $contains: "Apple, Inc.!" } },
+        },
+      );
+      expect(items.map((p) => p.postId)).toEqual([target.postId]);
+    });
+
+    test("non-iterable + searchable rows are NOT in iter_search_index", async () => {
+      // Non-iterable rows have no _iter_pk/_iter_sk so they don't appear
+      // in iter_search_index. searchAll on this model would throw at the
+      // assertion (already tested above), but if iter_search_index were
+      // queried directly, no rows from this model would appear.
+      const p = await NonIterableSearchable.create({
+        category: "tech",
+        title: "iter check",
+      });
+      const fetched = await NonIterableSearchable.find(p.postId);
+      expect(fetched._dyData._iter_pk).toBeUndefined();
+      expect(fetched._dyData._iter_sk).toBeUndefined();
+      // _searchText is on the row though.
+      expect(fetched._dyData._searchText).toBe("iter check");
     });
   });
 

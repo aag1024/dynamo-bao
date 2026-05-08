@@ -341,12 +341,65 @@ function decodeCursor(encoded) {
   } catch (e) {
     throw new Error("Invalid cursor: payload is not valid JSON.");
   }
-  if (!parsed || typeof parsed !== "object") {
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
     throw new Error("Invalid cursor: payload is not an object.");
   }
   for (const f of CURSOR_REQUIRED_FIELDS) {
     if (!(f in parsed)) {
       throw new Error(`Invalid cursor: missing required field "${f}".`);
+    }
+  }
+  // Defense-in-depth: validate field types. Cursors round-trip through
+  // user-controlled storage, so a malformed payload that parses as JSON
+  // shouldn't crash deep in _searchPaged with an opaque TypeError —
+  // surface the shape problem at decode.
+  if (
+    !parsed.bucketCursors ||
+    typeof parsed.bucketCursors !== "object" ||
+    Array.isArray(parsed.bucketCursors)
+  ) {
+    throw new Error(
+      "Invalid cursor: bucketCursors must be an object map.",
+    );
+  }
+  if (typeof parsed.predicateHash !== "string") {
+    throw new Error("Invalid cursor: predicateHash must be a string.");
+  }
+  if (
+    parsed.modelPrefix !== null &&
+    typeof parsed.modelPrefix !== "string"
+  ) {
+    throw new Error("Invalid cursor: modelPrefix must be a string or null.");
+  }
+  if (!Array.isArray(parsed.scope)) {
+    throw new Error("Invalid cursor: scope must be an array.");
+  }
+  for (const s of parsed.scope) {
+    if (!Number.isInteger(s) || s < 0) {
+      throw new Error(
+        "Invalid cursor: scope must contain non-negative integers.",
+      );
+    }
+  }
+  if (
+    parsed.tenantId !== null &&
+    typeof parsed.tenantId !== "string"
+  ) {
+    throw new Error("Invalid cursor: tenantId must be a string or null.");
+  }
+  if (
+    parsed.pendingItemKeys !== undefined &&
+    !Array.isArray(parsed.pendingItemKeys)
+  ) {
+    throw new Error("Invalid cursor: pendingItemKeys must be an array.");
+  }
+  if (Array.isArray(parsed.pendingItemKeys)) {
+    for (const k of parsed.pendingItemKeys) {
+      if (typeof k !== "string") {
+        throw new Error(
+          "Invalid cursor: pendingItemKeys must contain strings.",
+        );
+      }
     }
   }
   return parsed;

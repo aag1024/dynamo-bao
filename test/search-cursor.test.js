@@ -155,6 +155,106 @@ describe("encodeCursor / decodeCursor", () => {
     expect(() => decodeCursor(legacyCursor)).toThrow(/cursor.*scope/i);
   });
 
+  describe("decodeCursor type validation", () => {
+    function forge(overrides) {
+      // Helper: build a cursor with one or more fields replaced (or
+      // omitted). Doesn't go through encodeCursor's existence checks.
+      const base = {
+        bucketCursors: {},
+        predicateHash: "h",
+        modelPrefix: "p",
+        scope: [0],
+        tenantId: null,
+        pendingItemKeys: [],
+        ...overrides,
+      };
+      return Buffer.from(JSON.stringify(base), "utf8")
+        .toString("base64")
+        .replace(/\+/g, "-")
+        .replace(/\//g, "_")
+        .replace(/=+$/, "");
+    }
+
+    test("rejects non-object bucketCursors (array)", () => {
+      expect(() => decodeCursor(forge({ bucketCursors: [] }))).toThrow(
+        /bucketCursors.*object map/i,
+      );
+    });
+
+    test("rejects non-object bucketCursors (string)", () => {
+      expect(() => decodeCursor(forge({ bucketCursors: "nope" }))).toThrow(
+        /bucketCursors.*object map/i,
+      );
+    });
+
+    test("rejects non-string predicateHash", () => {
+      expect(() => decodeCursor(forge({ predicateHash: 12345 }))).toThrow(
+        /predicateHash.*string/i,
+      );
+    });
+
+    test("rejects non-string modelPrefix", () => {
+      expect(() => decodeCursor(forge({ modelPrefix: 42 }))).toThrow(
+        /modelPrefix.*string/i,
+      );
+    });
+
+    test("accepts modelPrefix: null", () => {
+      expect(() => decodeCursor(forge({ modelPrefix: null }))).not.toThrow();
+    });
+
+    test("rejects non-array scope", () => {
+      expect(() => decodeCursor(forge({ scope: "all" }))).toThrow(
+        /scope.*array/i,
+      );
+      expect(() => decodeCursor(forge({ scope: 5 }))).toThrow(
+        /scope.*array/i,
+      );
+      expect(() => decodeCursor(forge({ scope: { 0: true } }))).toThrow(
+        /scope.*array/i,
+      );
+    });
+
+    test("rejects scope with non-integer or negative entries", () => {
+      expect(() => decodeCursor(forge({ scope: [0, "1"] }))).toThrow(
+        /scope.*non-negative integers/i,
+      );
+      expect(() => decodeCursor(forge({ scope: [-1] }))).toThrow(
+        /scope.*non-negative integers/i,
+      );
+      expect(() => decodeCursor(forge({ scope: [1.5] }))).toThrow(
+        /scope.*non-negative integers/i,
+      );
+    });
+
+    test("rejects non-string tenantId (when not null)", () => {
+      expect(() => decodeCursor(forge({ tenantId: 42 }))).toThrow(
+        /tenantId.*string.*null/i,
+      );
+    });
+
+    test("rejects non-array pendingItemKeys", () => {
+      expect(() =>
+        decodeCursor(forge({ pendingItemKeys: "hello" })),
+      ).toThrow(/pendingItemKeys.*array/i);
+    });
+
+    test("rejects pendingItemKeys with non-string entries", () => {
+      expect(() =>
+        decodeCursor(forge({ pendingItemKeys: ["ok", 42] })),
+      ).toThrow(/pendingItemKeys.*strings/i);
+    });
+
+    test("rejects payload that's a JSON array (not object)", () => {
+      const arrayPayload = Buffer.from("[1,2,3]", "utf8")
+        .toString("base64")
+        .replace(/\+/g, "-")
+        .replace(/\//g, "_")
+        .replace(/=+$/, "");
+      expect(() => decodeCursor(arrayPayload)).toThrow(/not an object/i);
+    });
+  });
+
   test("decodeCursor throws on cursor missing required tenantId field", () => {
     // Pre-tenant-validation cursors don't have a tenantId field.
     const legacyJson = JSON.stringify({

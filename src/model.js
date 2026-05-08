@@ -683,6 +683,45 @@ class BaoModel {
 
   /**
    * @private
+   * Send a Query against the iteration GSI, translating DynamoDB's
+   * "missing index" ValidationException into a friendlier error pointing
+   * at `bao-update-table`. Single source of truth for both the streaming
+   * `_iterateSingleBucket` and the paged `_searchSingleBucketPage` paths
+   * — keeping the translation in one place prevents the two from drifting.
+   *
+   * @param {Object} params - Full QueryCommand input.
+   * @param {string} indexName - The expected index (used in the error
+   *   message; pre-resolved by callers via getIterationIndexName()).
+   * @returns {Promise<Object>} The raw QueryCommand response.
+   */
+  static async _runIterationQuery(params, indexName) {
+    const { QueryCommand } = require("./dynamodb-client");
+    try {
+      return await this.documentClient.send(new QueryCommand(params));
+    } catch (error) {
+      // DynamoDB reports a missing index as a ValidationException with a
+      // message like "The table does not have the specified index: <name>".
+      // We only translate when the message explicitly references an index
+      // — translating raw ResourceNotFoundException would mask a missing
+      // *table* with a "run bao-update-table" hint that wouldn't help.
+      const message = error.message || "";
+      const isMissingIndex =
+        /does not have the specified index/i.test(message) ||
+        message.includes(`specified index: ${indexName}`) ||
+        (error.name === "ResourceNotFoundException" &&
+          message.toLowerCase().includes("index"));
+      if (isMissingIndex) {
+        throw new Error(
+          `Index '${indexName}' is missing on table '${this.table}'. ` +
+            `Run 'bao-update-table' to add it.`,
+        );
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * @private
    * Single Query roundtrip against the iter_search_index for one bucket.
    * Returns hydrated items + lastEvaluatedKey. Used by the paged
    * searchAll/searchBucket implementation that needs explicit page-by-page
@@ -706,7 +745,6 @@ class BaoModel {
     const iterPk = this._getIterationPk(bucketNum);
     const indexName = this.manager.getIterationIndexName();
 
-    const { QueryCommand } = require("./dynamodb-client");
     const params = {
       TableName: this.table,
       IndexName: indexName,
@@ -756,24 +794,7 @@ class BaoModel {
         .join(" AND ");
     }
 
-    let response;
-    try {
-      response = await this.documentClient.send(new QueryCommand(params));
-    } catch (error) {
-      const message = error.message || "";
-      const isMissingIndex =
-        /does not have the specified index/i.test(message) ||
-        message.includes(`specified index: ${indexName}`) ||
-        (error.name === "ResourceNotFoundException" &&
-          message.toLowerCase().includes("index"));
-      if (isMissingIndex) {
-        throw new Error(
-          `Index '${indexName}' is missing on table '${this.table}'. ` +
-            `Run 'bao-update-table' to add it.`,
-        );
-      }
-      throw error;
-    }
+    const response = await this._runIterationQuery(params, indexName);
 
     let items = [];
     if (response.Items && response.Items.length > 0) {
@@ -792,7 +813,6 @@ class BaoModel {
     let lastEvaluatedKey = null;
 
     do {
-      const { QueryCommand } = require("./dynamodb-client");
       const params = {
         TableName: this.table,
         IndexName: indexName,
@@ -847,29 +867,7 @@ class BaoModel {
         params.FilterExpression = filterParts.map((p) => `(${p})`).join(" AND ");
       }
 
-      let response;
-      try {
-        response = await this.documentClient.send(new QueryCommand(params));
-      } catch (error) {
-        // DynamoDB reports a missing index as a ValidationException with a
-        // message like "The table does not have the specified index: <name>".
-        // We only translate when the message explicitly references an index
-        // — translating raw ResourceNotFoundException would mask a missing
-        // *table* with a "run bao-update-table" hint that wouldn't help.
-        const message = error.message || "";
-        const isMissingIndex =
-          /does not have the specified index/i.test(message) ||
-          message.includes(`specified index: ${indexName}`) ||
-          (error.name === "ResourceNotFoundException" &&
-            message.toLowerCase().includes("index"));
-        if (isMissingIndex) {
-          throw new Error(
-            `Index '${indexName}' is missing on table '${this.table}'. ` +
-              `Run 'bao-update-table' to add it.`,
-          );
-        }
-        throw error;
-      }
+      const response = await this._runIterationQuery(params, indexName);
 
       if (response.Items && response.Items.length > 0) {
         const objectIds = response.Items.map(

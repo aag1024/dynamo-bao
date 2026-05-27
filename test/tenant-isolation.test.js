@@ -41,6 +41,22 @@ class TestUser extends BaoModel {
   };
 }
 
+class ModelPrefixPartitionItem extends BaoModel {
+  static modelPrefix = "mppi";
+  static iterable = true;
+  static iterationBuckets = 1;
+
+  static fields = {
+    name: StringField({ required: true }),
+  };
+
+  static primaryKey = PrimaryKeyConfig("modelPrefix", "name");
+
+  static indexes = {
+    byName: this.primaryKey,
+  };
+}
+
 describe("Tenant Isolation Tests", () => {
   beforeEach(async () => {
     // Create two different tenant IDs
@@ -52,14 +68,22 @@ describe("Tenant Isolation Tests", () => {
     const manager2 = initTestModelsWithTenant(testConfig, testId2);
 
     manager1.registerModel(TestUser);
+    manager1.registerModel(ModelPrefixPartitionItem);
     manager2.registerModel(TestUser);
+    manager2.registerModel(ModelPrefixPartitionItem);
 
     // Clean up any existing data
     await runWithBatchContext(async () => {
-      await cleanupTestDataByIteration(testId1, [TestUser]);
-      await cleanupTestDataByIteration(testId2, [TestUser]);
-      await verifyCleanup(testId1, [TestUser]);
-      await verifyCleanup(testId2, [TestUser]);
+      await cleanupTestDataByIteration(testId1, [
+        TestUser,
+        ModelPrefixPartitionItem,
+      ]);
+      await cleanupTestDataByIteration(testId2, [
+        TestUser,
+        ModelPrefixPartitionItem,
+      ]);
+      await verifyCleanup(testId1, [TestUser, ModelPrefixPartitionItem]);
+      await verifyCleanup(testId2, [TestUser, ModelPrefixPartitionItem]);
     });
   });
 
@@ -67,14 +91,20 @@ describe("Tenant Isolation Tests", () => {
     TenantContext.clearTenant();
     if (testId1) {
       await runWithBatchContext(async () => {
-        await cleanupTestDataByIteration(testId1, [TestUser]);
-        await verifyCleanup(testId1, [TestUser]);
+        await cleanupTestDataByIteration(testId1, [
+          TestUser,
+          ModelPrefixPartitionItem,
+        ]);
+        await verifyCleanup(testId1, [TestUser, ModelPrefixPartitionItem]);
       });
     }
     if (testId2) {
       await runWithBatchContext(async () => {
-        await cleanupTestDataByIteration(testId2, [TestUser]);
-        await verifyCleanup(testId2, [TestUser]);
+        await cleanupTestDataByIteration(testId2, [
+          TestUser,
+          ModelPrefixPartitionItem,
+        ]);
+        await verifyCleanup(testId2, [TestUser, ModelPrefixPartitionItem]);
       });
     }
   });
@@ -120,6 +150,56 @@ describe("Tenant Isolation Tests", () => {
           const results = await TestUser.queryByIndex("byStatus", "active");
           expect(results.items).toHaveLength(1);
           expect(results.items[0].email).toBe("user3@example.com");
+        });
+      });
+    });
+  });
+
+  describe("Primary Key Tenant Isolation", () => {
+    test("should isolate create, find, and partition query when pk is modelPrefix", async () => {
+      await runWithBatchContext(async () => {
+        const sharedName = `shared-${ulid()}`;
+        const tenant1OnlyName = `tenant1-${ulid()}`;
+        const tenant2OnlyName = `tenant2-${ulid()}`;
+
+        await TenantContext.runWithTenant(testId1, async () => {
+          await ModelPrefixPartitionItem.create({ name: sharedName });
+          await ModelPrefixPartitionItem.create({ name: tenant1OnlyName });
+        });
+
+        await TenantContext.runWithTenant(testId2, async () => {
+          await ModelPrefixPartitionItem.create({ name: sharedName });
+          await ModelPrefixPartitionItem.create({ name: tenant2OnlyName });
+        });
+
+        await TenantContext.runWithTenant(testId1, async () => {
+          const found = await ModelPrefixPartitionItem.find(sharedName);
+          expect(found.exists()).toBe(true);
+          expect(found.name).toBe(sharedName);
+
+          const results = await ModelPrefixPartitionItem.queryByIndex(
+            "byName",
+            ModelPrefixPartitionItem.modelPrefix,
+          );
+          expect(results.items.map((item) => item.name).sort()).toEqual([
+            sharedName,
+            tenant1OnlyName,
+          ]);
+        });
+
+        await TenantContext.runWithTenant(testId2, async () => {
+          const found = await ModelPrefixPartitionItem.find(sharedName);
+          expect(found.exists()).toBe(true);
+          expect(found.name).toBe(sharedName);
+
+          const results = await ModelPrefixPartitionItem.queryByIndex(
+            "byName",
+            ModelPrefixPartitionItem.modelPrefix,
+          );
+          expect(results.items.map((item) => item.name).sort()).toEqual([
+            sharedName,
+            tenant2OnlyName,
+          ]);
         });
       });
     });

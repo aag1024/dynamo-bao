@@ -186,7 +186,7 @@ class BaoModel {
       };
     } else if (this.primaryKey.pk === "modelPrefix") {
       return {
-        _pk: this.modelPrefix,
+        _pk: this._formatPrimaryKey(this.modelPrefix, pkSk.pk),
         _sk: pkSk.sk,
       };
     } else {

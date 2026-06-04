@@ -34,6 +34,19 @@ function _accumulateCapacityToContext(capacityUnits, type) {
 }
 
 /**
+ * Return a ConsumedCapacity object with `extraUnits` added to its CapacityUnits.
+ * Used so the legacy-fallback reads (migrating mode) are reflected in the
+ * capacity carried by the returned item/ObjectNotFound, not just the context.
+ */
+function _withExtraCapacityUnits(consumedCapacity, extraUnits) {
+  if (!extraUnits) return consumedCapacity;
+  return {
+    ...consumedCapacity,
+    CapacityUnits: (consumedCapacity?.CapacityUnits || 0) + extraUnits,
+  };
+}
+
+/**
  * Get the total consumed capacity for the current batch context.
  * Returns the accumulated RCUs and WCUs for all operations within the current
  * runWithBatchContext scope.
@@ -244,6 +257,31 @@ const BatchLoadingMethods = {
       }
     }
 
+    // Migration read fallback (pk === "modelPrefix", "migrating" mode only):
+    // ids not found at the canonical tenant-scoped key may still live at a
+    // legacy key shape. Resolve those individually — the miss set is small and
+    // only present mid-migration.
+    if (
+      this.primaryKey.pk === "modelPrefix" &&
+      this._modelPrefixPkMode() === "migrating"
+    ) {
+      for (const id of idsToLoad) {
+        if (results[id]) continue;
+        const fb = await this._getRawItemWithLegacyFallback(
+          this._parsePrimaryId(id),
+        );
+        if (fb.consumedUnits) {
+          consumedCapacity.push({ CapacityUnits: fb.consumedUnits });
+          _accumulateCapacityToContext(fb.consumedUnits, "read");
+        }
+        if (fb.item) {
+          const instance = this._createFromDyItem(fb.item);
+          results[instance.getPrimaryId()] = instance;
+          if (loaderContext) loaderContext.set(id, instance);
+        }
+      }
+    }
+
     return {
       items: results,
       ConsumedCapacity: consumedCapacity,
@@ -322,17 +360,34 @@ const BatchLoadingMethods = {
         }),
       );
 
+      let item = result.Item;
+      let fallbackUnits = 0;
+      if (!item) {
+        const fb = await this._getRawItemWithLegacyFallback(pkSk);
+        item = fb.item;
+        fallbackUnits = fb.consumedUnits;
+      }
+
       let instance;
-      if (!result.Item) {
-        instance = new ObjectNotFound(result.ConsumedCapacity);
+      if (!item) {
+        instance = new ObjectNotFound(
+          _withExtraCapacityUnits(result.ConsumedCapacity, fallbackUnits),
+        );
         // Accumulate capacity for ObjectNotFound since _addConsumedCapacity isn't called
         _accumulateCapacityToContext(
-          result.ConsumedCapacity?.CapacityUnits || 0,
+          (result.ConsumedCapacity?.CapacityUnits || 0) + fallbackUnits,
           "read",
         );
       } else {
-        instance = this._createFromDyItem(result.Item);
+        instance = this._createFromDyItem(item);
         instance._addConsumedCapacity(result.ConsumedCapacity, "read", false);
+        if (fallbackUnits) {
+          instance._addConsumedCapacity(
+            { CapacityUnits: fallbackUnits },
+            "read",
+            false,
+          );
+        }
       }
 
       // Add to loader context if provided (unless bypassing cache)
@@ -381,18 +436,29 @@ const BatchLoadingMethods = {
               0,
             );
 
-            // Resolve all promises, including multiple callbacks for the same ID
+            // Resolve all promises, including multiple callbacks for the same ID.
+            // Sum ALL ConsumedCapacity entries (multiple BatchGet pages and any
+            // legacy-fallback GetItems in migrating mode), not just the first,
+            // so the per-operation capacity isn't under-reported.
+            const totalUnits = (ConsumedCapacity || []).reduce(
+              (sum, c) => sum + (c?.CapacityUnits || 0),
+              0,
+            );
             const consumedCapacity = {
               TableName: this.table,
-              CapacityUnits:
-                ConsumedCapacity[0]?.CapacityUnits / totalCallbacks,
+              CapacityUnits: totalCallbacks ? totalUnits / totalCallbacks : 0,
             };
 
             currentBatch.items.forEach((batchItem) => {
               let item = items[batchItem.id];
               if (item) {
                 // Skip context accumulation since batchFind already accumulated the total
-                item._addConsumedCapacity(consumedCapacity, "read", false, true);
+                item._addConsumedCapacity(
+                  consumedCapacity,
+                  "read",
+                  false,
+                  true,
+                );
               } else {
                 item = new ObjectNotFound(consumedCapacity);
               }
@@ -457,6 +523,35 @@ const BatchLoadingMethods = {
   },
 
   /**
+   * Read fallback for the `pk === "modelPrefix"` migration. When a record is
+   * not found at the canonical (tenant-scoped) key while in "migrating" mode,
+   * try the legacy key shapes so pre-migration rows remain resolvable.
+   *
+   * Returns the raw DynamoDB item (with its actual stored `_pk`/`_sk`) or null,
+   * plus the total capacity consumed across the fallback GetItem(s). The CALLER
+   * is responsible for accounting that capacity (so it is reflected in the
+   * returned per-operation ConsumedCapacity, not just the batch context).
+   * @param {Object} pkSk - Parsed primary key values
+   * @returns {Promise<{ item: Object|null, consumedUnits: number }>}
+   */
+  async _getRawItemWithLegacyFallback(pkSk) {
+    const legacyKeys = this._legacyDyKeysForPkSk(pkSk);
+    let consumedUnits = 0;
+    for (const Key of legacyKeys) {
+      const result = await this.documentClient.send(
+        new GetCommand({
+          TableName: this.table,
+          Key,
+          ReturnConsumedCapacity: "TOTAL",
+        }),
+      );
+      consumedUnits += result.ConsumedCapacity?.CapacityUnits || 0;
+      if (result.Item) return { item: result.Item, consumedUnits };
+    }
+    return { item: null, consumedUnits };
+  },
+
+  /**
    * Execute find operation directly without batching or caching
    * @param {string} primaryId - The primary ID to find
    * @returns {Promise<Object>} The found item or ObjectNotFound
@@ -472,11 +567,28 @@ const BatchLoadingMethods = {
       }),
     );
 
-    if (!result.Item) {
-      return new ObjectNotFound(result.ConsumedCapacity);
+    let item = result.Item;
+    let fallbackUnits = 0;
+    if (!item) {
+      const fb = await this._getRawItemWithLegacyFallback(pkSk);
+      item = fb.item;
+      fallbackUnits = fb.consumedUnits;
+    }
+
+    if (!item) {
+      return new ObjectNotFound(
+        _withExtraCapacityUnits(result.ConsumedCapacity, fallbackUnits),
+      );
     } else {
-      const instance = this._createFromDyItem(result.Item);
+      const instance = this._createFromDyItem(item);
       instance._addConsumedCapacity(result.ConsumedCapacity, "read", false);
+      if (fallbackUnits) {
+        instance._addConsumedCapacity(
+          { CapacityUnits: fallbackUnits },
+          "read",
+          false,
+        );
+      }
       return instance;
     }
   },

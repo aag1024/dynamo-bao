@@ -190,6 +190,7 @@ class DynamoDBClient {
     const operationMap = {
       'GetCommand': 'GetItem',
       'QueryCommand': 'Query',
+      'PutCommand': 'PutItem',
       'UpdateCommand': 'UpdateItem',
       'DeleteCommand': 'DeleteItem',
       'BatchGetCommand': 'BatchGetItem',
@@ -294,6 +295,21 @@ class DynamoDBDocumentClient {
         }
         break;
       
+      case 'PutCommand':
+        const putItem = {};
+        Object.keys(input.Item).forEach(key => {
+          putItem[key] = marshall(input.Item[key]);
+        });
+        input.Item = putItem;
+        if (input.ExpressionAttributeValues) {
+          const marshalledValues = {};
+          Object.keys(input.ExpressionAttributeValues).forEach(key => {
+            marshalledValues[key] = marshall(input.ExpressionAttributeValues[key]);
+          });
+          input.ExpressionAttributeValues = marshalledValues;
+        }
+        break;
+
       case 'UpdateCommand':
         const updateKey = {};
         Object.keys(input.Key).forEach(key => {
@@ -308,7 +324,7 @@ class DynamoDBDocumentClient {
           input.ExpressionAttributeValues = marshalledValues;
         }
         break;
-      
+
       case 'DeleteCommand':
         const deleteKey = {};
         Object.keys(input.Key).forEach(key => {
@@ -442,6 +458,16 @@ class DynamoDBDocumentClient {
         }
         break;
       
+      case 'PutCommand':
+        if (result.Attributes) {
+          const unmarshalledAttributes = {};
+          Object.keys(result.Attributes).forEach(key => {
+            unmarshalledAttributes[key] = unmarshall(result.Attributes[key]);
+          });
+          result.Attributes = unmarshalledAttributes;
+        }
+        break;
+
       case 'UpdateCommand':
         if (result.Attributes) {
           const unmarshalledAttributes = {};
@@ -451,7 +477,7 @@ class DynamoDBDocumentClient {
           result.Attributes = unmarshalledAttributes;
         }
         break;
-      
+
       case 'DeleteCommand':
         if (result.Attributes) {
           const unmarshalledAttributes = {};
@@ -589,6 +615,12 @@ class QueryCommand {
   }
 }
 
+class PutCommand {
+  constructor(input) {
+    this.input = input;
+  }
+}
+
 class UpdateCommand {
   constructor(input) {
     this.input = input;
@@ -654,6 +686,7 @@ module.exports = {
   DynamoDBDocumentClient,
   GetCommand,
   QueryCommand,
+  PutCommand,
   UpdateCommand,
   DeleteCommand,
   BatchGetCommand,

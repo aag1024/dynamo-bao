@@ -503,10 +503,31 @@ const MutationMethods = {
         currentItem,
       );
 
+      // Key to write to. Normally the canonical key. But for an EXISTING
+      // `pk === "modelPrefix"` row in "migrating" mode, write in place at the
+      // row's current (possibly legacy) key so we update the full row rather
+      // than create a partial duplicate at the canonical key. The backfill is
+      // what relocates rows to the canonical key; deletes already target the
+      // loaded key. New items always use the canonical key.
+      let writeKey = this._getDyKeyForPkSk(this._parsePrimaryId(primaryId));
+      let inPlaceMigratingUpdate = false;
+      if (
+        !isNew &&
+        this.primaryKey.pk === "modelPrefix" &&
+        this._modelPrefixPkMode() === "migrating" &&
+        currentItem?._dyData?._pk
+      ) {
+        writeKey = {
+          _pk: currentItem._dyData._pk,
+          _sk: currentItem._dyData._sk,
+        };
+        inPlaceMigratingUpdate = true;
+      }
+
       // Create the base update params
       const updateParams = {
         TableName: this.table,
-        Key: this._getDyKeyForPkSk(this._parsePrimaryId(primaryId)),
+        Key: writeKey,
         UpdateExpression: updateExpression,
         ReturnValues: "ALL_NEW",
       };
@@ -552,7 +573,27 @@ const MutationMethods = {
         };
       }
 
-      const dyKey = this._getDyKeyForPkSk(this._parsePrimaryId(primaryId));
+      if (inPlaceMigratingUpdate) {
+        // Updating the row in place at its current (legacy) key. Guard with
+        // attribute_exists so a concurrent backfill that relocated/deleted the
+        // legacy row can't make this UpdateItem upsert a partial row — it fails
+        // loudly (ConditionalError) instead, and the caller can retry, which
+        // will then find and update the relocated canonical row. ANDed with any
+        // caller-supplied condition.
+        //
+        // Use a dedicated placeholder (not "#pk") so we never clobber a user
+        // field literally named `pk`, which _buildUpdateExpression maps to
+        // "#pk".
+        updateParams.ExpressionAttributeNames = {
+          ...updateParams.ExpressionAttributeNames,
+          "#migExistsPk": "_pk",
+        };
+        updateParams.ConditionExpression = updateParams.ConditionExpression
+          ? `(${updateParams.ConditionExpression}) AND attribute_exists(#migExistsPk)`
+          : "attribute_exists(#migExistsPk)";
+      }
+
+      const dyKey = writeKey;
       logger.debug("dyKey", dyKey);
 
       try {
@@ -792,10 +833,8 @@ const MutationMethods = {
 
       // Detect partial GSI key updates that would cause index staleness
       if (isUpdate && index.indexId !== undefined) {
-        const pkProvided =
-          index.pk === "modelPrefix" || pkValue !== undefined;
-        const skProvided =
-          index.sk === "modelPrefix" || skValue !== undefined;
+        const pkProvided = index.pk === "modelPrefix" || pkValue !== undefined;
+        const skProvided = index.sk === "modelPrefix" || skValue !== undefined;
         if (pkProvided && !skProvided) {
           throw new Error(
             `Update includes GSI partition key "${index.pk}" for index "${indexName}" ` +

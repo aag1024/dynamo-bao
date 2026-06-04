@@ -172,6 +172,13 @@ function initModels(userConfig = {}) {
       ...config.batchContext,
       ...(userConfig.batchContext || {}),
     },
+    // Key-migration controls (e.g. modelPrefixPkMode) for safely transitioning
+    // the on-disk key format of `pk === "modelPrefix"` models. Defaults to
+    // "legacy" behavior when unset, so existing consumers are unaffected.
+    keyMigration: {
+      ...config.keyMigration,
+      ...(userConfig.keyMigration || {}),
+    },
     models: userConfig.models || config.models || null,
   };
 

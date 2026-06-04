@@ -7,9 +7,7 @@ const assert = require("assert");
 const { retryOperation } = require("../utils/retry-helper");
 const { QueryCommand } = require("../dynamodb-client");
 const { QueryError } = require("../exceptions");
-const {
-  _accumulateCapacityToContext,
-} = require("./batch-loading-mixin");
+const { _accumulateCapacityToContext } = require("./batch-loading-mixin");
 
 const QueryMethods = {
   /**
@@ -37,7 +35,7 @@ const QueryMethods = {
   async queryByPrimaryKey(pkValue, skCondition = null, options = {}) {
     const params = this._getBaseQueryParams(
       "_pk",
-      this._formatPrimaryKey(this.modelPrefix, pkValue),
+      this._formatPrimaryPartition(pkValue),
       skCondition,
       options,
     );
@@ -164,7 +162,7 @@ const QueryMethods = {
     // Format the partition key using the field's toGsi method
     let formattedPk;
     if (index instanceof PrimaryKeyConfig) {
-      formattedPk = this._formatPrimaryKey(this.modelPrefix, pkValue);
+      formattedPk = this._formatPrimaryPartition(pkValue);
     } else {
       const pkField = this._getField(index.pk);
       const gsiValue = pkField.toGsi(pkValue);

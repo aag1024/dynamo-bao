@@ -178,23 +178,109 @@ class BaoModel {
     return tenantId ? `[${tenantId}]#${baseKey}` : baseKey;
   }
 
-  static _getDyKeyForPkSk(pkSk) {
-    if (this.primaryKey.sk === "modelPrefix") {
-      return {
-        _pk: this._formatPrimaryKey(this.modelPrefix, pkSk.pk),
-        _sk: this.modelPrefix,
-      };
-    } else if (this.primaryKey.pk === "modelPrefix") {
-      return {
-        _pk: this._formatPrimaryKey(this.modelPrefix, pkSk.pk),
-        _sk: pkSk.sk,
-      };
-    } else {
-      return {
-        _pk: this._formatPrimaryKey(this.modelPrefix, pkSk.pk),
-        _sk: pkSk.sk,
-      };
+  /**
+   * Migration mode for models whose primary key partition is `modelPrefix`
+   * (i.e. `PrimaryKeyConfig("modelPrefix", <idField>)`). For these models the
+   * base-table partition key historically was the bare model prefix (e.g.
+   * `"apin"`), which is GLOBAL — every tenant's rows share one partition and a
+   * by-id `find()` is not tenant-isolated. Tenant-scoping it (`[tenant]#apin`)
+   * closes that hole, but flipping the on-disk key atomically strands every
+   * existing row. This flag drives a safe expand/migrate/contract rollout:
+   *
+   *   "legacy"        (default) - bare `modelPrefix` pk. Identical to historical
+   *                   behavior; upgrading the library changes nothing.
+   *   "migrating"     - writes/reads use the tenant-scoped pk, but reads fall
+   *                   back to legacy key shapes so nothing is stranded while a
+   *                   backfill relocates rows. Updates write in place at the
+   *                   row's current key; deletes already target the loaded key.
+   *   "tenant-scoped" - tenant-scoped pk only; fallback off (post-migration).
+   *
+   * The tenant-scoped key is the clean `[tenant]#modelPrefix` (e.g.
+   * `[tenant]#apin`). Both the write path (`_getDyKeyForPkSk`) and the query
+   * path (`queryByPrimaryKey` / primary-key `queryByIndex`) derive it from the
+   * same `_formatPrimaryPartition` helper, so writes/finds/queries stay
+   * consistent.
+   *
+   * Set via initModels config: `{ keyMigration: { modelPrefixPkMode: "..." } }`.
+   * Only affects models with `primaryKey.pk === "modelPrefix"`.
+   *
+   * Known limitations during the "migrating" window (both resolve once the
+   * backfill completes and you switch to "tenant-scoped"):
+   *   - Primary-key PARTITION queries (`queryByPrimaryKey` / a primary-key
+   *     `queryByIndex`) read only the canonical partition, so rows not yet
+   *     relocated by the backfill are not returned. By-id `find()` is unaffected
+   *     (it falls back), and GSI queries are unaffected (GSI keys never change).
+   *   - `create()` with an EXPLICIT primary id that already exists at a legacy
+   *     key is not detected as a duplicate (the `attribute_not_exists` guard
+   *     only checks the canonical key). Models with auto-assigned ids (the
+   *     default) cannot hit this.
+   *
+   * @returns {"legacy"|"migrating"|"tenant-scoped"}
+   */
+  static _modelPrefixPkMode() {
+    return this._config?.keyMigration?.modelPrefixPkMode || "legacy";
+  }
+
+  /**
+   * Base-table partition `_pk` for the `pk === "modelPrefix"` shape, honoring
+   * the migration mode:
+   *   legacy:                  `modelPrefix`            (bare, global)
+   *   migrating/tenant-scoped: `[tenant]#modelPrefix`   (clean, tenant-scoped)
+   * Falls back to the bare prefix when tenancy is disabled (no [tenant] segment,
+   * so no isolation is possible or needed).
+   */
+  static _modelPrefixPartitionPk() {
+    if (this._modelPrefixPkMode() === "legacy") {
+      return this.modelPrefix;
     }
+    const tenantId = this.manager.getTenantId();
+    return tenantId ? `[${tenantId}]#${this.modelPrefix}` : this.modelPrefix;
+  }
+
+  /**
+   * Base-table partition `_pk` for a given partition value. Used by BOTH the
+   * write path and the primary-key query paths so the two never diverge. For
+   * the `pk === "modelPrefix"` shape the value is the model prefix itself and
+   * the key is mode-aware (see `_modelPrefixPartitionPk`); for every other
+   * shape it is the standard `_formatPrimaryKey(modelPrefix, value)`.
+   */
+  static _formatPrimaryPartition(pkValue) {
+    if (this.primaryKey.pk === "modelPrefix") {
+      return this._modelPrefixPartitionPk();
+    }
+    return this._formatPrimaryKey(this.modelPrefix, pkValue);
+  }
+
+  static _getDyKeyForPkSk(pkSk) {
+    const _pk = this._formatPrimaryPartition(pkSk.pk);
+    const _sk =
+      this.primaryKey.sk === "modelPrefix" ? this.modelPrefix : pkSk.sk;
+    return { _pk, _sk };
+  }
+
+  /**
+   * Candidate legacy `{_pk,_sk}` keys to try as a read fallback for a given
+   * pkSk, in "migrating" mode only. Empty unless the model uses the
+   * `pk === "modelPrefix"` shape and is mid-migration. Pre-migration rows may
+   * live at either historical shape:
+   *   - `modelPrefix`                         (<= 0.6.0: bare, global)
+   *   - `[tenant]#modelPrefix#modelPrefix`    (0.6.1: doubled, tenant-scoped)
+   */
+  static _legacyDyKeysForPkSk(pkSk) {
+    if (
+      this.primaryKey.pk !== "modelPrefix" ||
+      this._modelPrefixPkMode() !== "migrating"
+    ) {
+      return [];
+    }
+    const canonical = this._modelPrefixPartitionPk();
+    const candidates = [
+      this.modelPrefix,
+      this._formatPrimaryKey(this.modelPrefix, this.modelPrefix),
+    ];
+    return [...new Set(candidates)]
+      .filter((pk) => pk !== canonical)
+      .map((pk) => ({ _pk: pk, _sk: pkSk.sk }));
   }
 
   static _getIterationKeys(objectId, dyData) {
@@ -428,13 +514,8 @@ class BaoModel {
     } = options;
 
     validateLimit(limit);
-    if (
-      !Number.isInteger(maxQueriesPerBucket) ||
-      maxQueriesPerBucket < 1
-    ) {
-      throw new Error(
-        "maxQueriesPerBucket must be a positive integer.",
-      );
+    if (!Number.isInteger(maxQueriesPerBucket) || maxQueriesPerBucket < 1) {
+      throw new Error("maxQueriesPerBucket must be a positive integer.");
     }
 
     const searchPredicate = buildSearchPredicate(terms, this.searchConfig, {
@@ -567,9 +648,7 @@ class BaoModel {
     let overflowKeys = [];
     if (items.length > limit) {
       kept = items.slice(0, limit);
-      overflowKeys = items
-        .slice(limit)
-        .map((m) => m.getPrimaryId());
+      overflowKeys = items.slice(limit).map((m) => m.getPrimaryId());
     }
 
     const bucketsRemaining = Object.keys(bucketCursors).length > 0;
@@ -789,9 +868,7 @@ class BaoModel {
       );
     }
     if (filterParts.length > 0) {
-      params.FilterExpression = filterParts
-        .map((p) => `(${p})`)
-        .join(" AND ");
+      params.FilterExpression = filterParts.map((p) => `(${p})`).join(" AND ");
     }
 
     const response = await this._runIterationQuery(params, indexName);
@@ -864,7 +941,9 @@ class BaoModel {
         );
       }
       if (filterParts.length > 0) {
-        params.FilterExpression = filterParts.map((p) => `(${p})`).join(" AND ");
+        params.FilterExpression = filterParts
+          .map((p) => `(${p})`)
+          .join(" AND ");
       }
 
       const response = await this._runIterationQuery(params, indexName);
@@ -1352,7 +1431,12 @@ class BaoModel {
 
     if (Array.isArray(consumedCapacity)) {
       consumedCapacity.forEach((item) =>
-        this._addConsumedCapacity(item, type, isRelated, skipContextAccumulation),
+        this._addConsumedCapacity(
+          item,
+          type,
+          isRelated,
+          skipContextAccumulation,
+        ),
       );
     } else {
       if (consumedCapacity.consumedCapacity) {
@@ -1362,7 +1446,11 @@ class BaoModel {
           type: consumedCapacity.type || type,
         });
         // Accumulate to batch context (only for non-related to avoid double counting)
-        if (!isRelated && !consumedCapacity.fromContext && !skipContextAccumulation) {
+        if (
+          !isRelated &&
+          !consumedCapacity.fromContext &&
+          !skipContextAccumulation
+        ) {
           const units = consumedCapacity.consumedCapacity?.CapacityUnits || 0;
           _accumulateCapacityToContext(units, consumedCapacity.type || type);
         }

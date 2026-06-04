@@ -72,6 +72,15 @@ describe("Tenant Isolation Tests", () => {
     manager2.registerModel(TestUser);
     manager2.registerModel(ModelPrefixPartitionItem);
 
+    // Base-table tenant isolation for `pk === "modelPrefix"` models is opt-in
+    // (the default "legacy" mode keeps the historical global key for backward
+    // compatibility). These tests assert the isolated end-state, so run the
+    // modelPrefix model in "tenant-scoped" mode.
+    ModelPrefixPartitionItem._config = {
+      ...(ModelPrefixPartitionItem._config || {}),
+      keyMigration: { modelPrefixPkMode: "tenant-scoped" },
+    };
+
     // Clean up any existing data
     await runWithBatchContext(async () => {
       await cleanupTestDataByIteration(testId1, [

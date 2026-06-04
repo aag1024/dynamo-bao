@@ -2,6 +2,8 @@ const {
   TransactWriteCommand,
   UpdateCommand,
   DeleteCommand,
+  GetCommand,
+  PutCommand,
 } = require("../dynamodb-client");
 const { defaultLogger: logger } = require("../utils/logger");
 const { pluginManager } = require("../plugin-manager");
@@ -258,6 +260,129 @@ const MutationMethods = {
     }
   },
 
+  /**
+   * @memberof BaoModel
+   * @description
+   * Relocate a single record's base-table row from a legacy `pk === "modelPrefix"`
+   * key to the current canonical key. This is the per-record primitive used to
+   * back-fill the `keyMigration.modelPrefixPkMode` migration.
+   *
+   * Must be called in "migrating" mode and under the row's tenant context (so
+   * `getTenantId()` resolves the tenant the canonical `[tenant]#prefix` key is
+   * built from). The row's full item is copied verbatim to the canonical key
+   * (a conditional Put that won't clobber an existing canonical row), then the
+   * legacy row is deleted. GSI entries and unique-constraint pointers are
+   * unaffected (their keys never change; the pointer's relatedId is the
+   * unchanged logical id), so only the base row moves.
+   *
+   * Idempotent and safe to re-run: a row already at the canonical key is left
+   * alone; a stale legacy row left behind by an interrupted run is cleaned up.
+   *
+   * @param {string} primaryId - The record's logical primary id.
+   * @param {Object} [options]
+   * @param {boolean} [options.dryRun=false] - Inspect only; perform no writes.
+   * @returns {Promise<{relocated: boolean, from: ?string, to: string, reason?: string}>}
+   */
+  async relocateToCanonicalKey(primaryId, options = {}) {
+    const { dryRun = false } = options;
+
+    if (this.primaryKey.pk !== "modelPrefix") {
+      throw new Error(
+        `relocateToCanonicalKey is only valid for models whose primaryKey.pk is "modelPrefix" (got "${this.primaryKey.pk}" for ${this.name})`,
+      );
+    }
+    if (this._modelPrefixPkMode() !== "migrating") {
+      throw new Error(
+        `relocateToCanonicalKey must be called in "migrating" mode (modelPrefixPkMode is "${this._modelPrefixPkMode()}")`,
+      );
+    }
+
+    const pkSk = this._parsePrimaryId(primaryId);
+    const canonicalKey = this._getDyKeyForPkSk(pkSk);
+    const legacyKeys = this._legacyDyKeysForPkSk(pkSk);
+
+    const get = (Key) =>
+      this.documentClient
+        .send(new GetCommand({ TableName: this.table, Key }))
+        .then((r) => r.Item || null);
+
+    // Already at the canonical key? Clean up any stale legacy duplicate, done.
+    const canonicalItem = await get(canonicalKey);
+    if (canonicalItem) {
+      for (const legacyKey of legacyKeys) {
+        const stale = await get(legacyKey);
+        if (stale && !dryRun) {
+          await this.documentClient.send(
+            new DeleteCommand({ TableName: this.table, Key: legacyKey }),
+          );
+        }
+      }
+      return {
+        relocated: false,
+        from: null,
+        to: canonicalKey._pk,
+        reason: "already-canonical",
+      };
+    }
+
+    // Find the row at a legacy key.
+    let sourceItem = null;
+    let sourceKey = null;
+    for (const legacyKey of legacyKeys) {
+      const item = await get(legacyKey);
+      if (item) {
+        sourceItem = item;
+        sourceKey = legacyKey;
+        break;
+      }
+    }
+
+    if (!sourceItem) {
+      return {
+        relocated: false,
+        from: null,
+        to: canonicalKey._pk,
+        reason: "not-found",
+      };
+    }
+    if (dryRun) {
+      return {
+        relocated: true,
+        from: sourceKey._pk,
+        to: canonicalKey._pk,
+        reason: "dry-run",
+      };
+    }
+
+    // Put the full item at the canonical key (don't clobber a concurrently
+    // created canonical row), then delete the legacy row. Put-before-delete so
+    // the record is never absent.
+    const newItem = {
+      ...sourceItem,
+      _pk: canonicalKey._pk,
+      _sk: canonicalKey._sk,
+    };
+    try {
+      await this.documentClient.send(
+        new PutCommand({
+          TableName: this.table,
+          Item: newItem,
+          ConditionExpression: "attribute_not_exists(#pk)",
+          ExpressionAttributeNames: { "#pk": "_pk" },
+        }),
+      );
+    } catch (error) {
+      // A canonical row appeared concurrently — treat as already migrated and
+      // fall through to delete the now-redundant legacy row.
+      if (error.name !== "ConditionalCheckFailedException") throw error;
+    }
+    await this.documentClient.send(
+      new DeleteCommand({ TableName: this.table, Key: sourceKey }),
+    );
+
+    return { relocated: true, from: sourceKey._pk, to: canonicalKey._pk };
+  },
+
   _createNewPrimaryId(jsUpdates) {
     // Now calculate primary key values using the processed data
     const pkValue = this._getPkValue(jsUpdates);
@@ -503,10 +628,31 @@ const MutationMethods = {
         currentItem,
       );
 
+      // Key to write to. Normally the canonical key. But for an EXISTING
+      // `pk === "modelPrefix"` row in "migrating" mode, write in place at the
+      // row's current (possibly legacy) key so we update the full row rather
+      // than create a partial duplicate at the canonical key. The backfill is
+      // what relocates rows to the canonical key; deletes already target the
+      // loaded key. New items always use the canonical key.
+      let writeKey = this._getDyKeyForPkSk(this._parsePrimaryId(primaryId));
+      let inPlaceMigratingUpdate = false;
+      if (
+        !isNew &&
+        this.primaryKey.pk === "modelPrefix" &&
+        this._modelPrefixPkMode() === "migrating" &&
+        currentItem?._dyData?._pk
+      ) {
+        writeKey = {
+          _pk: currentItem._dyData._pk,
+          _sk: currentItem._dyData._sk,
+        };
+        inPlaceMigratingUpdate = true;
+      }
+
       // Create the base update params
       const updateParams = {
         TableName: this.table,
-        Key: this._getDyKeyForPkSk(this._parsePrimaryId(primaryId)),
+        Key: writeKey,
         UpdateExpression: updateExpression,
         ReturnValues: "ALL_NEW",
       };
@@ -552,7 +698,27 @@ const MutationMethods = {
         };
       }
 
-      const dyKey = this._getDyKeyForPkSk(this._parsePrimaryId(primaryId));
+      if (inPlaceMigratingUpdate) {
+        // Updating the row in place at its current (legacy) key. Guard with
+        // attribute_exists so a concurrent backfill that relocated/deleted the
+        // legacy row can't make this UpdateItem upsert a partial row — it fails
+        // loudly (ConditionalError) instead, and the caller can retry, which
+        // will then find and update the relocated canonical row. ANDed with any
+        // caller-supplied condition.
+        //
+        // Use a dedicated placeholder (not "#pk") so we never clobber a user
+        // field literally named `pk`, which _buildUpdateExpression maps to
+        // "#pk".
+        updateParams.ExpressionAttributeNames = {
+          ...updateParams.ExpressionAttributeNames,
+          "#migExistsPk": "_pk",
+        };
+        updateParams.ConditionExpression = updateParams.ConditionExpression
+          ? `(${updateParams.ConditionExpression}) AND attribute_exists(#migExistsPk)`
+          : "attribute_exists(#migExistsPk)";
+      }
+
+      const dyKey = writeKey;
       logger.debug("dyKey", dyKey);
 
       try {
@@ -792,10 +958,8 @@ const MutationMethods = {
 
       // Detect partial GSI key updates that would cause index staleness
       if (isUpdate && index.indexId !== undefined) {
-        const pkProvided =
-          index.pk === "modelPrefix" || pkValue !== undefined;
-        const skProvided =
-          index.sk === "modelPrefix" || skValue !== undefined;
+        const pkProvided = index.pk === "modelPrefix" || pkValue !== undefined;
+        const skProvided = index.sk === "modelPrefix" || skValue !== undefined;
         if (pkProvided && !skProvided) {
           throw new Error(
             `Update includes GSI partition key "${index.pk}" for index "${indexName}" ` +

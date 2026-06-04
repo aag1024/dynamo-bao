@@ -22,6 +22,7 @@ const {
   PutCommand,
   DeleteCommand,
 } = require("../src/dynamodb-client");
+const { ulid } = require("ulid");
 // (PutCommand was added to the client wrapper as part of this change.)
 
 class MpItem extends BaoModel {
@@ -119,23 +120,17 @@ describe("pk === modelPrefix tenant-scoping migration (integration)", () => {
       expect(await rawGet(canonicalKey)).toBeNull();
     });
 
-    // --- Phase 4: backfill relocates the row to the canonical key ---
+    // --- Phase 4: backfill relocates the row via the library primitive ---
     await runWithBatchContext(async () => {
       initWithMode(tenantA, "migrating");
-      const canonicalKey = MpItem._getDyKeyForPkSk({
-        pk: MpItem.modelPrefix,
-        sk: id,
+      const res = await MpItem.relocateToCanonicalKey(id);
+      expect(res.relocated).toBe(true);
+      // Idempotent: a second relocate is a no-op.
+      const again = await MpItem.relocateToCanonicalKey(id);
+      expect(again).toMatchObject({
+        relocated: false,
+        reason: "already-canonical",
       });
-      const row = await rawGet(bareLegacyKey(id));
-      await MpItem.documentClient.send(
-        new PutCommand({
-          TableName: MpItem.table,
-          Item: { ...row, _pk: canonicalKey._pk },
-        }),
-      );
-      await MpItem.documentClient.send(
-        new DeleteCommand({ TableName: MpItem.table, Key: bareLegacyKey(id) }),
-      );
     });
 
     // --- Phase 5: CONTRACT to tenant-scoped; resolves at canonical key only ---
@@ -209,6 +204,98 @@ describe("pk === modelPrefix tenant-scoping migration (integration)", () => {
 
       const res = await MpItem.queryByPrimaryKey(MpItem.modelPrefix);
       expect(res.items.map((i) => i.itemId)).toContain(id);
+    });
+
+    await runWithBatchContext(async () => {
+      initWithMode(tenant, "legacy");
+      await MpItem.delete(id);
+    });
+  }, 30000);
+
+  // relocateToCanonicalKey primitive — used by the fleet backfill.
+  test("relocateToCanonicalKey moves a 0.6.1 doubled-key row to the clean key", async () => {
+    const tenant = `mig-r-${Date.now()}`;
+    const id = ulid();
+    const doubledPk = `[${tenant}]#${MpItem.modelPrefix}#${MpItem.modelPrefix}`;
+    const cleanPk = `[${tenant}]#${MpItem.modelPrefix}`;
+
+    await runWithBatchContext(async () => {
+      initWithMode(tenant, "migrating");
+      // Seed a row at the 0.6.1 doubled key shape directly.
+      await MpItem.documentClient.send(
+        new PutCommand({
+          TableName: MpItem.table,
+          Item: {
+            _pk: doubledPk,
+            _sk: id,
+            itemId: id,
+            appId: tenant,
+            itemKey: `r-${tenant}`,
+            data: "from-0.6.1",
+          },
+        }),
+      );
+
+      const res = await MpItem.relocateToCanonicalKey(id);
+      expect(res).toMatchObject({
+        relocated: true,
+        from: doubledPk,
+        to: cleanPk,
+      });
+    });
+
+    // Now at the clean key, gone from the doubled key, and resolvable.
+    expect(await rawGet({ _pk: cleanPk, _sk: id })).not.toBeNull();
+    expect(await rawGet({ _pk: doubledPk, _sk: id })).toBeNull();
+    await runWithBatchContext(async () => {
+      initWithMode(tenant, "tenant-scoped");
+      expect((await MpItem.find(id)).data).toBe("from-0.6.1");
+    });
+    // Raw-seeded row (no unique-constraint pointer) — clean up with a raw delete.
+    await MpItem.documentClient.send(
+      new DeleteCommand({
+        TableName: MpItem.table,
+        Key: { _pk: cleanPk, _sk: id },
+      }),
+    );
+  }, 30000);
+
+  test("relocateToCanonicalKey: dry-run writes nothing; not-found is reported; guards enforced", async () => {
+    const tenant = `mig-g-${Date.now()}`;
+    let id;
+    await runWithBatchContext(async () => {
+      initWithMode(tenant, "legacy");
+      id = (
+        await MpItem.create({
+          appId: tenant,
+          itemKey: `g-${tenant}`,
+          data: "d",
+        })
+      ).itemId;
+    });
+
+    await runWithBatchContext(async () => {
+      initWithMode(tenant, "migrating");
+
+      // dry-run: reports it would relocate, but the legacy row is untouched.
+      const dry = await MpItem.relocateToCanonicalKey(id, { dryRun: true });
+      expect(dry).toMatchObject({ relocated: true, reason: "dry-run" });
+      expect(await rawGet(bareLegacyKey(id))).not.toBeNull();
+      expect(
+        await rawGet({ _pk: `[${tenant}]#${MpItem.modelPrefix}`, _sk: id }),
+      ).toBeNull();
+
+      // unknown id => not-found, no throw.
+      const miss = await MpItem.relocateToCanonicalKey(ulid());
+      expect(miss).toMatchObject({ relocated: false, reason: "not-found" });
+    });
+
+    // guard: wrong mode throws.
+    await runWithBatchContext(async () => {
+      initWithMode(tenant, "tenant-scoped");
+      await expect(MpItem.relocateToCanonicalKey(id)).rejects.toThrow(
+        /migrating/,
+      );
     });
 
     await runWithBatchContext(async () => {

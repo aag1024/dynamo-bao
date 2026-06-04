@@ -2,6 +2,8 @@ const {
   TransactWriteCommand,
   UpdateCommand,
   DeleteCommand,
+  GetCommand,
+  PutCommand,
 } = require("../dynamodb-client");
 const { defaultLogger: logger } = require("../utils/logger");
 const { pluginManager } = require("../plugin-manager");
@@ -256,6 +258,129 @@ const MutationMethods = {
       }
       throw error;
     }
+  },
+
+  /**
+   * @memberof BaoModel
+   * @description
+   * Relocate a single record's base-table row from a legacy `pk === "modelPrefix"`
+   * key to the current canonical key. This is the per-record primitive used to
+   * back-fill the `keyMigration.modelPrefixPkMode` migration.
+   *
+   * Must be called in "migrating" mode and under the row's tenant context (so
+   * `getTenantId()` resolves the tenant the canonical `[tenant]#prefix` key is
+   * built from). The row's full item is copied verbatim to the canonical key
+   * (a conditional Put that won't clobber an existing canonical row), then the
+   * legacy row is deleted. GSI entries and unique-constraint pointers are
+   * unaffected (their keys never change; the pointer's relatedId is the
+   * unchanged logical id), so only the base row moves.
+   *
+   * Idempotent and safe to re-run: a row already at the canonical key is left
+   * alone; a stale legacy row left behind by an interrupted run is cleaned up.
+   *
+   * @param {string} primaryId - The record's logical primary id.
+   * @param {Object} [options]
+   * @param {boolean} [options.dryRun=false] - Inspect only; perform no writes.
+   * @returns {Promise<{relocated: boolean, from: ?string, to: string, reason?: string}>}
+   */
+  async relocateToCanonicalKey(primaryId, options = {}) {
+    const { dryRun = false } = options;
+
+    if (this.primaryKey.pk !== "modelPrefix") {
+      throw new Error(
+        `relocateToCanonicalKey is only valid for models whose primaryKey.pk is "modelPrefix" (got "${this.primaryKey.pk}" for ${this.name})`,
+      );
+    }
+    if (this._modelPrefixPkMode() !== "migrating") {
+      throw new Error(
+        `relocateToCanonicalKey must be called in "migrating" mode (modelPrefixPkMode is "${this._modelPrefixPkMode()}")`,
+      );
+    }
+
+    const pkSk = this._parsePrimaryId(primaryId);
+    const canonicalKey = this._getDyKeyForPkSk(pkSk);
+    const legacyKeys = this._legacyDyKeysForPkSk(pkSk);
+
+    const get = (Key) =>
+      this.documentClient
+        .send(new GetCommand({ TableName: this.table, Key }))
+        .then((r) => r.Item || null);
+
+    // Already at the canonical key? Clean up any stale legacy duplicate, done.
+    const canonicalItem = await get(canonicalKey);
+    if (canonicalItem) {
+      for (const legacyKey of legacyKeys) {
+        const stale = await get(legacyKey);
+        if (stale && !dryRun) {
+          await this.documentClient.send(
+            new DeleteCommand({ TableName: this.table, Key: legacyKey }),
+          );
+        }
+      }
+      return {
+        relocated: false,
+        from: null,
+        to: canonicalKey._pk,
+        reason: "already-canonical",
+      };
+    }
+
+    // Find the row at a legacy key.
+    let sourceItem = null;
+    let sourceKey = null;
+    for (const legacyKey of legacyKeys) {
+      const item = await get(legacyKey);
+      if (item) {
+        sourceItem = item;
+        sourceKey = legacyKey;
+        break;
+      }
+    }
+
+    if (!sourceItem) {
+      return {
+        relocated: false,
+        from: null,
+        to: canonicalKey._pk,
+        reason: "not-found",
+      };
+    }
+    if (dryRun) {
+      return {
+        relocated: true,
+        from: sourceKey._pk,
+        to: canonicalKey._pk,
+        reason: "dry-run",
+      };
+    }
+
+    // Put the full item at the canonical key (don't clobber a concurrently
+    // created canonical row), then delete the legacy row. Put-before-delete so
+    // the record is never absent.
+    const newItem = {
+      ...sourceItem,
+      _pk: canonicalKey._pk,
+      _sk: canonicalKey._sk,
+    };
+    try {
+      await this.documentClient.send(
+        new PutCommand({
+          TableName: this.table,
+          Item: newItem,
+          ConditionExpression: "attribute_not_exists(#pk)",
+          ExpressionAttributeNames: { "#pk": "_pk" },
+        }),
+      );
+    } catch (error) {
+      // A canonical row appeared concurrently — treat as already migrated and
+      // fall through to delete the now-redundant legacy row.
+      if (error.name !== "ConditionalCheckFailedException") throw error;
+    }
+    await this.documentClient.send(
+      new DeleteCommand({ TableName: this.table, Key: sourceKey }),
+    );
+
+    return { relocated: true, from: sourceKey._pk, to: canonicalKey._pk };
   },
 
   _createNewPrimaryId(jsUpdates) {

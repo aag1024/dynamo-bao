@@ -173,8 +173,9 @@ function initModels(userConfig = {}) {
       ...(userConfig.batchContext || {}),
     },
     // Key-migration controls (e.g. modelPrefixPkMode) for safely transitioning
-    // the on-disk key format of `pk === "modelPrefix"` models. Defaults to
-    // "legacy" behavior when unset, so existing consumers are unaffected.
+    // the on-disk key format of `pk === "modelPrefix"` models. Unset mode still
+    // resolves to legacy behavior, but tenant-enabled models with this key shape
+    // must choose a mode explicitly during validation.
     keyMigration: {
       ...config.keyMigration,
       ...(userConfig.keyMigration || {}),

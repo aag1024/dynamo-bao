@@ -187,8 +187,7 @@ class BaoModel {
    * closes that hole, but flipping the on-disk key atomically strands every
    * existing row. This flag drives a safe expand/migrate/contract rollout:
    *
-   *   "legacy"        (default) - bare `modelPrefix` pk. Identical to historical
-   *                   behavior; upgrading the library changes nothing.
+   *   "legacy"        - bare `modelPrefix` pk. Identical to historical behavior.
    *   "migrating"     - writes/reads use the tenant-scoped pk, but reads fall
    *                   back to legacy key shapes so nothing is stranded while a
    *                   backfill relocates rows. Updates write in place at the
@@ -202,7 +201,10 @@ class BaoModel {
    * consistent.
    *
    * Set via initModels config: `{ keyMigration: { modelPrefixPkMode: "..." } }`.
-   * Only affects models with `primaryKey.pk === "modelPrefix"`.
+   * Only affects models with `primaryKey.pk === "modelPrefix"`. When tenancy is
+   * enabled, those models must set the mode explicitly so new apps choose the
+   * isolated key format intentionally and existing apps opt into legacy behavior
+   * deliberately.
    *
    * Known limitations during the "migrating" window (both resolve once the
    * backfill completes and you switch to "tenant-scoped"):

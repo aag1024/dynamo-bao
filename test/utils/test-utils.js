@@ -189,14 +189,16 @@ async function verifyCleanup(tenantId, modelClasses = []) {
  * Initializes models with tenant context for testing
  * @param {Object} config - Configuration object
  * @param {string} tenantId - Tenant ID to use
+ * @param {Object} overrides - Additional config overrides
  * @returns {ModelManager} The initialized model manager
  */
-function initTestModelsWithTenant(config, tenantId) {
+function initTestModelsWithTenant(config, tenantId, overrides = {}) {
   TenantContext.setCurrentTenant(tenantId);
   const dynamoBao = require("../../src/index");
   return dynamoBao.initModels({
     ...config,
     tenancy: { enabled: true },
+    ...overrides,
   });
 }
 

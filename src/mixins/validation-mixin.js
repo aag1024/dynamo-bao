@@ -13,6 +13,12 @@ const {
   UNIQUE_CONSTRAINT_ID3,
 } = require("../constants");
 
+const VALID_MODEL_PREFIX_PK_MODES = new Set([
+  "legacy",
+  "migrating",
+  "tenant-scoped",
+]);
+
 const ValidationMethods = {
   /**
    *
@@ -57,6 +63,27 @@ const ValidationMethods = {
         `${this.name} must define a primaryKey`,
         this.name,
       );
+    }
+
+    if (this.primaryKey.pk === "modelPrefix") {
+      const configuredMode = this._config?.keyMigration?.modelPrefixPkMode;
+
+      if (configuredMode !== undefined) {
+        if (!VALID_MODEL_PREFIX_PK_MODES.has(configuredMode)) {
+          throw new ConfigurationError(
+            `${this.name} has invalid keyMigration.modelPrefixPkMode "${configuredMode}". ` +
+              `Expected one of: "legacy", "migrating", or "tenant-scoped".`,
+            this.name,
+          );
+        }
+      } else if (this._config?.tenancy?.enabled) {
+        throw new ConfigurationError(
+          `${this.name} uses modelPrefix as its primary partition key with tenancy enabled. ` +
+            `Set keyMigration.modelPrefixPkMode to "legacy", "migrating", or "tenant-scoped". ` +
+            `Use "tenant-scoped" for new apps.`,
+          this.name,
+        );
+      }
     }
 
     // Update to use TtlFieldClass instead of TtlField

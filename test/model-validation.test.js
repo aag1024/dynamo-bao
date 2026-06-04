@@ -26,6 +26,88 @@ describe("Model Validation Tests", () => {
     TenantContext.clearTenant();
   });
 
+  function initEmptyManager(configOverrides = {}) {
+    return dynamoBao.initModels({
+      ...testConfig,
+      paths: {
+        ...testConfig.paths,
+        modelsDir: null,
+        generatedModelsManifest: null,
+      },
+      models: {},
+      ...configOverrides,
+    });
+  }
+
+  function createModelPrefixPkModel(name = "name") {
+    return class ModelPrefixPkModel extends BaoModel {
+      static modelPrefix = "mppv";
+
+      static fields = {
+        [name]: StringField({ required: true }),
+      };
+
+      static primaryKey = PrimaryKeyConfig("modelPrefix", name);
+    };
+  }
+
+  test("should require explicit modelPrefixPkMode when tenancy is enabled and primary partition key is modelPrefix", () => {
+    TenantContext.setCurrentTenant(testId);
+    const tenantManager = initEmptyManager({
+      tenancy: { enabled: true },
+    });
+    const ModelPrefixPkModel = createModelPrefixPkModel();
+
+    expect(() => {
+      tenantManager.registerModel(ModelPrefixPkModel);
+    }).toThrow(ConfigurationError);
+    expect(() => {
+      tenantManager.registerModel(ModelPrefixPkModel);
+    }).toThrow(/keyMigration\.modelPrefixPkMode/);
+  });
+
+  test("should allow explicit modelPrefixPkMode values when tenancy is enabled", () => {
+    TenantContext.setCurrentTenant(testId);
+
+    for (const mode of ["legacy", "migrating", "tenant-scoped"]) {
+      const tenantManager = initEmptyManager({
+        tenancy: { enabled: true },
+        keyMigration: { modelPrefixPkMode: mode },
+      });
+      const ModelPrefixPkModel = createModelPrefixPkModel(`name${mode}`);
+
+      expect(() => {
+        tenantManager.registerModel(ModelPrefixPkModel);
+      }).not.toThrow();
+      expect(ModelPrefixPkModel._modelPrefixPkMode()).toBe(mode);
+    }
+  });
+
+  test("should reject invalid modelPrefixPkMode values", () => {
+    TenantContext.setCurrentTenant(testId);
+    const tenantManager = initEmptyManager({
+      tenancy: { enabled: true },
+      keyMigration: { modelPrefixPkMode: "invalid" },
+    });
+    const ModelPrefixPkModel = createModelPrefixPkModel();
+
+    expect(() => {
+      tenantManager.registerModel(ModelPrefixPkModel);
+    }).toThrow(ConfigurationError);
+    expect(() => {
+      tenantManager.registerModel(ModelPrefixPkModel);
+    }).toThrow(/invalid keyMigration\.modelPrefixPkMode/);
+  });
+
+  test("should allow unset modelPrefixPkMode when tenancy is disabled", () => {
+    const ModelPrefixPkModel = createModelPrefixPkModel();
+
+    expect(() => {
+      manager.registerModel(ModelPrefixPkModel);
+    }).not.toThrow();
+    expect(ModelPrefixPkModel._modelPrefixPkMode()).toBe("legacy");
+  });
+
   test("should reject field names starting with underscore", () => {
     class InvalidFieldModel extends BaoModel {
       static modelPrefix = "test";

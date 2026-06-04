@@ -48,10 +48,10 @@ describe("Model key formatting — pk === modelPrefix migration modes", () => {
     TenantContext.reset();
   });
 
-  test("legacy mode (default) uses the bare global modelPrefix partition key", () => {
+  test("legacy mode without tenancy config uses the bare global modelPrefix partition key", () => {
     const tenant = "tenant-one";
     registerUnderTenant(tenant);
-    // No keyMigration config => defaults to "legacy".
+    // No tenancy config and no keyMigration config => defaults to "legacy".
     expect(ModelPrefixPartitionItem._modelPrefixPkMode()).toBe("legacy");
     expect(ModelPrefixPartitionItem._getDyKeyForPkSk(pkSk)).toEqual({
       _pk: "mppi",

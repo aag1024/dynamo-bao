@@ -13,10 +13,34 @@ const {
   PrimaryKeyConfig,
   UniqueConstraintConfig,
 } = require("../src/model");
-const { StringField, IntegerField } = require("../src/fields");
+const {
+  StringField,
+  IntegerField,
+  CounterField,
+  UlidField,
+} = require("../src/fields");
 const { ConditionalError } = require("../src/exceptions");
+const { UNIQUE_CONSTRAINT_ID1 } = require("../src/constants");
 
 let testId, User;
+
+// A unique-constrained model with a counter, so a create goes through the
+// transaction path with a relative ("+3") counter value.
+class UniqueCounter extends BaoModel {
+  static modelPrefix = "ucn";
+  static iterable = true;
+  static iterationBuckets = 1;
+
+  static fields = {
+    counterId: UlidField({ autoAssign: true }),
+    code: StringField({ required: true }),
+    hits: CounterField(),
+  };
+  static primaryKey = PrimaryKeyConfig("counterId");
+  static uniqueConstraints = {
+    uniqueCode: UniqueConstraintConfig("code", UNIQUE_CONSTRAINT_ID1),
+  };
+}
 
 beforeEach(async () => {
   await runWithBatchContext(async () => {
@@ -25,6 +49,7 @@ beforeEach(async () => {
     const manager = initTestModelsWithTenant(testConfig, testId);
 
     User = manager.getModel("User");
+    manager.registerModel(UniqueCounter);
   });
 });
 
@@ -32,8 +57,8 @@ afterEach(async () => {
   await runWithBatchContext(async () => {
     TenantContext.clearTenant();
     if (testId) {
-      await cleanupTestDataByIteration(testId, [User]);
-      await verifyCleanup(testId, [User]);
+      await cleanupTestDataByIteration(testId, [User, UniqueCounter]);
+      await verifyCleanup(testId, [User, UniqueCounter]);
     }
   });
 });
@@ -200,6 +225,159 @@ describe("User Unique Constraints", () => {
         email: "test1@example.com",
       });
       expect(user2.email).toBe("test1@example.com");
+    });
+  });
+});
+
+describe("Unique constraint round trips", () => {
+  // Record the DynamoDB commands sent while fn runs.
+  const recordCommands = async (fn) => {
+    const commands = [];
+    const send = User.documentClient.send.bind(User.documentClient);
+    const spy = jest
+      .spyOn(User.documentClient, "send")
+      .mockImplementation((command) => {
+        commands.push(command.constructor.name);
+        return send(command);
+      });
+    try {
+      const result = await fn();
+      return { result, commands };
+    } catch (error) {
+      return { error, commands };
+    } finally {
+      spy.mockRestore();
+    }
+  };
+
+  test("create issues a single transaction and returns the stored row", async () => {
+    await runWithBatchContext(async () => {
+      const { result: user, commands } = await recordCommands(() =>
+        User.create({ name: "Test User 1", email: "test1@example.com" }),
+      );
+      expect(commands).toEqual(["TransactWriteCommand"]);
+
+      const stored = await User.find(user.userId, {
+        batchDelay: 0,
+        bypassCache: true,
+      });
+      expect(stored.exists()).toBe(true);
+      expect(user._dyData).toEqual(stored._dyData);
+    });
+  });
+
+  test("create with a relative counter returns the stored number", async () => {
+    await runWithBatchContext(async () => {
+      const item = await UniqueCounter.create({ code: "c1", hits: "+3" });
+
+      const stored = await UniqueCounter.find(item.counterId, {
+        batchDelay: 0,
+        bypassCache: true,
+      });
+      expect(stored._dyData.hits).toBe(3);
+      expect(item._dyData).toEqual(stored._dyData);
+      expect((await UniqueCounter.find(item.counterId))._dyData).toEqual(
+        stored._dyData,
+      );
+    });
+  });
+
+  test("duplicate create names the field after the transaction cancels", async () => {
+    await runWithBatchContext(async () => {
+      await User.create({ name: "Test User 1", email: "test1@example.com" });
+
+      const { error, commands } = await recordCommands(() =>
+        User.create({ name: "Test User 2", email: "test1@example.com" }),
+      );
+      expect(error).toBeInstanceOf(ConditionalError);
+      expect(error.message).toBe("email must be unique");
+      expect(commands).toEqual(["TransactWriteCommand", "GetCommand"]);
+    });
+  });
+
+  test("find after create in the same request is served from the cache", async () => {
+    await runWithBatchContext(async () => {
+      const user = await User.create({
+        name: "Test User 1",
+        email: "test1@example.com",
+      });
+
+      const { result: found, commands } = await recordCommands(() =>
+        User.find(user.userId),
+      );
+      expect(commands).toEqual([]);
+      expect(found.email).toBe("test1@example.com");
+    });
+  });
+
+  test("collision on the second constraint leaves nothing behind", async () => {
+    await runWithBatchContext(async () => {
+      await User.create({
+        name: "Test User 1",
+        email: "test1@example.com",
+        externalId: "ext-1",
+      });
+
+      await expect(
+        User.create({
+          name: "Test User 2",
+          email: "test2@example.com",
+          externalId: "ext-1",
+        }),
+      ).rejects.toThrow("externalId must be unique");
+
+      // The email constraint from the cancelled create was never written.
+      const user3 = await User.create({
+        name: "Test User 3",
+        email: "test2@example.com",
+      });
+      expect(user3.email).toBe("test2@example.com");
+    });
+  });
+
+  test("update with an unchanged unique value does not check the constraint", async () => {
+    await runWithBatchContext(async () => {
+      const user = await User.create({
+        name: "Test User 1",
+        email: "test1@example.com",
+      });
+
+      const { commands } = await recordCommands(() =>
+        User.update(user.userId, {
+          name: "Renamed",
+          email: "test1@example.com",
+        }),
+      );
+      expect(commands).toEqual(["UpdateCommand"]);
+    });
+  });
+
+  test("find after update in the same request sees the update", async () => {
+    await runWithBatchContext(async () => {
+      const user = await User.create({
+        name: "Test User 1",
+        email: "test1@example.com",
+      });
+      await User.find(user.userId);
+
+      await User.update(user.userId, { name: "Renamed" });
+      expect((await User.find(user.userId)).name).toBe("Renamed");
+    });
+  });
+
+  test("update of a unique field returns and caches the new row", async () => {
+    await runWithBatchContext(async () => {
+      const user = await User.create({
+        name: "Test User 1",
+        email: "test1@example.com",
+      });
+      await User.find(user.userId);
+
+      const updated = await User.update(user.userId, {
+        email: "test2@example.com",
+      });
+      expect(updated.email).toBe("test2@example.com");
+      expect((await User.find(user.userId)).email).toBe("test2@example.com");
     });
   });
 });

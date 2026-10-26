@@ -225,6 +225,8 @@ const MutationMethods = {
         );
       }
 
+      this._evictFromLoaderContext(primaryId);
+
       await pluginManager.executeHooks(
         this.name,
         "afterDelete",
@@ -543,11 +545,9 @@ const MutationMethods = {
         }
       });
 
-      // Validate unique constraints before attempting save
-      await this._validateUniqueConstraints(
-        jsUpdates,
-        isNew ? null : primaryId,
-      );
+      // No pre-save uniqueness read: each constraint Put in the transaction
+      // carries attribute_not_exists, and the catch block below runs
+      // _validateUniqueConstraints to name the colliding field.
 
       // Handle unique constraints
       for (const constraint of Object.values(this.uniqueConstraints || {})) {
@@ -689,12 +689,20 @@ const MutationMethods = {
             ...filterExpression.ExpressionAttributeValues,
           };
         }
-      } else if (isNew) {
-        // For new items, ensure they don't already exist
-        updateParams.ConditionExpression = "attribute_not_exists(#pk)";
+      }
+
+      if (isNew) {
+        // For new items, ensure they don't already exist, ANDed with any
+        // caller-supplied condition. _buildUpdateExpression maps each field
+        // to "#<fieldName>"; user field names can't start with "_" and no
+        // system field starts with "__", so a "#__" placeholder can't clobber
+        // one.
+        updateParams.ConditionExpression = updateParams.ConditionExpression
+          ? `(${updateParams.ConditionExpression}) AND attribute_not_exists(#__newItemPk)`
+          : "attribute_not_exists(#__newItemPk)";
         updateParams.ExpressionAttributeNames = {
           ...updateParams.ExpressionAttributeNames,
-          "#pk": "_pk",
+          "#__newItemPk": "_pk",
         };
       }
 
@@ -706,16 +714,15 @@ const MutationMethods = {
         // will then find and update the relocated canonical row. ANDed with any
         // caller-supplied condition.
         //
-        // Use a dedicated placeholder (not "#pk") so we never clobber a user
-        // field literally named `pk`, which _buildUpdateExpression maps to
-        // "#pk".
+        // Use a "#__" placeholder so we never clobber a field placeholder
+        // (see the new-item guard above).
         updateParams.ExpressionAttributeNames = {
           ...updateParams.ExpressionAttributeNames,
-          "#migExistsPk": "_pk",
+          "#__migExistsPk": "_pk",
         };
         updateParams.ConditionExpression = updateParams.ConditionExpression
-          ? `(${updateParams.ConditionExpression}) AND attribute_exists(#migExistsPk)`
-          : "attribute_exists(#migExistsPk)";
+          ? `(${updateParams.ConditionExpression}) AND attribute_exists(#__migExistsPk)`
+          : "attribute_exists(#__migExistsPk)";
       }
 
       const dyKey = writeKey;
@@ -744,13 +751,39 @@ const MutationMethods = {
           logger.debug("transactItems response", response);
           logger.debug("primaryId to load", primaryId);
 
-          // Fetch the item since transactWrite doesn't return values
-          let savedItem = await this.find(primaryId, { batchDelay: 0 });
+          // transactWrite doesn't return values. A new item is exactly its key
+          // plus what we wrote (REMOVEd nulls aside), so build it locally. An
+          // update must be read back, bypassing the loader cache, which still
+          // holds the pre-update row.
+          let savedItem;
+          if (isNew) {
+            const storedItem = { ...dyKey };
+            for (const [key, value] of Object.entries(dyUpdatesToSave)) {
+              if (value !== undefined && value !== null) {
+                storedItem[key] = value;
+              }
+            }
+            // A relative counter ("+3") is written with ADD, which on a new
+            // item stores the number itself.
+            const { CounterFieldClass } = require("../fields");
+            for (const [key, field] of Object.entries(this.fields)) {
+              if (
+                field instanceof CounterFieldClass &&
+                typeof storedItem[key] === "string"
+              ) {
+                storedItem[key] = parseInt(storedItem[key], 10);
+              }
+            }
+            savedItem = this._createFromDyItem(storedItem);
+          } else {
+            const readOptions = { batchDelay: 0, bypassCache: true };
+            savedItem = await this.find(primaryId, readOptions);
 
-          // if the item doesn't exist, sleep for 200ms and try again
-          if (!savedItem.exists()) {
-            await new Promise((resolve) => setTimeout(resolve, 200));
-            savedItem = await this.find(primaryId, { batchDelay: 0 });
+            // if the item doesn't exist, sleep for 200ms and try again
+            if (!savedItem.exists()) {
+              await new Promise((resolve) => setTimeout(resolve, 200));
+              savedItem = await this.find(primaryId, readOptions);
+            }
           }
 
           logger.debug("savedItem", savedItem);
@@ -766,8 +799,11 @@ const MutationMethods = {
             "write",
             false,
           );
-          savedItem._addConsumedCapacity(consumedCapacity, "read", false);
+          // The loaded row's capacity was counted in the request total when
+          // it was consumed, so don't count it again.
+          savedItem._addConsumedCapacity(consumedCapacity, "read", false, true);
 
+          this._primeLoaderContext(primaryId, savedItem);
           return savedItem;
         } else {
           // Use simple update if no unique constraints are changing
@@ -795,12 +831,15 @@ const MutationMethods = {
             "write",
             false,
           );
-          savedItem._addConsumedCapacity(consumedCapacity, "read", false);
+          // The loaded row's capacity was counted in the request total when
+          // it was consumed, so don't count it again.
+          savedItem._addConsumedCapacity(consumedCapacity, "read", false, true);
 
           if (!savedItem.exists()) {
             throw new ConditionalError("Failed to fetch saved item", "update");
           }
 
+          this._primeLoaderContext(primaryId, savedItem);
           return savedItem;
         }
       } catch (error) {
@@ -810,6 +849,13 @@ const MutationMethods = {
         }
 
         if (error.name === "TransactionCanceledException") {
+          // A taken unique value cancels the transaction; this read throws a
+          // ConditionalError naming the field if that's the cause.
+          await this._validateUniqueConstraints(
+            jsUpdates,
+            isNew ? null : primaryId,
+          );
+
           // Check if it's due to conditional check failure
           if (
             error.CancellationReasons?.some(
@@ -822,12 +868,6 @@ const MutationMethods = {
               error,
             );
           }
-          // For other transaction cancellation reasons, try to validate unique constraints
-          // which will throw the appropriate ConditionalError if that's the issue
-          await this._validateUniqueConstraints(
-            jsUpdates,
-            isNew ? null : primaryId,
-          );
         }
         throw error;
       }

@@ -208,7 +208,6 @@ describe("Batch Delay Tests", () => {
       // Create a request that will timeout and capture the batch info
       const promise = TestBatchModel.find(testItems[0].getPrimaryId(), {
         batchDelay: 50, // Small delay to ensure the batch is created
-        bypassCache: true, // Use bypassCache to force DynamoDB request
       });
 
       // Wait a bit to ensure the batch is created
@@ -216,7 +215,8 @@ describe("Batch Delay Tests", () => {
 
       // Force cleanup of the batch using the test-scoped batch requests
       batchRequests = TestBatchModel._getBatchRequests();
-      batchKey = `TestBatchModel-50`;
+      const tenantId = TestBatchModel.manager.getTenantId() ?? "";
+      batchKey = `TestBatchModel-${tenantId}-50`;
       batch = batchRequests.get(batchKey);
 
       // The batch should exist since we're in the same context

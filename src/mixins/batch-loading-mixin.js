@@ -116,6 +116,52 @@ const BatchLoadingMethods = {
   },
 
   /**
+   * Key for the request-scoped loader cache. The cache is one Map per request
+   * shared by every model and tenant, so the key carries both, plus the
+   * canonical string id so a string id and its object form share an entry.
+   * @private
+   */
+  _loaderKey(primaryId) {
+    const pkSk = this._parsePrimaryId(primaryId);
+    return JSON.stringify([
+      this.name,
+      this.manager.getTenantId() ?? null,
+      this.makePrimaryId(pkSk.pk, pkSk.sk),
+    ]);
+  },
+
+  /**
+   * Store a just-written instance in the request-scoped loader cache so a
+   * later find() in the same request returns the written row instead of a
+   * stale one. Caches a copy with no consumed capacity, so later operations
+   * that load it don't report this write's capacity as their own. No-op
+   * outside runWithBatchContext().
+   * @private
+   */
+  _primeLoaderContext(primaryId, instance) {
+    const loaderContext = batchContext?.getStore()?.loaderContext;
+    if (loaderContext) {
+      loaderContext.set(
+        this._loaderKey(primaryId),
+        this._createFromDyItem({ ...instance._dyData }),
+      );
+    }
+  },
+
+  /**
+   * Drop a just-deleted item from the request-scoped loader cache so a later
+   * find() in the same request doesn't return the deleted row. No-op outside
+   * runWithBatchContext().
+   * @private
+   */
+  _evictFromLoaderContext(primaryId) {
+    const loaderContext = batchContext?.getStore()?.loaderContext;
+    if (loaderContext) {
+      loaderContext.delete(this._loaderKey(primaryId));
+    }
+  },
+
+  /**
    * @memberof BaoModel
    * @description
    * This is the primary way to load multiple objects given an array of ids.
@@ -163,9 +209,10 @@ const BatchLoadingMethods = {
     // First check loaderContext for existing items
     if (loaderContext) {
       primaryIds.forEach((id) => {
-        if (loaderContext.has(id)) {
+        const loaderKey = this._loaderKey(id);
+        if (loaderContext.has(loaderKey)) {
           const instance = this._createFromDyItem(
-            loaderContext.get(id)._dyData,
+            loaderContext.get(loaderKey)._dyData,
           );
           results[id] = instance;
         } else {
@@ -222,7 +269,7 @@ const BatchLoadingMethods = {
 
             // Add to loader context if provided
             if (loaderContext) {
-              loaderContext.set(primaryId, instance);
+              loaderContext.set(this._loaderKey(primaryId), instance);
             }
           });
         }
@@ -277,7 +324,7 @@ const BatchLoadingMethods = {
         if (fb.item) {
           const instance = this._createFromDyItem(fb.item);
           results[instance.getPrimaryId()] = instance;
-          if (loaderContext) loaderContext.set(id, instance);
+          if (loaderContext) loaderContext.set(this._loaderKey(id), instance);
         }
       }
     }
@@ -342,13 +389,16 @@ const BatchLoadingMethods = {
     }
 
     // Check loader context first (unless bypassing cache)
-    if (!bypassCache && loaderContext && loaderContext.has(primaryId)) {
-      const cachedItem = loaderContext.get(primaryId);
+    const loaderKey = loaderContext ? this._loaderKey(primaryId) : null;
+    if (!bypassCache && loaderContext && loaderContext.has(loaderKey)) {
+      const cachedItem = loaderContext.get(loaderKey);
       // Return the exact same cached object instance for true caching
       return cachedItem;
     }
 
-    if (batchDelay === 0) {
+    // bypassCache skips batching too: a batch resolves through batchFind,
+    // which reads the loader cache.
+    if (batchDelay === 0 || bypassCache) {
       // Direct DynamoDB request logic
       const pkSk = this._parsePrimaryId(primaryId);
       const dyKey = this._getDyKeyForPkSk(pkSk);
@@ -392,7 +442,7 @@ const BatchLoadingMethods = {
 
       // Add to loader context if provided (unless bypassing cache)
       if (!bypassCache && loaderContext) {
-        loaderContext.set(primaryId, instance);
+        loaderContext.set(loaderKey, instance);
       }
 
       return instance;
@@ -400,7 +450,10 @@ const BatchLoadingMethods = {
 
     // Batch request logic
     return new Promise((resolve, reject) => {
-      const batchKey = `${this.name}-${batchDelay}`;
+      // One batch per model, tenant and delay: the batch builds its keys in
+      // the first caller's async context, so it must not mix tenants.
+      const tenantId = this.manager.getTenantId() ?? "";
+      const batchKey = `${this.name}-${tenantId}-${batchDelay}`;
       const batchRequests = this._getBatchRequests();
       let batchRequest = batchRequests.get(batchKey);
 

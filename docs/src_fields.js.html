@@ -181,11 +181,13 @@ class StringField extends BaoBaseField {
  */
 class DateTimeField extends BaoBaseField {
   validate(value) {
-    if (this.required &amp;&amp; value === undefined) {
+    if (this.required &amp;&amp; (value === null || value === undefined)) {
       throw new ValidationError("Field is required", null, value);
     }
+    // null clears the field (toDy maps it to a REMOVE)
     if (
       value !== undefined &amp;&amp;
+      value !== null &amp;&amp;
       !(value instanceof Date) &amp;&amp;
       typeof value !== "number" &amp;&amp;
       typeof value !== "string"

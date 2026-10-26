@@ -13,10 +13,34 @@ const {
   PrimaryKeyConfig,
   UniqueConstraintConfig,
 } = require("../src/model");
-const { StringField, IntegerField } = require("../src/fields");
+const {
+  StringField,
+  IntegerField,
+  CounterField,
+  UlidField,
+} = require("../src/fields");
 const { ConditionalError } = require("../src/exceptions");
+const { UNIQUE_CONSTRAINT_ID1 } = require("../src/constants");
 
 let testId, User;
+
+// A unique-constrained model with a counter, so a create goes through the
+// transaction path with a relative ("+3") counter value.
+class UniqueCounter extends BaoModel {
+  static modelPrefix = "ucn";
+  static iterable = true;
+  static iterationBuckets = 1;
+
+  static fields = {
+    counterId: UlidField({ autoAssign: true }),
+    code: StringField({ required: true }),
+    hits: CounterField(),
+  };
+  static primaryKey = PrimaryKeyConfig("counterId");
+  static uniqueConstraints = {
+    uniqueCode: UniqueConstraintConfig("code", UNIQUE_CONSTRAINT_ID1),
+  };
+}
 
 beforeEach(async () => {
   await runWithBatchContext(async () => {
@@ -25,6 +49,7 @@ beforeEach(async () => {
     const manager = initTestModelsWithTenant(testConfig, testId);
 
     User = manager.getModel("User");
+    manager.registerModel(UniqueCounter);
   });
 });
 
@@ -32,8 +57,8 @@ afterEach(async () => {
   await runWithBatchContext(async () => {
     TenantContext.clearTenant();
     if (testId) {
-      await cleanupTestDataByIteration(testId, [User]);
-      await verifyCleanup(testId, [User]);
+      await cleanupTestDataByIteration(testId, [User, UniqueCounter]);
+      await verifyCleanup(testId, [User, UniqueCounter]);
     }
   });
 });
@@ -238,6 +263,22 @@ describe("Unique constraint round trips", () => {
       });
       expect(stored.exists()).toBe(true);
       expect(user._dyData).toEqual(stored._dyData);
+    });
+  });
+
+  test("create with a relative counter returns the stored number", async () => {
+    await runWithBatchContext(async () => {
+      const item = await UniqueCounter.create({ code: "c1", hits: "+3" });
+
+      const stored = await UniqueCounter.find(item.counterId, {
+        batchDelay: 0,
+        bypassCache: true,
+      });
+      expect(stored._dyData.hits).toBe(3);
+      expect(item._dyData).toEqual(stored._dyData);
+      expect((await UniqueCounter.find(item.counterId))._dyData).toEqual(
+        stored._dyData,
+      );
     });
   });
 

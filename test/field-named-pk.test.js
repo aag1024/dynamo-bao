@@ -12,8 +12,8 @@ const { ulid } = require("ulid");
 
 let testId;
 
-// A user field literally named `pk` gets the "#pk" placeholder in the update
-// expression, so the create guard must not reuse that name for `_pk`.
+// Each user field gets a "#<name>" placeholder in the update expression, so
+// the key guards must not reuse one of those names for `_pk`.
 class FieldNamedPk extends BaoModel {
   static modelPrefix = "fnp";
   static iterable = true;
@@ -22,6 +22,8 @@ class FieldNamedPk extends BaoModel {
   static fields = {
     itemId: UlidField({ autoAssign: true }),
     pk: StringField(),
+    newItemPk: StringField(),
+    migExistsPk: StringField(),
   };
   static primaryKey = PrimaryKeyConfig("itemId");
 }
@@ -47,7 +49,11 @@ describe("Field named pk", () => {
 
   test("create stores the field", async () => {
     await runWithBatchContext(async () => {
-      const item = await FieldNamedPk.create({ pk: "some-value" });
+      const item = await FieldNamedPk.create({
+        pk: "some-value",
+        newItemPk: "other-value",
+        migExistsPk: "third-value",
+      });
       expect(item.pk).toBe("some-value");
 
       const stored = await FieldNamedPk.find(item.itemId, {
@@ -55,6 +61,8 @@ describe("Field named pk", () => {
         bypassCache: true,
       });
       expect(stored.pk).toBe("some-value");
+      expect(stored.newItemPk).toBe("other-value");
+      expect(stored.migExistsPk).toBe("third-value");
     });
   });
 

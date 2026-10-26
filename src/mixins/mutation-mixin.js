@@ -693,15 +693,16 @@ const MutationMethods = {
 
       if (isNew) {
         // For new items, ensure they don't already exist, ANDed with any
-        // caller-supplied condition. Use a dedicated placeholder (not "#pk")
-        // so we never clobber a user field literally named `pk`, which
-        // _buildUpdateExpression maps to "#pk".
+        // caller-supplied condition. _buildUpdateExpression maps each field
+        // to "#<fieldName>"; user field names can't start with "_" and no
+        // system field starts with "__", so a "#__" placeholder can't clobber
+        // one.
         updateParams.ConditionExpression = updateParams.ConditionExpression
-          ? `(${updateParams.ConditionExpression}) AND attribute_not_exists(#newItemPk)`
-          : "attribute_not_exists(#newItemPk)";
+          ? `(${updateParams.ConditionExpression}) AND attribute_not_exists(#__newItemPk)`
+          : "attribute_not_exists(#__newItemPk)";
         updateParams.ExpressionAttributeNames = {
           ...updateParams.ExpressionAttributeNames,
-          "#newItemPk": "_pk",
+          "#__newItemPk": "_pk",
         };
       }
 
@@ -713,16 +714,15 @@ const MutationMethods = {
         // will then find and update the relocated canonical row. ANDed with any
         // caller-supplied condition.
         //
-        // Use a dedicated placeholder (not "#pk") so we never clobber a user
-        // field literally named `pk`, which _buildUpdateExpression maps to
-        // "#pk".
+        // Use a "#__" placeholder so we never clobber a field placeholder
+        // (see the new-item guard above).
         updateParams.ExpressionAttributeNames = {
           ...updateParams.ExpressionAttributeNames,
-          "#migExistsPk": "_pk",
+          "#__migExistsPk": "_pk",
         };
         updateParams.ConditionExpression = updateParams.ConditionExpression
-          ? `(${updateParams.ConditionExpression}) AND attribute_exists(#migExistsPk)`
-          : "attribute_exists(#migExistsPk)";
+          ? `(${updateParams.ConditionExpression}) AND attribute_exists(#__migExistsPk)`
+          : "attribute_exists(#__migExistsPk)";
       }
 
       const dyKey = writeKey;
@@ -761,6 +761,17 @@ const MutationMethods = {
             for (const [key, value] of Object.entries(dyUpdatesToSave)) {
               if (value !== undefined && value !== null) {
                 storedItem[key] = value;
+              }
+            }
+            // A relative counter ("+3") is written with ADD, which on a new
+            // item stores the number itself.
+            const { CounterFieldClass } = require("../fields");
+            for (const [key, field] of Object.entries(this.fields)) {
+              if (
+                field instanceof CounterFieldClass &&
+                typeof storedItem[key] === "string"
+              ) {
+                storedItem[key] = parseInt(storedItem[key], 10);
               }
             }
             savedItem = this._createFromDyItem(storedItem);

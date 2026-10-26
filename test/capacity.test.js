@@ -105,8 +105,8 @@ describe("Capacity Usage Tests", () => {
             email: "new-email@example.com",
             status: user.status,
           }),
-        1.0, // Expected RCU - reads are eventually consistent
-        22.0, // Expected WCU - for update with unique constraint changes (increased due to caching operations)
+        0.5, // Expected RCU - the read-back; reads are eventually consistent
+        8.0, // Expected WCU - the update transaction (item update, constraint delete and put)
       );
     });
 

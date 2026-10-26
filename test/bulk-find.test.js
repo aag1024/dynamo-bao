@@ -155,6 +155,7 @@ describe("batchFind Tests", () => {
   });
 
   test("should handle large batches correctly", async () => {
+    let manyIds;
     await runWithBatchContext(async () => {
       // Create 120 items (still exceeds DynamoDB's batch limit of 100)
       const itemPromises = [];
@@ -168,8 +169,11 @@ describe("batchFind Tests", () => {
       }
 
       const manyItems = await Promise.all(itemPromises);
-      const manyIds = manyItems.map((item) => item.getPrimaryId());
+      manyIds = manyItems.map((item) => item.getPrimaryId());
+    });
 
+    // Load in a fresh request; creates prime the loader cache of their own
+    await runWithBatchContext(async () => {
       // Load all items
       const result = await TestBulkModel.batchFind(manyIds);
 

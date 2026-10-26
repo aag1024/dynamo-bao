@@ -224,6 +224,35 @@ describe("Delete Operation Tests", () => {
     });
   });
 
+  describe("Loader cache", () => {
+    test("find after a fast-path delete in the same request misses", async () => {
+      await runWithBatchContext(async () => {
+        const user = await SimpleUser.create({
+          userId: "cached-simple-user",
+          name: "John Doe",
+        });
+        expect((await SimpleUser.find(user.userId)).exists()).toBe(true);
+
+        await SimpleUser.delete(user.userId);
+        expect((await SimpleUser.find(user.userId)).exists()).toBe(false);
+      });
+    });
+
+    test("find after a transaction-path delete in the same request misses", async () => {
+      await runWithBatchContext(async () => {
+        const user = await UserWithUnique.create({
+          userId: "cached-unique-user",
+          email: "cached@example.com",
+          name: "Jane Doe",
+        });
+        expect((await UserWithUnique.find(user.userId)).exists()).toBe(true);
+
+        await UserWithUnique.delete(user.userId);
+        expect((await UserWithUnique.find(user.userId)).exists()).toBe(false);
+      });
+    });
+  });
+
   describe("Composite Key (PK and SK)", () => {
     test("should delete item with composite key", async () => {
       await runWithBatchContext(async () => {

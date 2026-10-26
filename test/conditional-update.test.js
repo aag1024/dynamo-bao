@@ -193,6 +193,44 @@ describe("Conditional Update Tests", () => {
     });
   });
 
+  test("should keep the duplicate guard when saving a new instance with a condition", async () => {
+    await runWithBatchContext(async () => {
+      // The condition holds for the existing row, so only the guard stops
+      // this save from overwriting it.
+      const duplicate = new TestUser({
+        userId: testUser.userId,
+        name: "Duplicate User",
+        status: "active",
+      });
+      await expect(
+        duplicate.save({ condition: { name: "Test User" } }),
+      ).rejects.toThrow(ConditionalError);
+
+      const stored = await model.find(testUser.userId, {
+        batchDelay: 0,
+        bypassCache: true,
+      });
+      expect(stored.name).toBe("Test User");
+    });
+  });
+
+  test("should apply the condition when saving a new instance", async () => {
+    await runWithBatchContext(async () => {
+      const created = await new TestUser({
+        name: "New User",
+        status: "active",
+      }).save({ condition: { name: { $exists: false } } });
+      expect(created.name).toBe("New User");
+
+      await expect(
+        new TestUser({
+          name: "Other User",
+          status: "active",
+        }).save({ condition: { name: { $exists: true } } }),
+      ).rejects.toThrow(ConditionalError);
+    });
+  });
+
   test("should support $exists: false condition", async () => {
     await runWithBatchContext(async () => {
       // First create a user without the optional lastUpdated field

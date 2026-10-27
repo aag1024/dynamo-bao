@@ -2,37 +2,48 @@
   "source": {
     "include": ["./"],
     "includePattern": ".+\\.js(doc|x)?$",
-    "excludePattern": "(node_modules/|docs)"
+    "excludePattern": "(node_modules/|docs|test/)"
   },
   "plugins": ["plugins/markdown"],
   "opts": {
     "destination": "./docs",
     "recurse": true,
-    "template": "node_modules/clean-jsdoc-theme",
-    "theme_opts": {
-      "include_css": ["./jsdoc.css"],
-      "homepageTitle": "DynamoBao",
-      "title": "DynamoBao",
-      "sections": ["Tutorials", "Namespaces", "Classes"],
-      "create_style": ".gh-button-container { position: fixed; top: 20px; right: 200px; z-index: 100; }",
-      "menu": [
-        {
-          "title": "🔗 Github",
-          "link": "https://github.com/aag1024/dynamo-bao",
-          "target": "_blank"
-        },
-        {
-          "title": "📦 NPM",
-          "link": "https://www.npmjs.com/package/dynamo-bao",
-          "target": "_blank"
-        }
-      ]
-    },
+    "template": "node_modules/docdash",
     "readme": "./README.md",
     "tutorials": "./tutorials"
   },
   "markdown": {
     "hardwrap": false,
     "idInHeadings": true
+  },
+  "docdash": {
+    "meta": {
+      "title": "DynamoBao",
+      "description": "DynamoDB single-table design library for JavaScript"
+    },
+    "search": true,
+    "collapse": true,
+    "sectionOrder": ["Tutorials", "Namespaces", "Classes", "Global"],
+    "menu": {
+      "GitHub": {
+        "href": "https://github.com/aag1024/dynamo-bao",
+        "target": "_blank",
+        "class": "menu-item"
+      },
+      "npm": {
+        "href": "https://www.npmjs.com/package/dynamo-bao",
+        "target": "_blank",
+        "class": "menu-item"
+      }
+    },
+    "scripts": ["dynamo-bao.css"]
+  },
+  "templates": {
+    "default": {
+      "includeDate": false,
+      "staticFiles": {
+        "include": ["./jsdoc-theme"]
+      }
+    }
   }
 }

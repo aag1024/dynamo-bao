@@ -42,7 +42,6 @@
     "ulid": "^2.3.0"
   },
   "devDependencies": {
-    "clean-jsdoc-theme": "^4.3.0",
     "cross-env": "^7.0.3",
     "docdash": "^2.0.2",
     "eslint-plugin-promise": "^6.1.1",

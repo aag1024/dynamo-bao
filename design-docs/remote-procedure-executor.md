@@ -611,7 +611,8 @@ Assumptions: 17 ms per DynamoDB call from the data worker, 140 ms cross-region
 round trip for a user in Europe. Halve the 140 ms term for a user in the US
 East. All figures are estimates from round counts, not measurements, and the
 DO paths have no baseline today. Spikes 2 and 3 replace this table with
-measurements before any topology decision.
+measurements from the spike worker before any topology decision, and
+Phase B replaces those with product measurements.
 
 | Operation | Pinned today | DOs near users, no executor | DOs near users, with executor |
 |---|---|---|---|
@@ -636,64 +637,152 @@ Three conclusions:
 
 ## Validation spikes (before implementation)
 
-Each spike has a question, a method, and a decision it feeds. Spikes 1 to 3
-run in js-bao-wss and need no library code. Spike 4 runs in dynamo-bao.
-They can run in parallel; 1 and 2 are the gating ones.
+Each spike has a question, a method, and a decision it feeds. None of them
+touches js-bao-wss code, and none of them depends on alpha traffic: alpha
+has too little consistent load to be a representative sample, and the
+product should not carry spike instrumentation. Instead, the spikes run in
+a standalone **spike worker** with its own resources and synthetic load.
+Spikes 4 and 6 are read-only audits of js-bao-wss source. They can run in
+parallel; 1 and 3 are the gating ones.
+
+### The spike worker
+
+A small repository beside the other two (`../executor-spike`, its own git
+repo, not part of dynamo-bao or js-bao-wss), modeled on
+`js-bao-wss/tools/latency-lab`, which already has the right shape: one
+script deployed under several placements, its own DynamoDB table and IAM
+user tagged for teardown, a `resources.sh` naming every resource, and a
+`teardown.sh` that deletes exactly those. The spike worker copies that
+scaffolding and differs in three ways:
+
+- It uses **dynamo-bao 0.8.0** over aws4fetch, not raw `GetItem`, so what
+  it measures is the library's actual call pattern (per-tick batching,
+  loader cache, conditional writes, TransactWrite for unique constraints).
+- Its `models.yaml` **mirrors the js-bao-wss models on the subscribe and
+  function-invoke paths** (`Document`, `DocumentPermission`,
+  `DocumentGroupPermission`, `AppMembership`, `ConnectionMapping`, `App`,
+  `AppFunction`, the rate-limit counter), copied by hand from
+  `js-bao-wss/src/models/*.js` and `models.yaml` with the same indexes and
+  field types. A `seed.mjs` writes a few thousand documents, members, and
+  connections at realistic item sizes. The product's tables are never read
+  or written.
+- It carries **hand-written replicas of the call sequences** under test,
+  not the product's code: `subscribe` as it runs today
+  (`handleDocumentSubscription`'s order of reads and the mapping create),
+  `invoke` (`runInvocation`'s lookups plus `checkAndIncrement`), and the
+  per-message `validateDocumentAccess` check. Each replica is a list of
+  dynamo-bao calls in the product's order, with the product's branches
+  (owner short-circuit, explicit permission, group permission, no
+  memberships) selectable per request. They are transcribed from a read of
+  the product source and reviewed against it; that review is the
+  correctness risk of this approach and is stated in the results.
+
+Deployables, all from one script, as latency-lab does it:
+
+| Script | Placement | Role |
+|---|---|---|
+| `spike-data` | `aws:us-west-2` | the executor stand-in: fetch route and RPC entrypoint, runs replicas and returns `{ colo, calls, perCallMs, totalMs }` |
+| `spike-edge` | none (runs where the request enters) | hosts the `SpikeDO` class and a `SpikeWorkflow`; binds `spike-data` by service binding and by hostname |
+| `spike-edge-use1` | `aws:us-east-1` | a third vantage point, to tell "far from the data" from "in Europe" |
+
+`SpikeDO` is created with a `locationHint` taken from the request
+(`wnam`, `enam`, `weur`, `apac`, `oc`), one instance per hint, and runs
+each replica in three modes: **serial** (today's code), **local-parallel**
+(same calls under `runWithBatchContext` with the independent reads in one
+`Promise.all`, no executor), and **remote** (one call to `spike-data`,
+which runs the replica in Seattle). The DO reports its own colo from
+`request.cf` on first contact, so every sample records where it actually
+ran.
+
+The load generator is a script on a laptop looping over
+`{ hint × replica × mode × branch }` with 50 warm and 10 cold samples per
+cell, run at three times of day, writing one CSV row per sample to
+`results/`. The laptop's location does not matter: the quantity under
+test is DO-to-DynamoDB and DO-to-executor time, which is a function of the
+DO's hint and not of the client. The client-to-DO leg is left out on
+purpose; it is a known function of distance and is what unpinning is meant
+to shorten.
+
+Build cost: about three days for the harness and seed, reusing
+latency-lab's scripts, before any spike runs. The replicas are the slow
+part. The worker is torn down when the spikes are done; nothing in it is
+meant to ship, though the `spike-data` script is a natural first draft of
+`examples/cloudflare-remote-executor/`.
+
+### The spikes
 
 **Spike 1: placement over bindings.** *Question:* does a service-binding
 `fetch()` to a region-placed worker run in that region, and what does the
-hop cost? *Method:* extend `tools/latency-lab` with a probe worker pinned to
-`aws:us-west-2` that exposes a fetch route and an RPC method, each doing
-ten sequential `GetItem`s on a missing key and returning
-`{ colo: request.cf.colo, perCallMs, totalMs }`. Call it from a DO created
-with `locationHint: "weur"`, from a Workflow, and from a worker in another
-placement, through a self-binding, a separate-worker binding, RPC, and the
-public hostname, cold and warm, 50 samples each. *Decision:* which
-transport the executor uses, and the real per-hop overhead for the
-estimates. *Fail condition:* no binding form runs in Seattle; then the
-executor is reached by hostname, or the hinted-DO fallback is revisited.
-About two days.
+hop cost? *Method:* `spike-data` exposes a fetch route and an RPC method,
+each doing ten sequential `find`s on a missing key and returning
+`{ colo: request.cf.colo, perCallMs, totalMs }`. Call it from `SpikeDO`
+under each hint, from `SpikeWorkflow`, and from `spike-edge-use1`, through
+the service binding's `fetch()`, the RPC method, and the public hostname,
+cold and warm. *Decision:* which transport the executor uses, and the real
+per-hop overhead for the estimates. *Fail condition:* no binding form runs
+in Seattle; then the executor is reached by hostname, or the hinted-DO
+fallback is revisited. One day on top of the harness.
 
-**Spike 2: DO baseline.** *Question:* what do the DO paths cost today?
-*Method:* wrap `handleDocumentSubscription`, `acceptHandshake`, and
-`validateDocumentAccess` in `runWithDynamoMetrics` on alpha and record
-calls, depth, and ms to `WORKER_PERF`, one week of real traffic. *Decision:*
-the "pinned today" column becomes measured, and the branch distribution
-(owner short-circuit, empty memberships) is known. *Fail condition:* none;
-this is measurement. About a day of code plus a week of traffic.
+**Spike 2: DO baseline, reconstructed.** *Question:* what do the DO paths
+cost today? *Method:* the `serial` mode of each replica, run from the
+`wnam` hint, which is where the product's DOs live now. Per-call latency
+is measured; the call sequence is the transcribed one, so the baseline is
+"measured per-call time times the product's round structure", not a
+measurement of the product. The branch distribution (how many subscribes
+hit the owner short-circuit, how many fall through to group permissions)
+is a parameter the report shows both ends of, not a measurement.
+*Decision:* the "pinned today" column of the impact table, with error bars.
+*Fail condition:* none; this is measurement. The product's own baseline
+comes later, in Phase B step 1, when `runWithDynamoMetrics` wraps the DO
+paths as product code. Half a day of runs.
 
-**Spike 3: local restructuring without an executor.** *Question:* how much
-of the subscribe gain is parallelism alone? *Method:* wrap
-`handleDocumentSubscription` in `runWithBatchContext` and move the
-independent reads into one `Promise.all`, behind a flag on alpha, measured
-with the Spike 2 instrumentation. Then run the same code from a
-`locationHint: "weur"` test DO to measure the "DOs near users, no
-executor" column directly. *Decision:* separates improvement 2 from
-improvement 1 in the problem statement, and tells you whether the pinned
-topology alone is acceptable for a while. *Fail condition:* if local
-restructuring gets most of the way, the executor's priority drops and the
-spike's code ships on its own. About two days.
+**Spike 3: location and structure, separated.** *Question:* how much of
+the subscribe gain is parallelism, how much is location, and what does the
+"DOs near users, no executor" column really cost? *Method:* the full
+`{ hint × mode }` matrix for the `subscribe` replica. `serial` at `wnam`
+is Spike 2; `local-parallel` at `wnam` is the gain available today without
+moving anything; `serial` and `local-parallel` at `weur`, `apac`, and `oc`
+are the cost of unpinning naively; `remote` at those hints is the
+executor's promise. *Decision:* separates improvement 2 from improvement 1
+in the problem statement, and tells you whether the pinned topology alone
+is acceptable for a while. *Fail condition:* if `local-parallel` at `wnam`
+gets most of the way, the executor's priority drops and the restructuring
+ships on its own as a product change. One day of runs once Spike 1's
+transport is chosen.
 
 **Spike 4: codec coverage.** *Question:* is `_dyData` JSON-safe for every
-model in js-bao-wss? *Method:* a script over `models.yaml` listing field
-types per model against `fields.js`, flagging binary, set, and date
-representations. *Decision:* the codec's scope and whether `fromRemote` is
-needed early or DTOs suffice. Half a day.
+model in js-bao-wss? *Method:* a read-only script over js-bao-wss's
+`models.yaml` and `src/models/*.js` listing field types per model against
+dynamo-bao's `fields.js`, flagging binary, set, and date representations.
+Lives in the spike repo. *Decision:* the codec's scope and whether
+`fromRemote` is needed early or DTOs suffice. Half a day.
 
 **Spike 5: Workflow version pinning.** *Question:* does a Workflows
 instance mid-run keep the worker version it started on, or pick up a new
-deploy at its next step? *Method:* docs first, then a test workflow with a
-long sleep across a deploy that changes a logged constant. *Decision:* how
-aggressive the previous-version serving rule in the registry has to be.
-Half a day.
+deploy at its next step? *Method:* docs first, then `SpikeWorkflow` with a
+long sleep across a redeploy of `spike-edge` that changes a logged
+constant. *Decision:* how aggressive the previous-version serving rule in
+the registry has to be. Half a day.
 
 **Spike 6: ambient context audit.** *Question:* what do the services to be
 moved read from module globals or `env`? *Method:* read
 `document-permission-service.ts`, `rate-limit.ts`, `app-activity-recorder.ts`,
 `run-row-settlement.ts`, and `dispatch-reconcile.ts` for `getAppModels(env)`,
 `systemAuthorityFor`, SWR caches keyed on `env`, loggers, and feature flags.
-*Decision:* the final shape of `ProcedureContext` and the `actor` type.
-One day of reading.
+Read-only; the findings go in the spike repo's notes. *Decision:* the
+final shape of `ProcedureContext` and the `actor` type. One day of reading.
+
+### What the spikes cannot answer
+
+- **Real branch and item-size distributions.** The replicas run both ends
+  of each branch; the weighting comes later from the Phase B
+  instrumentation on real traffic.
+- **Behavior of the product's actual code**, including anything the
+  transcription missed (a cache hit the replica does not model, a write the
+  reader overlooked). Mitigated by review of the replicas against the
+  source, and closed in Phase B when each procedure is measured in place.
+- **Room relocation**: what existing DOs do when the product unpins. That
+  is a Phase C question and needs the product's namespace, not a spike.
 
 ## Implementation sequence
 
@@ -738,14 +827,18 @@ consumer.
    resolver and ingress check, the `/_data/call` route, the `DATA`
    self-binding and `DATA_BINDING_SECRET`, the ESLint restriction (warning
    level until Phase C), `inProcess` wiring in the test setup, and a probe
-   procedure that returns its colo. Acceptance: a test calls the probe
-   through `inProcess`; a deployed call from a Workflow on alpha returns
-   `SEA`.
+   procedure that returns its colo, and `runWithDynamoMetrics` around
+   `handleDocumentSubscription`, `acceptHandshake`, and
+   `validateDocumentAccess` so the DO paths finally have a product baseline
+   (this is the one piece of Spike 2 that has to live in the product).
+   Acceptance: a test calls the probe through `inProcess`; a deployed call
+   from a Workflow on alpha returns `SEA`; the DO metrics appear in
+   `WORKER_PERF`.
 2. **First Workflow consumer: `dispatch-reconcile`.** Already remote,
    read-mostly, measurable with the existing Workflow metrics once
    `finalizeWorkflowPerf` is re-wired. Replay class `conditional`.
-   Acceptance: per-reconcile DynamoDB wall time on alpha drops by the
-   round count times the measured hop difference.
+   Acceptance: per-reconcile DynamoDB wall time drops by the round count
+   times the hop difference measured in Spike 1.
 3. **Run-row settlement.** The first `needs-ledger` procedure. The marker
    is the run row's own state transition, guarded; the procedure is written
    so a replay observes the transition and returns the same result.
@@ -761,8 +854,9 @@ consumer.
 6. **Subscribe procedure and cache seeding.** `document.subscribe@1`, the
    `DocumentPermissionCache` seed method and generation counter, push
    invalidation from `emitAccessDiff`, a stated stale-allow window.
-   Measured against Spike 2. Acceptance: subscribe p50 on alpha within the
-   estimate's range, and the revocation race test passes.
+   Measured against the step 1 baseline, which by then has had weeks of
+   traffic. Acceptance: subscribe p50 within the range Spike 3's `remote`
+   mode measured, and the revocation race test passes.
 7. **Handshake and the remaining ConnectionWorker reads**, then
    `AgentSessionDO` and `CronTriggerDO`, one procedure per existing
    function, each measured. At the end of this step the ESLint restriction
@@ -771,8 +865,10 @@ consumer.
 ### Phase C: topology (separate project)
 
 Split edge and data workers, version the room namespace, unpin the edge,
-A/B on alpha the way #2862 did the original pin, with a rollback that
-re-pins without losing rooms. Gated on Phase B step 6's numbers and on
+A/B it the way #2862 did the original pin, with a rollback that re-pins
+without losing rooms. Alpha is the rehearsal for the mechanics, not the
+measurement: its traffic is too thin, so the go/no-go reads the Phase B
+step 1 metrics from production. Gated on Phase B step 6's numbers and on
 Spike 3's answer about how much the pinned topology is costing.
 
 Before production, in addition: fault tests for lost responses after

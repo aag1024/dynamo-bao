@@ -647,13 +647,20 @@ parallel; 1 and 3 are the gating ones.
 
 ### The spike worker
 
-A small repository beside the other two (`../executor-spike`, its own git
-repo, not part of dynamo-bao or js-bao-wss), modeled on
+A directory in this repository, `spikes/executor/`, modeled on
 `js-bao-wss/tools/latency-lab`, which already has the right shape: one
 script deployed under several placements, its own DynamoDB table and IAM
 user tagged for teardown, a `resources.sh` naming every resource, and a
-`teardown.sh` that deletes exactly those. The spike worker copies that
-scaffolding and differs in three ways:
+`teardown.sh` that deletes exactly those. It lives here rather than in its
+own repo because the npm package's `files` list (`bin/`, `src/`,
+`README.md`) keeps it out of the published tarball, and because a
+`file:../..` dependency makes it exercise the working tree's library code
+(including the pending read-before-write work) instead of a release. The
+two things latency-lab hardcodes that must not land in a public repo, the
+Cloudflare account id and the custom zone, move to a gitignored
+`.dev.vars` and to `workers.dev` hostnames, which also serve as the public
+hostname Spike 1 needs. Results go in a gitignored `results/`. The spike
+worker copies latency-lab's scaffolding and differs in three ways:
 
 - It uses **dynamo-bao 0.8.0** over aws4fetch, not raw `GetItem`, so what
   it measures is the library's actual call pattern (per-tick batching,
@@ -707,7 +714,7 @@ Build cost: about three days for the harness and seed, reusing
 latency-lab's scripts, before any spike runs. The replicas are the slow
 part. The worker is torn down when the spikes are done; nothing in it is
 meant to ship, though the `spike-data` script is a natural first draft of
-`examples/cloudflare-remote-executor/`.
+`examples/cloudflare-remote-executor/`, one directory over.
 
 ### The spikes
 
@@ -754,7 +761,7 @@ transport is chosen.
 model in js-bao-wss? *Method:* a read-only script over js-bao-wss's
 `models.yaml` and `src/models/*.js` listing field types per model against
 dynamo-bao's `fields.js`, flagging binary, set, and date representations.
-Lives in the spike repo. *Decision:* the codec's scope and whether
+Lives in `spikes/executor/audit/`. *Decision:* the codec's scope and whether
 `fromRemote` is needed early or DTOs suffice. Half a day.
 
 **Spike 5: Workflow version pinning.** *Question:* does a Workflows
@@ -769,7 +776,7 @@ moved read from module globals or `env`? *Method:* read
 `document-permission-service.ts`, `rate-limit.ts`, `app-activity-recorder.ts`,
 `run-row-settlement.ts`, and `dispatch-reconcile.ts` for `getAppModels(env)`,
 `systemAuthorityFor`, SWR caches keyed on `env`, loggers, and feature flags.
-Read-only; the findings go in the spike repo's notes. *Decision:* the
+Read-only; the findings go in `spikes/executor/audit/`. *Decision:* the
 final shape of `ProcedureContext` and the `actor` type. One day of reading.
 
 ### What the spikes cannot answer

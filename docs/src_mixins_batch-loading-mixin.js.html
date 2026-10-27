@@ -124,11 +124,10 @@ const BatchLoadingMethods = {
    * @private
    */
   _loaderKey(primaryId) {
-    const pkSk = this._parsePrimaryId(primaryId);
     return JSON.stringify([
       this.name,
       this.manager.getTenantId() ?? null,
-      this.makePrimaryId(pkSk.pk, pkSk.sk),
+      this._canonicalPrimaryId(primaryId),
     ]);
   },
 

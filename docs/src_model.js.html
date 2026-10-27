@@ -1121,6 +1121,17 @@ class BaoModel {
     return this.constructor.getPrimaryId(this._dyData);
   }
 
+  /**
+   * The string form of a primary id given as a string or an object (either
+   * `{ pk, sk }` or the key field values), as {@link BaoModel#getPrimaryId}
+   * returns it.
+   * @private
+   */
+  static _canonicalPrimaryId(primaryId) {
+    const pkSk = this._parsePrimaryId(primaryId);
+    return this.makePrimaryId(pkSk.pk, pkSk.sk);
+  }
+
   static _parsePrimaryId(primaryId) {
     if (typeof primaryId === "object" &amp;&amp; primaryId !== null) {
       if (primaryId.pk !== undefined) {

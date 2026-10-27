@@ -1,0 +1,662 @@
+/*
+ * DynamoBao docs theme: overrides on top of docdash's styles/jsdoc.css.
+ * Copied into docs/ by jsdoc (templates.default.staticFiles) and linked via
+ * docdash.scripts in jsdoc.json.
+ */
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap");
+
+:root {
+  --bg: #ffffff;
+  --bg-subtle: #f7f7f5;
+  --bg-code: #f4f3ef;
+  --border: #e6e4de;
+  --text: #2b2a27;
+  --text-muted: #6b6860;
+  --heading: #16150f;
+  --accent: #b4521d;
+  --accent-soft: #fbeee5;
+  --code-text: #2b2a27;
+  --tok-str: #2f7d4a;
+  --tok-kwd: #9b3dbb;
+  --tok-com: #8c897f;
+  --tok-typ: #1f6fb2;
+  --tok-lit: #b4521d;
+  --tok-pun: #6b6860;
+  --nav-width: 17rem;
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #17171a;
+    --bg-subtle: #1d1d21;
+    --bg-code: #222227;
+    --border: #2e2e34;
+    --text: #d9d8d3;
+    --text-muted: #9a988f;
+    --heading: #f4f3ee;
+    --accent: #f0915a;
+    --accent-soft: #3a261b;
+    --code-text: #e3e2dc;
+    --tok-str: #8fd19e;
+    --tok-kwd: #d4a2f0;
+    --tok-com: #7f7d76;
+    --tok-typ: #84bdf0;
+    --tok-lit: #f0a77a;
+    --tok-pun: #a5a39b;
+  }
+}
+
+/* ---------- Base ---------- */
+
+html,
+body {
+  background: var(--bg);
+}
+
+body {
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 15.5px;
+  line-height: 1.65;
+  padding: 0;
+  -webkit-font-smoothing: antialiased;
+}
+
+a,
+a:active,
+article a,
+article .description a {
+  color: var(--accent);
+  border-bottom: none;
+}
+
+a:hover,
+article a:hover {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  color: var(--heading);
+  font-family: var(--font-sans);
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+p,
+ul,
+ol,
+blockquote {
+  margin-bottom: 1em;
+}
+
+blockquote {
+  margin-left: 0;
+  padding: 0.25em 1em;
+  border-left: 3px solid var(--accent);
+  background: var(--accent-soft);
+  border-radius: 0 6px 6px 0;
+}
+
+hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 2.5em 0;
+}
+
+/* ---------- Sidebar ---------- */
+
+nav {
+  width: var(--nav-width);
+  background: var(--bg-subtle);
+  border-right: 1px solid var(--border);
+  padding: 0 1.25rem 2rem;
+}
+
+nav::before {
+  content: "DynamoBao";
+  display: block;
+  margin: 1.4rem 0 0.25rem;
+  font-size: 1.2rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--heading);
+}
+
+nav #nav-search {
+  width: 100%;
+  height: 2.25rem;
+  margin: 0.75rem 0 0.5rem;
+  padding: 0 0.75rem;
+  font: inherit;
+  font-size: 0.875rem;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  outline: none;
+}
+
+nav #nav-search:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+nav h2 {
+  display: inline-block;
+  margin: 0.5rem 0.9rem 0 0;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+nav > h2 > a {
+  margin: 0;
+  color: var(--text-muted) !important;
+}
+
+nav > h2 > a:hover {
+  color: var(--accent) !important;
+  text-decoration: none;
+}
+
+nav h3 {
+  margin: 1.6rem 0 0.4rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+
+nav ul {
+  font-family: var(--font-sans);
+  line-height: 1.4;
+}
+
+nav ul a,
+nav ul a:active {
+  font-family: var(--font-sans);
+  font-size: 0.875rem;
+  line-height: 1.4;
+  padding: 0.22rem 0.5rem;
+  margin: 0 -0.5rem;
+  border-radius: 6px;
+}
+
+nav > ul {
+  padding: 0;
+}
+
+nav > ul > li > a {
+  margin-top: 0;
+  color: var(--text);
+}
+
+nav ul a:hover {
+  background: var(--bg);
+  color: var(--accent);
+  text-decoration: none;
+}
+
+nav ul ul a,
+nav ul ul a:active {
+  margin-left: 0.25rem;
+  padding-left: 0.75rem;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  border-left: 1px solid var(--border);
+  border-radius: 0 6px 6px 0;
+}
+
+/* ---------- Main column ---------- */
+
+#main {
+  float: none;
+  width: auto;
+  max-width: 54rem;
+  margin-left: var(--nav-width);
+  padding: 2.5rem 3rem 1rem;
+}
+
+section {
+  background: transparent;
+  padding: 0;
+}
+
+h1.page-title {
+  margin: 0 0 1.5rem;
+  font-size: 2.25rem;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  line-height: 1.15;
+}
+
+/* The class/namespace name repeats the page title directly below it. */
+section > header > h2 {
+  display: none;
+}
+
+.class-description {
+  margin-bottom: 1.5em;
+}
+
+h3.subsection-title {
+  margin: 3rem 0 0.5rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 1.4rem;
+}
+
+/* Member / method headings */
+h4.name {
+  margin: 2.5rem 0 0.75rem;
+  padding: 0.6rem 0.9rem;
+  font-family: var(--font-mono);
+  font-size: 0.95rem;
+  font-weight: 500;
+  line-height: 1.5;
+  color: var(--heading);
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 6px;
+  word-break: break-word;
+  box-shadow: none;
+}
+
+h4.name a {
+  color: var(--accent);
+}
+
+.name,
+.signature {
+  font-family: var(--font-mono);
+}
+
+.signature,
+.type-signature,
+.type-signature:last-child {
+  color: var(--text-muted);
+}
+
+h4.name .type-signature:last-child {
+  color: var(--tok-typ);
+}
+
+.signature-attributes {
+  font-size: 0.75em;
+  font-style: normal;
+  color: var(--text-muted);
+  vertical-align: super;
+}
+
+h5,
+.container-overview .subsection-title,
+h5.h5-parameters,
+h5.h5-returns,
+h5.h5-examples {
+  margin: 1.25rem 0 0.5rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+/* Description / Source block */
+.details {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.25rem 1rem;
+  margin: 0 0 1rem;
+  padding: 0;
+  border: none;
+  font-size: inherit;
+}
+
+.details dt {
+  margin: 0;
+  padding: 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  line-height: 1.65rem;
+}
+
+.details dd {
+  margin: 0;
+  padding: 0;
+}
+
+.details dd.tag-description {
+  grid-column: 1 / -1;
+  color: var(--text);
+}
+
+.details dt.tag-description {
+  display: none;
+}
+
+.details dd.tag-source,
+.details dd.tag-source a {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.details ul,
+.details ul.dummy {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.details dd > ul.dummy > li > p:last-child {
+  margin-bottom: 0;
+}
+
+.param-desc p {
+  margin-bottom: 0.5rem;
+}
+
+dl.param-type {
+  display: flex;
+  gap: 0.5rem;
+  margin: 0 0 1rem;
+  padding: 0;
+  font-size: 0.85rem;
+  border: none;
+}
+
+dl.param-type dt {
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+dl.param-type dd {
+  margin: 0;
+}
+
+.important,
+.tag-deprecated {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* ---------- Tables ---------- */
+
+table {
+  width: 100%;
+  margin: 0.5rem 0 1.25rem;
+  border-collapse: separate;
+  border-spacing: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  font-size: 0.875rem;
+}
+
+td,
+th {
+  padding: 0.55rem 0.8rem;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+  text-align: left;
+}
+
+tbody tr:last-child td {
+  border-bottom: none;
+}
+
+thead tr,
+thead tr th {
+  background: var(--bg-subtle);
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.params td,
+.params .name,
+.props .name,
+.name code {
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+}
+
+.params td.description,
+.props td.description {
+  font-family: var(--font-sans);
+  font-size: 0.875rem;
+}
+
+.params td.attributes {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
+span.param-type,
+.params td .param-type,
+.param-type dd {
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  color: var(--tok-typ);
+}
+
+/* Nested property tables */
+.params table,
+.props table {
+  margin: 0.5rem 0 0;
+}
+
+/* ---------- Code ---------- */
+
+tt,
+code,
+kbd,
+samp,
+pre {
+  font-family: var(--font-mono);
+}
+
+:not(pre) > code {
+  padding: 0.12em 0.38em;
+  font-size: 0.86em;
+  color: var(--code-text);
+  background: var(--bg-code);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+td.name > code,
+h4.name code {
+  padding: 0;
+  background: none;
+  border: none;
+}
+
+.prettyprint,
+pre.prettyprint,
+pre.prettyprint.source {
+  margin: 0.75rem 0 1.5rem;
+  padding: 1rem 1.15rem;
+  overflow: auto;
+  background: var(--bg-code);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: none;
+  width: auto;
+}
+
+.prettyprint code {
+  padding: 0;
+  font-size: 0.84rem;
+  line-height: 1.6;
+  color: var(--code-text);
+  background: none;
+  border: none;
+  display: block;
+}
+
+.prettyprint.source {
+  width: auto;
+}
+
+/* Source-file pages (line numbers) */
+.prettyprint.linenums {
+  padding: 0;
+}
+
+.prettyprint.linenums ol {
+  padding-left: 3.5rem;
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.prettyprint.linenums li {
+  border-left: 1px solid var(--border);
+  padding-left: 0.75rem;
+}
+
+.prettyprint.linenums li.selected,
+.prettyprint.linenums li.selected * {
+  background: var(--accent-soft);
+}
+
+.prettyprint.linenums li code:empty:after {
+  content: "";
+}
+
+/* Syntax colours (google-code-prettify tokens) */
+.prettyprint .str,
+.prettyprint .atv {
+  color: var(--tok-str);
+}
+.prettyprint .kwd,
+.prettyprint .tag {
+  color: var(--tok-kwd);
+}
+.prettyprint .com {
+  color: var(--tok-com);
+  font-style: italic;
+}
+.prettyprint .typ,
+.prettyprint .atn {
+  color: var(--tok-typ);
+}
+.prettyprint .lit,
+.prettyprint .dec {
+  color: var(--tok-lit);
+}
+.prettyprint .pun,
+.prettyprint .opn,
+.prettyprint .clo {
+  color: var(--tok-pun);
+}
+.prettyprint .pln,
+.prettyprint .var,
+.prettyprint .fun {
+  color: var(--code-text);
+}
+
+/* ---------- README / tutorials ---------- */
+
+.usertext h1,
+.readme h1 {
+  font-size: 2rem;
+  margin: 0 0 1rem;
+}
+
+.usertext h2,
+.readme h2 {
+  margin: 2.5rem 0 0.75rem;
+  padding-bottom: 0.4rem;
+  font-size: 1.45rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.usertext h3,
+.readme h3 {
+  margin: 2rem 0 0.5rem;
+  font-size: 1.15rem;
+}
+
+.usertext h4,
+.readme h4 {
+  margin: 1.5rem 0 0.5rem;
+  font-size: 1rem;
+}
+
+.usertext ul li,
+.usertext ol li {
+  margin: 0.2rem 0;
+}
+
+/* ---------- Footer ---------- */
+
+footer {
+  margin-left: var(--nav-width);
+  max-width: 54rem;
+  padding: 2rem 3rem 3rem;
+  font-style: normal;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+footer a {
+  color: var(--text-muted);
+}
+
+/* ---------- Small screens ---------- */
+
+@media only screen and (max-width: 680px) {
+  nav {
+    width: var(--nav-width);
+    left: calc(-1 * var(--nav-width));
+    background: var(--bg-subtle);
+    padding: 0 1.25rem 2rem;
+  }
+
+  #main {
+    margin-left: 0;
+    padding: 1.5rem 1rem 1rem;
+  }
+
+  #main h1.page-title {
+    margin: 0.5rem 3rem 1.25rem 0;
+    font-size: 1.75rem;
+  }
+
+  footer {
+    margin-left: 0;
+    padding: 1.5rem 1rem 2rem;
+  }
+
+  .details {
+    grid-template-columns: 1fr;
+  }
+
+  table {
+    display: block;
+    overflow-x: auto;
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  .navicon,
+  .navicon:before,
+  .navicon:after {
+    background: var(--text);
+  }
+}

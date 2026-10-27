@@ -8,6 +8,8 @@ DynamoBao is a simple lightweight library for building DynamoDB models in JavaSc
 DynamoDB for years and generally love it, but find getting started difficult and repetitive.
 DynamoBao is the tool I wish I had when I started.
 
+Release notes are in [CHANGELOG.md](CHANGELOG.md).
+
 ## Principles
 
 - Expose just enough of Dynamo's features to make it easy to model many common types of data.

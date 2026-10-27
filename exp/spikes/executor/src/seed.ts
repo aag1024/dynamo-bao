@@ -8,22 +8,22 @@
 import { getAppModels, getAdminModels, withApp, withBatch } from "./db";
 import type { DbEnv } from "./db";
 
-export const APP_ID = "01SPIKEAPP0000000000000000";
+export const APP_ID = "01JSP1KEAPP000000000000000";
 export const USERS = {
-  owner: "01SPIKEUSEROWNER0000000000",
-  reader: "01SPIKEUSERREADER000000000",
-  group: "01SPIKEUSERGROUP0000000000",
-  link: "01SPIKEUSERLINK00000000000",
-  deny: "01SPIKEUSERDENY00000000000",
+  owner: "01JSP1KE0WNER0000000000000",
+  reader: "01JSP1KEREADER000000000000",
+  group: "01JSP1KEGRP000000000000000",
+  link: "01JSP1KEANYB0DY00000000000",
+  deny: "01JSP1KEDENY00000000000000",
 } as const;
 export const FUNCTION_KEY = "spike-fn";
-export const CONFIG_ID = "01SPIKECFG0000000000000000";
+export const CONFIG_ID = "01JSP1KECFG000000000000000";
 export const EXISTING_WINDOW = "2026-01-01T00:00:00.000Z";
 export const LIMITED_WINDOW = "2026-01-01T00:01:00.000Z";
 export const LIMIT_KEY = `functionInvoke_appId_${APP_ID}_functionId_fn`;
 
 export function docId(i: number) {
-  return `01SPIKEDOC${String(i).padStart(16, "0")}`;
+  return `01JSP1KED0C${String(i).padStart(15, "0")}`;
 }
 export function connId(i: number, j: number) {
   return `conn-${i}-${j}`;
@@ -48,7 +48,7 @@ export async function seed(spec: SeedSpec, env: DbEnv) {
   let created = 0;
   await withBatch(async () => {
     if (spec.from === 0) {
-      if (await swallowExists(A.App.create({ appId: APP_ID, name: "spike", mode: "test", createdBy: "01SPIKEADMIN00000000000000" }))) created++;
+      if (await swallowExists(A.App.create({ appId: APP_ID, name: "spike", mode: "test", createdBy: "01JSP1KEADM1N0000000000000" }))) created++;
     }
     await withApp(APP_ID, async () => {
       const M = getAppModels(env);
@@ -61,12 +61,12 @@ export async function seed(spec: SeedSpec, env: DbEnv) {
           groupType: "team", groupId: "t1", groupComposite: "team#t1", addedBy: USERS.owner,
         }))) created++;
         if (await swallowExists(M.ServerFunction.create({
-          functionId: "01SPIKEFN00000000000000000", appId: APP_ID, functionKey: FUNCTION_KEY,
-          activeConfigId: CONFIG_ID, access: "member", createdBy: "01SPIKEADMIN00000000000000",
+          functionId: "01JSP1KEFN0000000000000000", appId: APP_ID, functionKey: FUNCTION_KEY,
+          activeConfigId: CONFIG_ID, access: "member", createdBy: "01JSP1KEADM1N0000000000000",
         }))) created++;
         if (await swallowExists(M.ServerFunctionConfig.create({
-          configId: CONFIG_ID, functionId: "01SPIKEFN00000000000000000", appId: APP_ID,
-          entry: "index.js", envelopeKey: "spike-envelope", createdBy: "01SPIKEADMIN00000000000000",
+          configId: CONFIG_ID, functionId: "01JSP1KEFN0000000000000000", appId: APP_ID,
+          entry: "index.js", envelopeKey: "spike-envelope", createdBy: "01JSP1KEADM1N0000000000000",
         }))) created++;
         const far = new Date("2027-01-01T00:00:00Z");
         if (await swallowExists(M.RateLimitWindow.create({ limitKey: LIMIT_KEY, windowStart: EXISTING_WINDOW, appId: APP_ID, count: 1, ttl: far }))) created++;

@@ -36,9 +36,9 @@ const BRANCHES = {
   invoke: ["admin", "member", "member-new-window", "member-limited"],
   ping: ["default"],
 };
-const USERS = { owner: "01SPIKEUSEROWNER0000000000", reader: "01SPIKEUSERREADER000000000", group: "01SPIKEUSERGROUP0000000000", link: "01SPIKEUSERLINK00000000000", deny: "01SPIKEUSERDENY00000000000" };
-const APP = "01SPIKEAPP0000000000000000";
-const docId = (i) => `01SPIKEDOC${String(i).padStart(16, "0")}`;
+const USERS = { owner: "01JSP1KE0WNER0000000000000", reader: "01JSP1KEREADER000000000000", group: "01JSP1KEGRP000000000000000", link: "01JSP1KEANYB0DY00000000000", deny: "01JSP1KEDENY00000000000000" };
+const APP = "01JSP1KEAPP000000000000000";
+const docId = (i) => `01JSP1KED0C${String(i).padStart(15, "0")}`;
 
 const status = await api(env.edge, env.token, "/status");
 const docs = status.documents ?? 0;

@@ -9,6 +9,21 @@ Each version heading links to the tag that was published to npm. Entries before
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-10-27
+
+### Fixed
+
+- `update()` on a model with a GSI that uses `modelPrefix` as one half of its
+  key threw "Update includes GSI partition key modelPrefix but is missing sort
+  key" unless the update also carried the other half. 0.8.0 stopped
+  pre-reading the row on plain updates, and the partial-key guard
+  then treated the constant half as a newly provided key. The index is now
+  skipped when the field half is not in the update, since its key cannot
+  change. Plain field and counter updates on such models stay at one
+  `UpdateItem`. Models with a `modelPrefix` primary key behave the same in
+  `legacy` and `tenant-scoped` modes; `migrating` mode still reads first
+  because it writes in place.
+
 ## [0.8.0] - 2026-10-27
 
 Cuts DynamoDB round trips and per-item CPU in the core read and write paths.
@@ -82,7 +97,7 @@ No key formats, index keys or constraint rows change.
 ### Fixed
 
 - `update()` with an object primary id on an iterable model failed with
-  "Type mismatch for Index Key _iter_sk". The id is now converted to its
+  "Type mismatch for Index Key" on `_iter_sk`. The id is now converted to its
   string form first, which also stops an object id from being stored as the
   owner on a unique-constraint row. (#15)
 - Relative counter values such as `"+3"` on a counter used in an index key
@@ -183,9 +198,10 @@ No key formats, index keys or constraint rows change.
   block in the model YAML populates a normalised `_searchText` attribute on
   every save, with `caseSensitive`, `minTermLength` and `dedupe` options.
   (#10)
-- `Model.searchAll(terms, options)` and `Model.searchBucket(bucketNum, terms,
-  options)` async generators, with `$and` (default) or `$or` term matching,
-  and `Model.tokenizeSearchQuery(query)` that respects quoted phrases. (#10)
+- `Model.searchAll(terms, options)` and
+  `Model.searchBucket(bucketNum, terms, options)` async generators, with
+  `$and` (default) or `$or` term matching, and
+  `Model.tokenizeSearchQuery(query)` that respects quoted phrases. (#10)
 - A new `iter_search_index` GSI replaces the legacy `iter_index` for
   iteration and search. `bao-update-table` adds it to existing tables; the
   legacy index is left in place for manual removal. The
@@ -451,7 +467,8 @@ Initial release: single-table models with fields, GSIs, unique constraints,
 related fields, counters, TTL, filters, pagination, batch loading, hooks,
 YAML codegen and a table creation tool.
 
-[Unreleased]: https://github.com/aag1024/dynamo-bao/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/aag1024/dynamo-bao/compare/v0.8.1...HEAD
+[0.8.1]: https://github.com/aag1024/dynamo-bao/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/aag1024/dynamo-bao/compare/v0.7.3...v0.8.0
 [0.7.3]: https://github.com/aag1024/dynamo-bao/compare/v0.7.2...v0.7.3
 [0.7.2]: https://github.com/aag1024/dynamo-bao/compare/v0.7.1...v0.7.2

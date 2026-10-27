@@ -631,20 +631,22 @@ const MutationMethods = {
         Object.entries(this.indexes).forEach(([, index]) => {
           const pkField = index.pk;
           const skField = index.sk;
-          const pkInUpdate =
-            pkField === "modelPrefix" ||
-            indexComputationData[pkField] !== undefined;
-          const skInUpdate =
-            skField === "modelPrefix" ||
-            indexComputationData[skField] !== undefined;
+          // Nothing to backfill when one half is the modelPrefix constant:
+          // if the field half is in the update both halves are known, and
+          // if it is not, the index key does not change.
+          if (pkField === "modelPrefix" || skField === "modelPrefix") {
+            return;
+          }
+          const pkInUpdate = indexComputationData[pkField] !== undefined;
+          const skInUpdate = indexComputationData[skField] !== undefined;
 
-          if (pkInUpdate && !skInUpdate && skField !== "modelPrefix") {
+          if (pkInUpdate && !skInUpdate) {
             const currentValue = currentItem._dyData[skField];
             if (currentValue !== undefined) {
               indexComputationData[skField] = currentValue;
             }
           }
-          if (skInUpdate && !pkInUpdate && pkField !== "modelPrefix") {
+          if (skInUpdate && !pkInUpdate) {
             const currentValue = currentItem._dyData[pkField];
             if (currentValue !== undefined) {
               indexComputationData[pkField] = currentValue;
@@ -1219,10 +1221,19 @@ const MutationMethods = {
         }
       }
 
-      // Detect partial GSI key updates that would cause index staleness
+      // Detect partial GSI key updates that would cause index staleness.
+      // A "modelPrefix" half is a constant, so an update that leaves the
+      // other half alone leaves the index key unchanged: skip it rather
+      // than treat the constant as a newly provided key.
       if (isUpdate && index.indexId !== undefined) {
-        const pkProvided = index.pk === "modelPrefix" || pkValue !== undefined;
-        const skProvided = index.sk === "modelPrefix" || skValue !== undefined;
+        if (
+          (index.pk === "modelPrefix" && skValue === undefined) ||
+          (index.sk === "modelPrefix" && pkValue === undefined)
+        ) {
+          return;
+        }
+        const pkProvided = pkValue !== undefined;
+        const skProvided = skValue !== undefined;
         if (pkProvided && !skProvided) {
           throw new Error(
             `Update includes GSI partition key "${index.pk}" for index "${indexName}" ` +

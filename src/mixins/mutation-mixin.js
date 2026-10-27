@@ -421,6 +421,12 @@ const MutationMethods = {
         forceReindex = false,
       } = options;
 
+      // The id is used as a string below (iteration keys, the relatedId on
+      // unique constraint rows), so accept an object id by normalizing it.
+      if (!isNew) {
+        primaryId = this._canonicalPrimaryId(primaryId);
+      }
+
       logger.debug("saveItem", primaryId, isNew, instanceObj);
       let consumedCapacity = [];
 
@@ -475,6 +481,44 @@ const MutationMethods = {
             }
           }
         }
+      }
+
+      // A relative counter ("+3") is written with ADD, which DynamoDB applies
+      // at write time, but an index key built from it needs the resulting
+      // number. On a new item ADD just stores the delta, so write that. On an
+      // existing item, a counter that's part of an index key is written as
+      // the loaded value plus the delta, guarded on the loaded value, so a
+      // concurrent change fails the update (ConditionalError) instead of
+      // leaving the index key stale. Other counters keep the atomic ADD.
+      const counterGuards = [];
+      const { CounterFieldClass } = require("../fields");
+      for (const [key, field] of Object.entries(this.fields)) {
+        const dyValue = dyUpdatesToSave[key];
+        if (
+          !(field instanceof CounterFieldClass) ||
+          typeof dyValue !== "string"
+        ) {
+          continue;
+        }
+        const delta = parseInt(dyValue, 10);
+        let value;
+        if (isNew) {
+          value = delta;
+        } else if (
+          Object.values(this.indexes).some(
+            (index) =>
+              index.indexId !== undefined &&
+              (index.pk === key || index.sk === key),
+          )
+        ) {
+          const loadedValue = currentItem._loadedDyData[key];
+          value = Number(loadedValue ?? 0) + delta;
+          counterGuards.push({ fieldName: key, loadedValue });
+        } else {
+          continue;
+        }
+        dyUpdatesToSave[key] = value;
+        indexComputationData[key] = value;
       }
 
       // Backfill from currentItem for GSI consistency
@@ -725,6 +769,26 @@ const MutationMethods = {
           : "attribute_exists(#__migExistsPk)";
       }
 
+      for (const { fieldName, loadedValue } of counterGuards) {
+        const name = `#__counterGuard_${fieldName}`;
+        const value = `:__counterGuard_${fieldName}`;
+        updateParams.ExpressionAttributeNames = {
+          ...updateParams.ExpressionAttributeNames,
+          [name]: fieldName,
+        };
+        let guard = `attribute_not_exists(${name})`;
+        if (loadedValue != null) {
+          guard = `${name} = ${value}`;
+          updateParams.ExpressionAttributeValues = {
+            ...updateParams.ExpressionAttributeValues,
+            [value]: loadedValue,
+          };
+        }
+        updateParams.ConditionExpression = updateParams.ConditionExpression
+          ? `(${updateParams.ConditionExpression}) AND ${guard}`
+          : guard;
+      }
+
       const dyKey = writeKey;
       logger.debug("dyKey", dyKey);
 
@@ -761,17 +825,6 @@ const MutationMethods = {
             for (const [key, value] of Object.entries(dyUpdatesToSave)) {
               if (value !== undefined && value !== null) {
                 storedItem[key] = value;
-              }
-            }
-            // A relative counter ("+3") is written with ADD, which on a new
-            // item stores the number itself.
-            const { CounterFieldClass } = require("../fields");
-            for (const [key, field] of Object.entries(this.fields)) {
-              if (
-                field instanceof CounterFieldClass &&
-                typeof storedItem[key] === "string"
-              ) {
-                storedItem[key] = parseInt(storedItem[key], 10);
               }
             }
             savedItem = this._createFromDyItem(storedItem);

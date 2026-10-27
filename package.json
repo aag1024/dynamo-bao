@@ -32,7 +32,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/aag1024/dynamo-bao"
+    "url": "git+https://github.com/aag1024/dynamo-bao.git"
   },
   "dependencies": {
     "aws4fetch": "^1.0.20",
@@ -53,12 +53,12 @@
     "prettier": "3.4.2"
   },
   "bin": {
-    "bao-init": "./bin/dynamo-bao-create-table.js",
-    "bao-create-table": "./bin/bao-create-table.js",
-    "bao-codegen": "./bin/codegen.js",
-    "bao-watch": "./bin/watch.js",
-    "bao-update-table": "./bin/dynamo-bao-update-table.js",
-    "bao-delete": "./bin/dynamo-bao-delete-table.js",
-    "bao-rebuild-search-text": "./bin/bao-rebuild-search-text.js"
+    "bao-init": "bin/dynamo-bao-create-table.js",
+    "bao-create-table": "bin/bao-create-table.js",
+    "bao-codegen": "bin/codegen.js",
+    "bao-watch": "bin/watch.js",
+    "bao-update-table": "bin/dynamo-bao-update-table.js",
+    "bao-delete": "bin/dynamo-bao-delete-table.js",
+    "bao-rebuild-search-text": "bin/bao-rebuild-search-text.js"
   }
 }

@@ -123,10 +123,12 @@ bindings turns out not to work.
 ## The plan
 
 A plan is JSON. The client builder below produces it; the executor consumes
-it.
+it. A request carries an array of plans (see "Multi-plan request"); the
+common case is an array of one.
 
 ```json
 {
+  "id": "subscribe",
   "tenant": "app_123",
   "steps": [
     { "id": "direct",  "op": "find",     "model": "DocumentPermission", "key": ["doc_1", "user_9"] },
@@ -159,6 +161,7 @@ it.
 | `update` | `model`, `key`, `data`, optional `condition` | `Model.update` with condition and relative counters |
 | `delete` | `model`, `key`, optional `condition` | `Model.delete` |
 | `call` | `proc`, `args` | a registered procedure |
+| `transact` | `items[]`, optional `idempotencyKey` | one `TransactWriteItems` (see below) |
 
 ### References
 
@@ -204,8 +207,64 @@ Per step, `onError` is one of:
 `ConditionalError` and `ItemNotFoundError`, which is the common case for
 "create, and if it already existed that is fine".
 
-A `transact` op grouping several writes into one `TransactWriteItems` is a
-likely follow-up but is out of scope for the first version.
+### Transact step
+
+A `transact` step groups several writes into one `TransactWriteItems` call,
+so they apply all or nothing.
+
+```json
+{ "id": "commit", "op": "transact", "idempotencyKey": "run_42:settle",
+  "items": [
+    { "op": "update", "model": "DocumentCollection", "key": "col_1",
+      "data": { "documentCount": "+1" }, "condition": { "documentCount": 7 } },
+    { "op": "create", "model": "CollectionMembership", "data": { "...": "..." } },
+    { "op": "conditionCheck", "model": "DocumentPermission", "key": ["doc_1", "user_9"],
+      "condition": { "permission": { "$in": ["owner", "read-write"] } } }
+  ],
+  "when": { "level": { "$ne": null } },
+  "onConditionalError": "capture" }
+```
+
+Items are `create`, `update`, `delete`, or `conditionCheck`. The first three
+take the same arguments as the standalone ops. `conditionCheck` asserts a
+condition on a row without writing it.
+
+What it adds over a level of independent writes:
+
+- **Atomicity across rows.** A counter and the row it counts, or a
+  group-permission row and its revision, either both land or neither does.
+- **`conditionCheck` items.** A write guarded by another row's state, checked
+  by DynamoDB at commit time. This is the atomic cousin of `when`: a `when`
+  predicate is evaluated on the executor against a snapshot a few
+  milliseconds old, a condition check has no window.
+- **Idempotency.** `idempotencyKey` maps to `ClientRequestToken`, which
+  DynamoDB honors for ten minutes. A durable run that replays must not
+  double-settle; js-bao-wss's `idempotent-transact.ts` exists for this.
+- **Per-item failure reasons.** On cancellation the captured result carries
+  `reasons[i].code` in item order, so a later `when` or the caller can tell
+  which condition failed without a read.
+
+Limits and costs, which are DynamoDB's own:
+
+- At most 100 items and 4 MB per transaction. Write units are doubled per
+  item.
+- The same row cannot appear twice. The executor rejects a transact step
+  whose items collide on a key rather than merging them.
+- Transactions return no attributes. The step's result is `{ "applied": true }`
+  or the captured error. A caller that needs the written rows adds a `find`
+  in a later level, the same read-back dynamo-bao does for unique-constraint
+  transactions.
+- A model with unique constraints expands one logical write into several
+  transaction items (the row plus its constraint rows). The executor counts
+  the expanded items against the limit.
+
+Use a transact step when an invariant spans rows or a write must be guarded
+by another row atomically. Use a plain level when the writes are independent
+and partial application is acceptable, such as a connection mapping.
+
+The first version supports exactly what is listed here. `TransactGetItems`
+for consistent multi-row snapshots, and an automatic read-back option, wait
+for a consumer that needs them.
 
 ### Consistency
 
@@ -233,6 +292,29 @@ Model instances are returned as their raw `_dyData`. Query results are
 `{ items: [...], count, lastEvaluatedKey }` with each item in the same form.
 Only steps named in `return` are serialized; everything else is executed and
 discarded.
+
+### Multi-plan request
+
+The request body is `{ "plans": [ ... ] }` and the response is keyed by plan
+id. Plans in one request run concurrently and are isolated from each other:
+
+- **Separate tenants.** A plan names one tenant, and `TenantContext` is the
+  executor's authorization boundary, so one plan never spans tenants. Two
+  plans in one request can. The WebSocket handshake needs this: the `App`
+  row lives in the admin tenant, `User` and `AppUser` in the app tenant.
+- **Failure isolation.** An `abort` in one plan does not stop another. Each
+  plan has its own loader cache, capacity total, and `return` set.
+- **No cross-plan references.** A `$ref` resolves only within its plan.
+  Work that needs an admin-tenant row to gate app-tenant steps belongs in a
+  procedure declared with `scope: "both"`.
+
+The reason to fix the array format now rather than later is the client
+transport. In a follow-up, the transport collects every `run()` issued in
+the same macrotask and sends them as one request, the same way dynamo-bao's
+`find` batching coalesces into one `BatchGetItem`. A room that receives
+three updates in one tick and queries peers for each sends one request, and
+callers write nothing extra. That needs no server change once the format is
+an array.
 
 ## Procedures
 
@@ -402,10 +484,17 @@ ms. Per step, about 330 ms down to about 180 ms.
 
 New module `src/remote/`, exported as `dynamo-bao/remote`:
 
-- `executor.js`: `executePlan(plan, { manager, procedures, logger })`. Validates
-  the plan, builds the DAG, runs levels inside `runWithBatchContext` and
-  `TenantContext.runWithTenant`, serializes results, reports capacity via
-  `getBatchContextCapacity` per step.
+- `executor.js`: `executePlans(plans, { manager, procedures, logger })`. Runs
+  each plan concurrently in its own `runWithBatchContext` and
+  `TenantContext.runWithTenant`. Per plan: validates, builds the DAG, runs
+  levels, serializes results, reports capacity via `getBatchContextCapacity`
+  per step.
+- `transact.js`: builds `TransactWriteItems` from transact items, including
+  the constraint-row expansion for unique-constraint models, and maps
+  `CancellationReasons` back to item indexes. Depends on splitting
+  `_saveItem` in the mutation mixin into a build phase (returns the update or
+  put params) and a send phase. That split is useful on its own and is the
+  largest single piece of library work here.
 - `predicate.js`: in-memory evaluator for the `when` vocabulary. Shares the
   operator list with `filter-expression.js` but builds no expression strings.
 - `procedures.js`: `defineProcedure`, `ProcedureRegistry`, and construction of
@@ -418,23 +507,32 @@ New module `src/remote/`, exported as `dynamo-bao/remote`:
 - `worker.js`: a reference fetch handler for `/_internal/plan` that
   applications mount on their pinned worker, with a pluggable auth check.
 
-Size estimate: 600 to 900 lines plus tests. The uncommitted work that drops
+Size estimate: 800 to 1,200 lines plus tests, of which the `_saveItem` split
+and `transact.js` are roughly a third. The uncommitted work that drops
 read-before-write on `update` and `delete` is directly complementary: every
 eliminated pre-read is one fewer level inside a plan.
 
-Out of scope for the first version: `transact` steps, streaming responses,
-plan caching, and any attempt to run plans against DynamoDB Local in the test
-suite beyond what `executePlan` needs for its own tests.
+In the first version: all step ops in the table including the minimal
+`transact`, the multi-plan envelope, `capture` error policy, `fromRemote`
+with the detached guard, and capacity passthrough.
+
+Follow-ups, in likely order: the tick-coalescing client transport (client
+only, no server change), `TransactGetItems`, an automatic read-back option on
+`transact`, streaming responses, plan caching.
+
+Out of scope: running plans against DynamoDB Local in the test suite beyond
+what the executor needs for its own tests.
 
 ## Security and tenancy
 
 - The plan route is internal. It accepts requests only through the service
   binding (or, in the hostname fallback, with a shared secret header). It is
   never mounted on a user-facing path.
-- `tenant` in the envelope is enforced by `TenantContext` on the executor.
-  The caller cannot name a tenant it is not authorized for only because the
-  caller is trusted code; this is the same trust boundary as the DO code that
-  calls `withAppContext` today, moved one hop.
+- `tenant` on each plan is enforced by `TenantContext` on the executor, one
+  context per plan, and references never cross plans. The caller cannot name
+  a tenant it is not authorized for only because the caller is trusted code;
+  this is the same trust boundary as the DO code that calls `withAppContext`
+  today, moved one hop.
 - Procedure scope (`app`, `admin`, `both`) is declared at registration and
   checked by the executor before the procedure runs.
 - Model names and index names in a plan are validated against the registered
@@ -479,7 +577,8 @@ Three conclusions:
 3. **Wire js-bao-wss.** A self service binding like `FUNCTION_GATEWAY`, the
    `/_internal/plan` route on the pinned worker, a procedure module per
    existing service. First consumers: `durable-step-trace`, the disabled-user
-   probe, and `dispatch-reconcile`.
+   probe, `dispatch-reconcile`, and run-row settlement, which is why
+   `transact` with `idempotencyKey` is in the first version.
 4. **Port ConnectionWorker.** Handshake and subscribe as plans; enable
    `DocumentPermissionCache` with push invalidation from `emitAccessDiff`.
 5. **Split edge and data workers and unpin the edge.** A/B on alpha the way
@@ -492,9 +591,9 @@ Three conclusions:
 - Should `queryAll` have a page cap inside the executor, given the
   1,000-subrequest ceiling per invocation? Probably yes, with the cap in the
   plan and `lastEvaluatedKey` returned on overflow.
-- Should the executor accept several independent plans in one request for
-  callers that have unrelated work to batch? Cheap to add; defer until a
-  caller needs it.
+- When the tick-coalescing transport lands, should a plan be able to opt out
+  of coalescing, for a caller that wants its result before the tick ends?
+  Probably a `flush: true` option; decide when the transport is built.
 - How should procedure argument types be shared between edge and data
   bundles once they are separate deployables? A generated manifest of
   procedure names and schemas is the obvious answer; not needed while both

@@ -1,0 +1,5 @@
+# Copy to .dev.vars (gitignored). Read by setup.sh/teardown.sh and by wrangler.
+CLOUDFLARE_ACCOUNT_ID=
+CLOUDFLARE_API_TOKEN=
+# The <name> in https://<worker>.<name>.workers.dev for this account.
+SPIKE_WORKERS_SUBDOMAIN=

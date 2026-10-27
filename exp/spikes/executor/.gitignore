@@ -1,0 +1,8 @@
+# Account-specific and secret. Nothing here is committed.
+.dev.vars
+.env
+.spike-token
+.wrangler/
+node_modules/
+results/*
+!results/.gitkeep

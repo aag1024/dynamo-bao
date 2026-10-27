@@ -1,0 +1,87 @@
+# Executor spike — a standalone measurement worker, not the product and not
+# part of the dynamo-bao package (see package.json "files").
+#
+# One script, three deployments. ROLE tells the script which half to be:
+#
+#   spike-edge        ROLE=edge, no placement: runs where the request enters.
+#                     Owns SpikeDO (one instance per location hint) and
+#                     SpikeWorkflow. Binds spike-data by service binding
+#                     (fetch and RPC) and reaches it by hostname too.
+#   spike-data        ROLE=data, pinned next to DynamoDB us-west-2: the
+#                     executor stand-in. Runs replicas in process and reports
+#                     the colo it actually ran in.
+#   spike-edge-use1   ROLE=edge, pinned to us-east-1: a vantage point that is
+#                     far from the data without being in Europe.
+#
+# Account id and API token come from the environment (CLOUDFLARE_ACCOUNT_ID,
+# CLOUDFLARE_API_TOKEN), loaded from .dev.vars by setup.sh. Hostnames are
+# workers.dev, so no zone is needed.
+
+name = "spike-edge"
+main = "src/worker.ts"
+compatibility_date = "2025-09-01"
+compatibility_flags = ["nodejs_compat"]
+workers_dev = true
+preview_urls = false
+
+[vars]
+ROLE = "edge"
+PLACEMENT = "default"
+DDB_TABLE = "executor-spike"
+DDB_REGION = "us-west-2"
+# Changed by Spike 5 between deploys; the workflow logs it after its sleep.
+BUILD_TAG = "dev"
+
+[observability.logs]
+enabled = true
+invocation_logs = true
+
+[[durable_objects.bindings]]
+name = "SPIKE"
+class_name = "SpikeDO"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["SpikeDO"]
+
+[[workflows]]
+name = "spike-workflow"
+binding = "SPIKE_WORKFLOW"
+class_name = "SpikeWorkflow"
+
+# The data worker, reached two ways. Spike 1 compares them with the hostname.
+[[services]]
+binding = "DATA"
+service = "spike-data"
+
+[[services]]
+binding = "DATA_RPC"
+service = "spike-data"
+entrypoint = "DataEntrypoint"
+
+# ---------------------------------------------------------------------------
+# Wrangler inherits none of vars, bindings or routes into a named
+# environment, so each block redeclares them.
+# ---------------------------------------------------------------------------
+
+[env.data]
+name = "spike-data"
+workers_dev = true
+placement = { region = "aws:us-west-2" }
+vars = { ROLE = "data", PLACEMENT = "aws:us-west-2", DDB_TABLE = "executor-spike", DDB_REGION = "us-west-2", BUILD_TAG = "dev" }
+# The data worker binds nothing: it is the leaf. Declared empty so wrangler
+# does not inherit the top-level bindings by warning.
+durable_objects.bindings = []
+workflows = []
+services = []
+observability = { logs = { enabled = true, invocation_logs = true } }
+
+[env.use1]
+name = "spike-edge-use1"
+workers_dev = true
+placement = { region = "aws:us-east-1" }
+vars = { ROLE = "edge", PLACEMENT = "aws:us-east-1", DDB_TABLE = "executor-spike", DDB_REGION = "us-west-2", BUILD_TAG = "dev" }
+durable_objects.bindings = [{ name = "SPIKE", class_name = "SpikeDO", script_name = "spike-edge" }]
+workflows = [{ name = "spike-workflow", binding = "SPIKE_WORKFLOW", class_name = "SpikeWorkflow", script_name = "spike-edge" }]
+services = [{ binding = "DATA", service = "spike-data" }, { binding = "DATA_RPC", service = "spike-data", entrypoint = "DataEntrypoint" }]
+observability = { logs = { enabled = true, invocation_logs = true } }

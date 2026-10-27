@@ -1,0 +1,22 @@
+{
+  "name": "executor-spike",
+  "private": true,
+  "description": "Standalone spike worker for design-docs/remote-procedure-executor.md. Not published, not shipped.",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "deploy": "./setup.sh deploy",
+    "seed": "node scripts/seed.mjs",
+    "run": "node scripts/run.mjs",
+    "audit:codec": "node audit/codec-coverage.mjs"
+  },
+  "dependencies": {
+    "dynamo-bao": "file:../../..",
+    "aws4fetch": "^1.0.20"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261023.1",
+    "typescript": "^5.6.0",
+    "wrangler": "^4.154.0"
+  }
+}

@@ -647,7 +647,7 @@ parallel; 1 and 3 are the gating ones.
 
 ### The spike worker
 
-A directory in this repository, `spikes/executor/`, modeled on
+A directory in this repository, `exp/spikes/executor/`, modeled on
 `js-bao-wss/tools/latency-lab`, which already has the right shape: one
 script deployed under several placements, its own DynamoDB table and IAM
 user tagged for teardown, a `resources.sh` naming every resource, and a
@@ -710,9 +710,14 @@ DO's hint and not of the client. The client-to-DO leg is left out on
 purpose; it is a known function of distance and is what unpinning is meant
 to shorten.
 
-Build cost: about three days for the harness and seed, reusing
-latency-lab's scripts, before any spike runs. The replicas are the slow
-part. The worker is torn down when the spikes are done; nothing in it is
+The scaffold, models, replicas, seed, driver, and setup/teardown scripts
+were written 2026-10-27 and bundle under wrangler; they have not yet been
+deployed or run. The replicas were transcribed from a read of the product
+source the same day; each file's header lists what it models and omits.
+One fidelity note: the product runs dynamo-bao 0.7.0, whose `update` and
+`delete` always read before writing; the spike runs the working tree, which
+does not. The spike therefore measures the product as it will be after the
+Phase B upgrade, not as it is today. The worker is torn down when the spikes are done; nothing in it is
 meant to ship, though the `spike-data` script is a natural first draft of
 `examples/cloudflare-remote-executor/`, one directory over.
 
@@ -761,7 +766,14 @@ transport is chosen.
 model in js-bao-wss? *Method:* a read-only script over js-bao-wss's
 `models.yaml` and `src/models/*.js` listing field types per model against
 dynamo-bao's `fields.js`, flagging binary, set, and date representations.
-Lives in `spikes/executor/audit/`. *Decision:* the codec's scope and whether
+Lives in `exp/spikes/executor/audit/codec-coverage.mjs`. *First run,
+2026-10-27:* 81 models; every field type is JSON-safe except
+`StringSetField`, used by 9 fields (`Document.tags`,
+`DocumentGroupPermission.sourceCollectionIds`, `ServerFunctionConfig.capabilities`,
+`AdminSession.scope` and `.apps`, `WorkflowDefinition.capabilities`,
+`AppKeyReservation.holders`, `FeatureFlag.enabledAppIds` and `.disabledAppIds`).
+No binary fields. Dates travel as numbers and need `fromRemote` to become
+`Date` again. *Decision:* the codec's scope and whether
 `fromRemote` is needed early or DTOs suffice. Half a day.
 
 **Spike 5: Workflow version pinning.** *Question:* does a Workflows
@@ -776,7 +788,8 @@ moved read from module globals or `env`? *Method:* read
 `document-permission-service.ts`, `rate-limit.ts`, `app-activity-recorder.ts`,
 `run-row-settlement.ts`, and `dispatch-reconcile.ts` for `getAppModels(env)`,
 `systemAuthorityFor`, SWR caches keyed on `env`, loggers, and feature flags.
-Read-only; the findings go in `spikes/executor/audit/`. *Decision:* the
+Read-only; the findings go in `exp/spikes/executor/audit/ambient-context.md`.
+*Decision:* the
 final shape of `ProcedureContext` and the `actor` type. One day of reading.
 
 ### What the spikes cannot answer

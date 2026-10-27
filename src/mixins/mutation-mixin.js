@@ -283,7 +283,7 @@ const MutationMethods = {
    * @param {string} primaryId - The record's logical primary id.
    * @param {Object} [options]
    * @param {boolean} [options.dryRun=false] - Inspect only; perform no writes.
-   * @returns {Promise<{relocated: boolean, from: ?string, to: string, reason?: string}>}
+   * @returns {Promise<{relocated: boolean, from: ?string, to: string, reason: (string|undefined)}>}
    */
   async relocateToCanonicalKey(primaryId, options = {}) {
     const { dryRun = false } = options;

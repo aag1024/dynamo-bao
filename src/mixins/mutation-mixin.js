@@ -18,6 +18,30 @@ const {
 const { computeSearchTextUpdate } = require("../utils/search-text");
 const { SEARCH_TEXT_FIELD } = require("../constants");
 
+/**
+ * AND a guard onto an optional ConditionExpression. The existing expression
+ * is parenthesized so a top-level OR in it can't swallow the guard, except
+ * when it is already one parenthesized group: DynamoDB rejects redundant
+ * parentheses, and the filter builder emits "$and"/"$or" groups that way.
+ * @private
+ */
+function andCondition(existing, guard) {
+  if (!existing) return guard;
+  return `${isOneParenGroup(existing) ? existing : `(${existing})`} AND ${guard}`;
+}
+
+function isOneParenGroup(expr) {
+  if (!expr.startsWith("(") || !expr.endsWith(")")) return false;
+  let depth = 0;
+  for (let i = 0; i < expr.length; i++) {
+    if (expr[i] === "(") depth++;
+    else if (expr[i] === ")") depth--;
+    // The opening paren closed before the end: not a single group.
+    if (depth === 0 && i < expr.length - 1) return false;
+  }
+  return true;
+}
+
 const MutationMethods = {
   /**
    *@memberof BaoModel
@@ -125,17 +149,33 @@ const MutationMethods = {
       options,
     );
 
-    const item = await this.find(primaryId, { batchDelay: 0 });
-    if (!item.exists()) {
-      throw new ItemNotFoundError("Item not found", primaryId);
+    // The row is read first only when the delete needs its contents: to
+    // find unique-constraint values to clean up, or (mid key migration) to
+    // learn which key shape the row actually lives at. Otherwise the key is
+    // derived from the id and a single conditional DeleteItem does the work.
+    const uniqueConstraints = Object.values(this.uniqueConstraints || {});
+    const needsRead =
+      uniqueConstraints.length > 0 || this._writesInPlaceWhileMigrating();
+
+    let item = null;
+    let key;
+    if (needsRead) {
+      item = await this.find(primaryId, { batchDelay: 0 });
+      if (!item.exists()) {
+        throw new ItemNotFoundError("Item not found", primaryId);
+      }
+      key = { _pk: item._dyData._pk, _sk: item._dyData._sk };
+    } else {
+      key = this._getDyKeyForPkSk(this._parsePrimaryId(primaryId));
     }
 
     // Check if we need to clean up any unique constraints
-    const uniqueConstraints = Object.values(this.uniqueConstraints || {});
-    const hasConstraintsToClean = uniqueConstraints.some((constraint) => {
-      const value = item[constraint.field];
-      return value != null;
-    });
+    const hasConstraintsToClean =
+      item !== null &&
+      uniqueConstraints.some((constraint) => {
+        const value = item[constraint.field];
+        return value != null;
+      });
 
     try {
       let response;
@@ -146,10 +186,7 @@ const MutationMethods = {
           {
             Delete: {
               TableName: this.table,
-              Key: {
-                _pk: item._dyData._pk,
-                _sk: item._dyData._sk,
-              },
+              Key: key,
             },
           },
         ];
@@ -197,10 +234,7 @@ const MutationMethods = {
         // Fast path - simple delete
         const deleteParams = {
           TableName: this.table,
-          Key: {
-            _pk: item._dyData._pk,
-            _sk: item._dyData._sk,
-          },
+          Key: key,
           ReturnValues: "ALL_OLD",
           ReturnConsumedCapacity: "TOTAL",
         };
@@ -218,6 +252,12 @@ const MutationMethods = {
             deleteParams.ExpressionAttributeValues =
               filterExpression.ExpressionAttributeValues;
           }
+        }
+
+        // Without a pre-read, the item's existence is checked by the delete
+        // itself; a failure is mapped to ItemNotFoundError in the catch below.
+        if (!item) {
+          this._addExistsGuard(deleteParams);
         }
 
         response = await retryOperation(() =>
@@ -252,6 +292,12 @@ const MutationMethods = {
         (error.name === "TransactionCanceledException" &&
           error.CancellationReasons?.[0]?.Code === "ConditionalCheckFailed")
       ) {
+        if (
+          !item &&
+          !(await this._existsAfterGuardFailure(primaryId, options))
+        ) {
+          throw new ItemNotFoundError("Item not found", primaryId);
+        }
         throw new ConditionalError(
           "Delete condition not met",
           "delete",
@@ -260,6 +306,53 @@ const MutationMethods = {
       }
       throw error;
     }
+  },
+
+  /**
+   * Whether an existing `pk === "modelPrefix"` row must be written at the
+   * key it was loaded from rather than the canonical key (mid-migration).
+   * Such writes need the row read first to learn that key.
+   * @private
+   */
+  _writesInPlaceWhileMigrating() {
+    return (
+      this.primaryKey.pk === "modelPrefix" &&
+      this._modelPrefixPkMode() === "migrating"
+    );
+  },
+
+  /**
+   * AND an `attribute_exists(_pk)` guard into a write's ConditionExpression.
+   * Uses a "#__" placeholder so it can't clobber a field placeholder (user
+   * field names can't start with "_"; filter placeholders are "#nN").
+   * @private
+   */
+  _addExistsGuard(params) {
+    params.ExpressionAttributeNames = {
+      ...params.ExpressionAttributeNames,
+      "#__existsPk": "_pk",
+    };
+    params.ConditionExpression = andCondition(
+      params.ConditionExpression,
+      "attribute_exists(#__existsPk)",
+    );
+  },
+
+  /**
+   * After a guarded write fails its condition check, decide whether the row
+   * exists. With no caller condition the guard is the only thing that could
+   * have failed, so no read is needed; otherwise one GetItem (cache
+   * bypassed) tells a missing row apart from an unmet condition. Only the
+   * failure path pays for this read.
+   * @private
+   */
+  async _existsAfterGuardFailure(primaryId, options) {
+    if (!options.condition) return false;
+    const existing = await this.find(primaryId, {
+      batchDelay: 0,
+      bypassCache: true,
+    });
+    return existing.exists();
   },
 
   /**
@@ -414,520 +507,594 @@ const MutationMethods = {
    * @returns {Promise<Object>} Returns a promise that resolves to the saved item.
    */
   async _saveItem(primaryId, jsUpdates, options = {}) {
-    try {
-      const {
-        isNew = false,
-        instanceObj = null,
-        forceReindex = false,
-      } = options;
+    const { isNew = false, instanceObj = null, forceReindex = false } = options;
 
-      // The id is used as a string below (iteration keys, the relatedId on
-      // unique constraint rows), so accept an object id by normalizing it.
-      if (!isNew) {
-        primaryId = this._canonicalPrimaryId(primaryId);
+    // The id is used as a string below (iteration keys, the relatedId on
+    // unique constraint rows), so accept an object id by normalizing it.
+    if (!isNew) {
+      primaryId = this._canonicalPrimaryId(primaryId);
+    }
+
+    logger.debug("saveItem", primaryId, isNew, instanceObj);
+    let consumedCapacity = [];
+
+    let currentItem = isNew ? null : instanceObj;
+
+    const transactItems = [];
+    const dyUpdatesToSave = {};
+    const indexComputationData = {};
+    let hasUniqueConstraintChanges = false;
+
+    logger.debug("jsUpdates", jsUpdates);
+
+    // Generate Dynamo Updates to save
+    for (const [key, field] of Object.entries(this.fields)) {
+      if (isNew && jsUpdates[key] === undefined) {
+        // Only set initial values during creation
+        const initialValue = field.getInitialValue();
+        if (initialValue !== undefined) {
+          jsUpdates[key] = initialValue;
+        }
       }
 
-      logger.debug("saveItem", primaryId, isNew, instanceObj);
-      let consumedCapacity = [];
+      if (jsUpdates[key] !== undefined) {
+        field.validate(jsUpdates[key]);
+        const dyValue = field.toDy(jsUpdates[key]);
+        dyUpdatesToSave[key] = dyValue;
+        indexComputationData[key] = dyValue;
+      } else {
+        if (typeof field.updateBeforeSave === "function") {
+          const newValue = field.updateBeforeSave(jsUpdates[key]);
+          if (newValue !== jsUpdates[key]) {
+            const dyValue = field.toDy(newValue);
+            dyUpdatesToSave[key] = dyValue;
+            indexComputationData[key] = dyValue;
+          }
+        }
+      }
+    }
 
-      let currentItem = instanceObj;
-      if (isNew) {
-        currentItem = null;
-      } else if (!currentItem) {
+    // An update by id reads the current row only when the write depends on
+    // it (see _updateNeedsCurrentItem). Otherwise the UpdateItem carries an
+    // attribute_exists guard instead, so a missing row still surfaces as
+    // ItemNotFoundError rather than being upserted as a partial row.
+    let existsGuard = false;
+    if (!isNew && !currentItem) {
+      if (this._updateNeedsCurrentItem(dyUpdatesToSave, { forceReindex })) {
         currentItem = await this.find(primaryId, { batchDelay: 0 });
-        if (currentItem && currentItem.exists()) {
-          consumedCapacity = [
-            ...consumedCapacity,
-            ...currentItem.getConsumedCapacity(),
-          ];
-        } else {
+        if (!currentItem.exists()) {
           throw new ItemNotFoundError("Item not found", primaryId);
         }
+        consumedCapacity = [
+          ...consumedCapacity,
+          ...currentItem.getConsumedCapacity(),
+        ];
+      } else {
+        existsGuard = true;
       }
+    }
 
-      if (!isNew && !currentItem) {
-        throw new ItemNotFoundError("Item not found", primaryId);
-      }
-
-      const transactItems = [];
-      const dyUpdatesToSave = {};
-      const indexComputationData = {};
-      let hasUniqueConstraintChanges = false;
-
-      logger.debug("jsUpdates", jsUpdates);
-
-      // Generate Dynamo Updates to save
-      for (const [key, field] of Object.entries(this.fields)) {
-        if (isNew && jsUpdates[key] === undefined) {
-          // Only set initial values during creation
-          const initialValue = field.getInitialValue();
-          if (initialValue !== undefined) {
-            jsUpdates[key] = initialValue;
-          }
-        }
-
-        if (jsUpdates[key] !== undefined) {
-          field.validate(jsUpdates[key]);
-          const dyValue = field.toDy(jsUpdates[key]);
-          dyUpdatesToSave[key] = dyValue;
-          indexComputationData[key] = dyValue;
-        } else {
-          if (typeof field.updateBeforeSave === "function") {
-            const newValue = field.updateBeforeSave(jsUpdates[key]);
-            if (newValue !== jsUpdates[key]) {
-              const dyValue = field.toDy(newValue);
-              dyUpdatesToSave[key] = dyValue;
-              indexComputationData[key] = dyValue;
-            }
-          }
-        }
-      }
-
-      // A relative counter ("+3") is written with ADD, which DynamoDB applies
-      // at write time, but an index key built from it needs the resulting
-      // number. On a new item ADD just stores the delta, so write that. On an
-      // existing item, a counter that's part of an index key is written as
-      // the loaded value plus the delta, guarded on the loaded value, so a
-      // concurrent change fails the update (ConditionalError) instead of
-      // leaving the index key stale. Other counters keep the atomic ADD.
-      const counterGuards = [];
-      const { CounterFieldClass } = require("../fields");
-      for (const [key, field] of Object.entries(this.fields)) {
-        const dyValue = dyUpdatesToSave[key];
-        if (
-          !(field instanceof CounterFieldClass) ||
-          typeof dyValue !== "string"
-        ) {
-          continue;
-        }
-        const delta = parseInt(dyValue, 10);
-        let value;
-        if (isNew) {
-          value = delta;
-        } else if (
-          Object.values(this.indexes).some(
-            (index) =>
-              index.indexId !== undefined &&
-              (index.pk === key || index.sk === key),
-          )
-        ) {
-          const loadedValue = currentItem._loadedDyData[key];
-          value = Number(loadedValue ?? 0) + delta;
-          counterGuards.push({ fieldName: key, loadedValue });
-        } else {
-          continue;
-        }
-        dyUpdatesToSave[key] = value;
-        indexComputationData[key] = value;
-      }
-
-      // Backfill from currentItem for GSI consistency
-      if (!isNew && currentItem) {
-        if (forceReindex) {
-          // forceReindex: backfill all fields from current item
-          Object.keys(this.fields).forEach((fieldName) => {
-            const currentValue = currentItem._dyData[fieldName];
-            if (
-              currentValue !== undefined &&
-              indexComputationData[fieldName] === undefined
-            ) {
-              indexComputationData[fieldName] = currentValue;
-            }
-          });
-        } else {
-          // Regular update: backfill GSI counterpart fields so indexes
-          // stay consistent when only one field of a key pair is updated
-          Object.entries(this.indexes).forEach(([, index]) => {
-            const pkField = index.pk;
-            const skField = index.sk;
-            const pkInUpdate =
-              pkField === "modelPrefix" ||
-              indexComputationData[pkField] !== undefined;
-            const skInUpdate =
-              skField === "modelPrefix" ||
-              indexComputationData[skField] !== undefined;
-
-            if (pkInUpdate && !skInUpdate && skField !== "modelPrefix") {
-              const currentValue = currentItem._dyData[skField];
-              if (currentValue !== undefined) {
-                indexComputationData[skField] = currentValue;
-              }
-            }
-            if (skInUpdate && !pkInUpdate && pkField !== "modelPrefix") {
-              const currentValue = currentItem._dyData[pkField];
-              if (currentValue !== undefined) {
-                indexComputationData[pkField] = currentValue;
-              }
-            }
-          });
-        }
-      }
-
-      if (isNew) {
-        primaryId = this._createNewPrimaryId(jsUpdates);
-
-        // validate required fields
-        for (const [fieldName, field] of Object.entries(this.fields)) {
-          if (
-            field.required &&
-            (jsUpdates[fieldName] === undefined ||
-              jsUpdates[fieldName] === null)
-          ) {
-            throw new ValidationError(
-              `Field is required: ${fieldName}`,
-              fieldName,
-              jsUpdates[fieldName],
-            );
-          }
-        }
-      }
-
-      Object.entries(jsUpdates).forEach(([fieldName, value]) => {
-        const field = this._getField(fieldName);
-        if (field) {
-          field.validate(value, fieldName);
-        }
-      });
-
-      // No pre-save uniqueness read: each constraint Put in the transaction
-      // carries attribute_not_exists, and the catch block below runs
-      // _validateUniqueConstraints to name the colliding field.
-
-      // Handle unique constraints
-      for (const constraint of Object.values(this.uniqueConstraints || {})) {
-        const fieldName = constraint.field;
-        const field = this._getField(fieldName);
-        const dyNewValue = dyUpdatesToSave[fieldName];
-        const dyCurrentValue = currentItem?._loadedDyData[fieldName];
-
-        logger.debug("uniqueConstraint", field, dyCurrentValue, dyNewValue);
-
-        if (dyNewValue !== undefined && dyNewValue !== dyCurrentValue) {
-          hasUniqueConstraintChanges = true;
-
-          // Remove old constraint if updating
-          if (currentItem && dyCurrentValue) {
-            transactItems.push(
-              await this._removeUniqueConstraint(
-                fieldName,
-                dyCurrentValue,
-                primaryId,
-                constraint.constraintId,
-              ),
-            );
-          }
-
-          // Add new constraint unless value is null (clearing field removes constraint)
-          if (dyNewValue !== null) {
-            transactItems.push(
-              await this._createUniqueConstraint(
-                fieldName,
-                dyNewValue,
-                primaryId,
-                constraint.constraintId,
-              ),
-            );
-          }
-        }
-      }
-
-      // Add GSI keys
-      const indexSourceData = Object.keys(indexComputationData).length
-        ? indexComputationData
-        : dyUpdatesToSave;
-
-      const indexKeys = this._getIndexKeys(indexSourceData, {
-        isUpdate: !isNew,
-      });
-      logger.debug("indexKeys", indexKeys);
-      Object.assign(dyUpdatesToSave, indexKeys);
-
-      // Add iteration keys if model is iterable
-      if (this.iterable) {
-        const iterationKeys = this._getIterationKeys(
-          primaryId,
-          dyUpdatesToSave,
-        );
-        Object.assign(dyUpdatesToSave, iterationKeys);
-      }
-
-      // Compute _searchText if the model is searchable. Returns undefined to
-      // skip the write entirely, null to REMOVE, or a string to SET.
-      if (this.searchable && this.searchConfig) {
-        const searchTextValue = computeSearchTextUpdate({
-          searchConfig: this.searchConfig,
-          dyUpdatesToSave,
-          currentItem,
-          isNew,
-          forceReindex,
-        });
-        if (searchTextValue !== undefined) {
-          dyUpdatesToSave[SEARCH_TEXT_FIELD] = searchTextValue;
-        }
-      }
-
-      // Build the update expression first
-      const { updateExpression, names, values } = this._buildUpdateExpression(
-        dyUpdatesToSave,
-        currentItem,
-      );
-
-      // Key to write to. Normally the canonical key. But for an EXISTING
-      // `pk === "modelPrefix"` row in "migrating" mode, write in place at the
-      // row's current (possibly legacy) key so we update the full row rather
-      // than create a partial duplicate at the canonical key. The backfill is
-      // what relocates rows to the canonical key; deletes already target the
-      // loaded key. New items always use the canonical key.
-      let writeKey = this._getDyKeyForPkSk(this._parsePrimaryId(primaryId));
-      let inPlaceMigratingUpdate = false;
+    // A relative counter ("+3") is written with ADD, which DynamoDB applies
+    // at write time, but an index key built from it needs the resulting
+    // number. On a new item ADD just stores the delta, so write that. On an
+    // existing item, a counter that's part of an index key is written as
+    // the loaded value plus the delta, guarded on the loaded value, so a
+    // concurrent change fails the update (ConditionalError) instead of
+    // leaving the index key stale. Other counters keep the atomic ADD.
+    const counterGuards = [];
+    const { CounterFieldClass } = require("../fields");
+    for (const [key, field] of Object.entries(this.fields)) {
+      const dyValue = dyUpdatesToSave[key];
       if (
-        !isNew &&
-        this.primaryKey.pk === "modelPrefix" &&
-        this._modelPrefixPkMode() === "migrating" &&
-        currentItem?._dyData?._pk
+        !(field instanceof CounterFieldClass) ||
+        typeof dyValue !== "string"
       ) {
-        writeKey = {
-          _pk: currentItem._dyData._pk,
-          _sk: currentItem._dyData._sk,
-        };
-        inPlaceMigratingUpdate = true;
+        continue;
       }
-
-      // Create the base update params
-      const updateParams = {
-        TableName: this.table,
-        Key: writeKey,
-        UpdateExpression: updateExpression,
-        ReturnValues: "ALL_NEW",
-      };
-
-      if (Object.keys(names).length > 0) {
-        updateParams.ExpressionAttributeNames = {
-          ...names,
-        };
-      }
-
-      if (Object.keys(values).length > 0) {
-        updateParams.ExpressionAttributeValues = {
-          ...values,
-        };
-      }
-
-      // Build the condition expression for the update/put
-      const conditionExpressions = [];
-      const conditionNames = {};
-      const conditionValues = {};
-
-      if (options.condition) {
-        const builder = new FilterExpressionBuilder();
-        const filterExpression = builder.build(options.condition, this);
-
-        if (filterExpression) {
-          updateParams.ConditionExpression = filterExpression.FilterExpression;
-          updateParams.ExpressionAttributeNames = {
-            ...updateParams.ExpressionAttributeNames,
-            ...filterExpression.ExpressionAttributeNames,
-          };
-          updateParams.ExpressionAttributeValues = {
-            ...updateParams.ExpressionAttributeValues,
-            ...filterExpression.ExpressionAttributeValues,
-          };
-        }
-      }
-
+      const delta = parseInt(dyValue, 10);
+      let value;
       if (isNew) {
-        // For new items, ensure they don't already exist, ANDed with any
-        // caller-supplied condition. _buildUpdateExpression maps each field
-        // to "#<fieldName>"; user field names can't start with "_" and no
-        // system field starts with "__", so a "#__" placeholder can't clobber
-        // one.
-        updateParams.ConditionExpression = updateParams.ConditionExpression
-          ? `(${updateParams.ConditionExpression}) AND attribute_not_exists(#__newItemPk)`
-          : "attribute_not_exists(#__newItemPk)";
-        updateParams.ExpressionAttributeNames = {
-          ...updateParams.ExpressionAttributeNames,
-          "#__newItemPk": "_pk",
-        };
+        value = delta;
+      } else if (
+        Object.values(this.indexes).some(
+          (index) =>
+            index.indexId !== undefined &&
+            (index.pk === key || index.sk === key),
+        )
+      ) {
+        const loadedValue = currentItem._loadedDyData[key];
+        value = Number(loadedValue ?? 0) + delta;
+        counterGuards.push({ fieldName: key, loadedValue });
+      } else {
+        continue;
       }
+      dyUpdatesToSave[key] = value;
+      indexComputationData[key] = value;
+    }
 
-      if (inPlaceMigratingUpdate) {
-        // Updating the row in place at its current (legacy) key. Guard with
-        // attribute_exists so a concurrent backfill that relocated/deleted the
-        // legacy row can't make this UpdateItem upsert a partial row — it fails
-        // loudly (ConditionalError) instead, and the caller can retry, which
-        // will then find and update the relocated canonical row. ANDed with any
-        // caller-supplied condition.
-        //
-        // Use a "#__" placeholder so we never clobber a field placeholder
-        // (see the new-item guard above).
-        updateParams.ExpressionAttributeNames = {
-          ...updateParams.ExpressionAttributeNames,
-          "#__migExistsPk": "_pk",
-        };
-        updateParams.ConditionExpression = updateParams.ConditionExpression
-          ? `(${updateParams.ConditionExpression}) AND attribute_exists(#__migExistsPk)`
-          : "attribute_exists(#__migExistsPk)";
+    // Backfill from currentItem for GSI consistency
+    if (!isNew && currentItem) {
+      if (forceReindex) {
+        // forceReindex: backfill all fields from current item
+        Object.keys(this.fields).forEach((fieldName) => {
+          const currentValue = currentItem._dyData[fieldName];
+          if (
+            currentValue !== undefined &&
+            indexComputationData[fieldName] === undefined
+          ) {
+            indexComputationData[fieldName] = currentValue;
+          }
+        });
+      } else {
+        // Regular update: backfill GSI counterpart fields so indexes
+        // stay consistent when only one field of a key pair is updated
+        Object.entries(this.indexes).forEach(([, index]) => {
+          const pkField = index.pk;
+          const skField = index.sk;
+          const pkInUpdate =
+            pkField === "modelPrefix" ||
+            indexComputationData[pkField] !== undefined;
+          const skInUpdate =
+            skField === "modelPrefix" ||
+            indexComputationData[skField] !== undefined;
+
+          if (pkInUpdate && !skInUpdate && skField !== "modelPrefix") {
+            const currentValue = currentItem._dyData[skField];
+            if (currentValue !== undefined) {
+              indexComputationData[skField] = currentValue;
+            }
+          }
+          if (skInUpdate && !pkInUpdate && pkField !== "modelPrefix") {
+            const currentValue = currentItem._dyData[pkField];
+            if (currentValue !== undefined) {
+              indexComputationData[pkField] = currentValue;
+            }
+          }
+        });
       }
+    }
 
-      for (const { fieldName, loadedValue } of counterGuards) {
-        const name = `#__counterGuard_${fieldName}`;
-        const value = `:__counterGuard_${fieldName}`;
-        updateParams.ExpressionAttributeNames = {
-          ...updateParams.ExpressionAttributeNames,
-          [name]: fieldName,
-        };
-        let guard = `attribute_not_exists(${name})`;
-        if (loadedValue != null) {
-          guard = `${name} = ${value}`;
-          updateParams.ExpressionAttributeValues = {
-            ...updateParams.ExpressionAttributeValues,
-            [value]: loadedValue,
-          };
+    if (isNew) {
+      primaryId = this._createNewPrimaryId(jsUpdates);
+
+      // validate required fields
+      for (const [fieldName, field] of Object.entries(this.fields)) {
+        if (
+          field.required &&
+          (jsUpdates[fieldName] === undefined || jsUpdates[fieldName] === null)
+        ) {
+          throw new ValidationError(
+            `Field is required: ${fieldName}`,
+            fieldName,
+            jsUpdates[fieldName],
+          );
         }
-        updateParams.ConditionExpression = updateParams.ConditionExpression
-          ? `(${updateParams.ConditionExpression}) AND ${guard}`
-          : guard;
       }
+    }
 
-      const dyKey = writeKey;
-      logger.debug("dyKey", dyKey);
+    Object.entries(jsUpdates).forEach(([fieldName, value]) => {
+      const field = this._getField(fieldName);
+      if (field) {
+        field.validate(value, fieldName);
+      }
+    });
 
-      try {
-        let response;
+    // No pre-save uniqueness read: each constraint Put in the transaction
+    // carries attribute_not_exists, and the catch block below runs
+    // _validateUniqueConstraints to name the colliding field.
 
-        if (hasUniqueConstraintChanges) {
-          // Use transaction if we have unique constraint changes
-          transactItems.push({
-            Update: updateParams,
-          });
+    // Handle unique constraints
+    for (const constraint of Object.values(this.uniqueConstraints || {})) {
+      const fieldName = constraint.field;
+      const field = this._getField(fieldName);
+      const dyNewValue = dyUpdatesToSave[fieldName];
+      const dyCurrentValue = currentItem?._loadedDyData[fieldName];
 
-          logger.debug("transactItems", JSON.stringify(transactItems, null, 2));
+      logger.debug("uniqueConstraint", field, dyCurrentValue, dyNewValue);
 
-          response = await retryOperation(() =>
-            this.documentClient.send(
-              new TransactWriteCommand({
-                TransactItems: transactItems,
-                ReturnConsumedCapacity: "TOTAL",
-              }),
+      if (dyNewValue !== undefined && dyNewValue !== dyCurrentValue) {
+        hasUniqueConstraintChanges = true;
+
+        // Remove old constraint if updating
+        if (currentItem && dyCurrentValue) {
+          transactItems.push(
+            await this._removeUniqueConstraint(
+              fieldName,
+              dyCurrentValue,
+              primaryId,
+              constraint.constraintId,
             ),
           );
+        }
 
-          logger.debug("transactItems response", response);
-          logger.debug("primaryId to load", primaryId);
-
-          // transactWrite doesn't return values. A new item is exactly its key
-          // plus what we wrote (REMOVEd nulls aside), so build it locally. An
-          // update must be read back, bypassing the loader cache, which still
-          // holds the pre-update row.
-          let savedItem;
-          if (isNew) {
-            const storedItem = { ...dyKey };
-            for (const [key, value] of Object.entries(dyUpdatesToSave)) {
-              if (value !== undefined && value !== null) {
-                storedItem[key] = value;
-              }
-            }
-            savedItem = this._createFromDyItem(storedItem);
-          } else {
-            const readOptions = { batchDelay: 0, bypassCache: true };
-            savedItem = await this.find(primaryId, readOptions);
-
-            // if the item doesn't exist, sleep for 200ms and try again
-            if (!savedItem.exists()) {
-              await new Promise((resolve) => setTimeout(resolve, 200));
-              savedItem = await this.find(primaryId, readOptions);
-            }
-          }
-
-          logger.debug("savedItem", savedItem);
-
-          if (!savedItem.exists()) {
-            throw new ConditionalError("Failed to fetch saved item", "update");
-          }
-          logger.debug("savedItem.getPrimaryId()", savedItem.getPrimaryId());
-
-          // Set the consumed capacity from the transaction
-          savedItem._addConsumedCapacity(
-            response.ConsumedCapacity,
-            "write",
-            false,
+        // Add new constraint unless value is null (clearing field removes constraint)
+        if (dyNewValue !== null) {
+          transactItems.push(
+            await this._createUniqueConstraint(
+              fieldName,
+              dyNewValue,
+              primaryId,
+              constraint.constraintId,
+            ),
           );
-          // The loaded row's capacity was counted in the request total when
-          // it was consumed, so don't count it again.
-          savedItem._addConsumedCapacity(consumedCapacity, "read", false, true);
+        }
+      }
+    }
 
-          this._primeLoaderContext(primaryId, savedItem);
-          return savedItem;
+    // Add GSI keys
+    const indexSourceData = Object.keys(indexComputationData).length
+      ? indexComputationData
+      : dyUpdatesToSave;
+
+    const indexKeys = this._getIndexKeys(indexSourceData, {
+      isUpdate: !isNew,
+    });
+    logger.debug("indexKeys", indexKeys);
+    Object.assign(dyUpdatesToSave, indexKeys);
+
+    // Add iteration keys if model is iterable
+    if (this.iterable) {
+      const iterationKeys = this._getIterationKeys(primaryId, dyUpdatesToSave);
+      Object.assign(dyUpdatesToSave, iterationKeys);
+    }
+
+    // Compute _searchText if the model is searchable. Returns undefined to
+    // skip the write entirely, null to REMOVE, or a string to SET.
+    if (this.searchable && this.searchConfig) {
+      const searchTextValue = computeSearchTextUpdate({
+        searchConfig: this.searchConfig,
+        dyUpdatesToSave,
+        currentItem,
+        isNew,
+        forceReindex,
+      });
+      if (searchTextValue !== undefined) {
+        dyUpdatesToSave[SEARCH_TEXT_FIELD] = searchTextValue;
+      }
+    }
+
+    // Build the update expression first
+    const { updateExpression, names, values, hasAtomicOps } =
+      this._buildUpdateExpression(dyUpdatesToSave, currentItem);
+
+    // Key to write to. Normally the canonical key. But for an EXISTING
+    // `pk === "modelPrefix"` row in "migrating" mode, write in place at the
+    // row's current (possibly legacy) key so we update the full row rather
+    // than create a partial duplicate at the canonical key. The backfill is
+    // what relocates rows to the canonical key; deletes already target the
+    // loaded key. New items always use the canonical key.
+    let writeKey = this._getDyKeyForPkSk(this._parsePrimaryId(primaryId));
+    let inPlaceMigratingUpdate = false;
+    if (
+      !isNew &&
+      this.primaryKey.pk === "modelPrefix" &&
+      this._modelPrefixPkMode() === "migrating" &&
+      currentItem?._dyData?._pk
+    ) {
+      writeKey = {
+        _pk: currentItem._dyData._pk,
+        _sk: currentItem._dyData._sk,
+      };
+      inPlaceMigratingUpdate = true;
+    }
+
+    // Create the base update params
+    const updateParams = {
+      TableName: this.table,
+      Key: writeKey,
+      UpdateExpression: updateExpression,
+      ReturnValues: "ALL_NEW",
+    };
+
+    if (Object.keys(names).length > 0) {
+      updateParams.ExpressionAttributeNames = {
+        ...names,
+      };
+    }
+
+    if (Object.keys(values).length > 0) {
+      updateParams.ExpressionAttributeValues = {
+        ...values,
+      };
+    }
+
+    // Build the condition expression for the update/put
+    const conditionExpressions = [];
+    const conditionNames = {};
+    const conditionValues = {};
+
+    if (options.condition) {
+      const builder = new FilterExpressionBuilder();
+      const filterExpression = builder.build(options.condition, this);
+
+      if (filterExpression) {
+        updateParams.ConditionExpression = filterExpression.FilterExpression;
+        updateParams.ExpressionAttributeNames = {
+          ...updateParams.ExpressionAttributeNames,
+          ...filterExpression.ExpressionAttributeNames,
+        };
+        updateParams.ExpressionAttributeValues = {
+          ...updateParams.ExpressionAttributeValues,
+          ...filterExpression.ExpressionAttributeValues,
+        };
+      }
+    }
+
+    if (isNew) {
+      // For new items, ensure they don't already exist, ANDed with any
+      // caller-supplied condition. _buildUpdateExpression maps each field
+      // to "#<fieldName>"; user field names can't start with "_" and no
+      // system field starts with "__", so a "#__" placeholder can't clobber
+      // one.
+      updateParams.ConditionExpression = andCondition(
+        updateParams.ConditionExpression,
+        "attribute_not_exists(#__newItemPk)",
+      );
+      updateParams.ExpressionAttributeNames = {
+        ...updateParams.ExpressionAttributeNames,
+        "#__newItemPk": "_pk",
+      };
+    }
+
+    if (existsGuard) {
+      this._addExistsGuard(updateParams);
+    }
+
+    if (inPlaceMigratingUpdate) {
+      // Updating the row in place at its current (legacy) key. Guard with
+      // attribute_exists so a concurrent backfill that relocated/deleted the
+      // legacy row can't make this UpdateItem upsert a partial row — it fails
+      // loudly (ConditionalError) instead, and the caller can retry, which
+      // will then find and update the relocated canonical row. ANDed with any
+      // caller-supplied condition.
+      //
+      // Use a "#__" placeholder so we never clobber a field placeholder
+      // (see the new-item guard above).
+      updateParams.ExpressionAttributeNames = {
+        ...updateParams.ExpressionAttributeNames,
+        "#__migExistsPk": "_pk",
+      };
+      updateParams.ConditionExpression = andCondition(
+        updateParams.ConditionExpression,
+        "attribute_exists(#__migExistsPk)",
+      );
+    }
+
+    for (const { fieldName, loadedValue } of counterGuards) {
+      const name = `#__counterGuard_${fieldName}`;
+      const value = `:__counterGuard_${fieldName}`;
+      updateParams.ExpressionAttributeNames = {
+        ...updateParams.ExpressionAttributeNames,
+        [name]: fieldName,
+      };
+      let guard = `attribute_not_exists(${name})`;
+      if (loadedValue != null) {
+        guard = `${name} = ${value}`;
+        updateParams.ExpressionAttributeValues = {
+          ...updateParams.ExpressionAttributeValues,
+          [value]: loadedValue,
+        };
+      }
+      updateParams.ConditionExpression = andCondition(
+        updateParams.ConditionExpression,
+        guard,
+      );
+    }
+
+    const dyKey = writeKey;
+    logger.debug("dyKey", dyKey);
+
+    try {
+      let response;
+
+      if (hasUniqueConstraintChanges) {
+        // Use transaction if we have unique constraint changes
+        transactItems.push({
+          Update: updateParams,
+        });
+
+        if (logger.isDebugEnabled()) {
+          logger.debug("transactItems", JSON.stringify(transactItems, null, 2));
+        }
+
+        response = await retryOperation(() =>
+          this.documentClient.send(
+            new TransactWriteCommand({
+              TransactItems: transactItems,
+              ReturnConsumedCapacity: "TOTAL",
+            }),
+          ),
+        );
+
+        logger.debug("transactItems response", response);
+        logger.debug("primaryId to load", primaryId);
+
+        // transactWrite doesn't return values. When the expression is only
+        // SET/REMOVE the written row is fully determined: a new item is its
+        // key plus what we wrote, and an update is the row we loaded with
+        // our writes applied, so build it locally and save a round trip.
+        // Fields this write didn't touch reflect the row as loaded, which
+        // is the same staleness a caller-held instance already has. Only
+        // an ADD/DELETE (counter, set diff) needs a read-back, bypassing the
+        // loader cache, which still holds the pre-update row.
+        let savedItem;
+        if (isNew || !hasAtomicOps) {
+          const base = isNew
+            ? {}
+            : currentItem.isLoaded()
+              ? currentItem._loadedDyData
+              : currentItem._dyData;
+          const storedItem = { ...base, ...dyKey };
+          for (const [key, value] of Object.entries(dyUpdatesToSave)) {
+            if (value === undefined) continue;
+            if (value === null) {
+              delete storedItem[key];
+            } else {
+              storedItem[key] = value;
+            }
+          }
+          savedItem = this._createFromDyItem(storedItem);
         } else {
-          // Use simple update if no unique constraints are changing
-          logger.debug("updateParams", JSON.stringify(updateParams, null, 2));
+          const readOptions = { batchDelay: 0, bypassCache: true };
+          savedItem = await this.find(primaryId, readOptions);
 
-          try {
-            response = await retryOperation(() =>
-              this.documentClient.send(
-                new UpdateCommand({
-                  ...updateParams,
-                  ReturnConsumedCapacity: "TOTAL",
-                }),
-              ),
-            );
-          } catch (error) {
-            logger.error(`DynamoDB update failed for ${primaryId}:`, error);
-            throw error;
-          }
-
-          const savedItem = this._createFromDyItem(response.Attributes);
-          logger.debug("savedItem", savedItem);
-
-          savedItem._setConsumedCapacity(
-            response.ConsumedCapacity,
-            "write",
-            false,
-          );
-          // The loaded row's capacity was counted in the request total when
-          // it was consumed, so don't count it again.
-          savedItem._addConsumedCapacity(consumedCapacity, "read", false, true);
-
+          // if the item doesn't exist, sleep for 200ms and try again
           if (!savedItem.exists()) {
-            throw new ConditionalError("Failed to fetch saved item", "update");
-          }
-
-          this._primeLoaderContext(primaryId, savedItem);
-          return savedItem;
-        }
-      } catch (error) {
-        logger.error("Error in _saveItem", error);
-        if (error.name === "ConditionalCheckFailedException") {
-          throw new ConditionalError("Condition check failed", "update", error);
-        }
-
-        if (error.name === "TransactionCanceledException") {
-          // A taken unique value cancels the transaction; this read throws a
-          // ConditionalError naming the field if that's the cause.
-          await this._validateUniqueConstraints(
-            jsUpdates,
-            isNew ? null : primaryId,
-          );
-
-          // Check if it's due to conditional check failure
-          if (
-            error.CancellationReasons?.some(
-              (reason) => reason.Code === "ConditionalCheckFailed",
-            )
-          ) {
-            throw new ConditionalError(
-              "Transaction cancelled due to condition check failure",
-              "update",
-              error,
-            );
+            await new Promise((resolve) => setTimeout(resolve, 200));
+            savedItem = await this.find(primaryId, readOptions);
           }
         }
-        throw error;
+
+        logger.debug("savedItem", savedItem);
+
+        if (!savedItem.exists()) {
+          throw new ConditionalError("Failed to fetch saved item", "update");
+        }
+        logger.debug("savedItem.getPrimaryId()", savedItem.getPrimaryId());
+
+        // Set the consumed capacity from the transaction
+        savedItem._addConsumedCapacity(
+          response.ConsumedCapacity,
+          "write",
+          false,
+        );
+        // The loaded row's capacity was counted in the request total when
+        // it was consumed, so don't count it again.
+        savedItem._addConsumedCapacity(consumedCapacity, "read", false, true);
+
+        this._primeLoaderContext(primaryId, savedItem);
+        return savedItem;
+      } else {
+        // Use simple update if no unique constraints are changing
+        if (logger.isDebugEnabled()) {
+          logger.debug("updateParams", JSON.stringify(updateParams, null, 2));
+        }
+
+        response = await retryOperation(() =>
+          this.documentClient.send(
+            new UpdateCommand({
+              ...updateParams,
+              ReturnConsumedCapacity: "TOTAL",
+            }),
+          ),
+        );
+
+        const savedItem = this._createFromDyItem(response.Attributes);
+        logger.debug("savedItem", savedItem);
+
+        savedItem._setConsumedCapacity(
+          response.ConsumedCapacity,
+          "write",
+          false,
+        );
+        // The loaded row's capacity was counted in the request total when
+        // it was consumed, so don't count it again.
+        savedItem._addConsumedCapacity(consumedCapacity, "read", false, true);
+
+        if (!savedItem.exists()) {
+          throw new ConditionalError("Failed to fetch saved item", "update");
+        }
+
+        this._primeLoaderContext(primaryId, savedItem);
+        return savedItem;
       }
     } catch (error) {
-      logger.error(`Error in _saveItem for ${primaryId}:`, error);
+      // A failed condition (caller condition, duplicate key, missing row,
+      // taken unique value) is an expected outcome that is mapped to a
+      // typed error below, so it is only worth a debug line. Anything
+      // else is logged once, here, and rethrown as-is.
+      const isConditionFailure =
+        error.name === "ConditionalCheckFailedException" ||
+        (error.name === "TransactionCanceledException" &&
+          error.CancellationReasons?.some(
+            (reason) => reason.Code === "ConditionalCheckFailed",
+          ));
+      if (isConditionFailure) {
+        logger.debug(`${this.name} save condition failed for`, primaryId);
+      } else {
+        logger.error(`${this.name} save failed for ${primaryId}:`, error);
+      }
+
+      if (error.name === "ConditionalCheckFailedException") {
+        if (
+          existsGuard &&
+          !(await this._existsAfterGuardFailure(primaryId, options))
+        ) {
+          throw new ItemNotFoundError("Item not found", primaryId);
+        }
+        throw new ConditionalError("Condition check failed", "update", error);
+      }
+
+      if (error.name === "TransactionCanceledException") {
+        // A taken unique value cancels the transaction; this read throws a
+        // ConditionalError naming the field if that's the cause.
+        await this._validateUniqueConstraints(
+          jsUpdates,
+          isNew ? null : primaryId,
+        );
+
+        // Check if it's due to conditional check failure
+        if (
+          error.CancellationReasons?.some(
+            (reason) => reason.Code === "ConditionalCheckFailed",
+          )
+        ) {
+          throw new ConditionalError(
+            "Transaction cancelled due to condition check failure",
+            "update",
+            error,
+          );
+        }
+      }
       throw error;
     }
+  },
+
+  /**
+   * Whether an update by id has to read the current row before writing.
+   * The row is needed to backfill the other half of a GSI key pair, to
+   * diff a StringSet, to guard an indexed counter, to compare a unique
+   * constraint's old value, to rebuild _searchText from untouched source
+   * fields, to reindex everything, or (mid key migration) to find the key
+   * the row lives at. A write touching none of those is a plain SET/REMOVE
+   * of the given attributes and can go straight to DynamoDB.
+   * @private
+   * @param {Object} dyUpdatesToSave - Attributes the write will touch
+   * @param {{forceReindex: boolean}} options
+   * @returns {boolean}
+   */
+  _updateNeedsCurrentItem(dyUpdatesToSave, { forceReindex = false } = {}) {
+    if (forceReindex || this._writesInPlaceWhileMigrating()) {
+      return true;
+    }
+
+    const { StringSetFieldClass } = require("../fields");
+    const indexes = Object.values(this.indexes).filter(
+      (index) => index.indexId !== undefined,
+    );
+    for (const fieldName of Object.keys(dyUpdatesToSave)) {
+      if (
+        indexes.some(
+          (index) => index.pk === fieldName || index.sk === fieldName,
+        )
+      ) {
+        return true;
+      }
+      if (this.fields[fieldName] instanceof StringSetFieldClass) {
+        return true;
+      }
+    }
+
+    for (const constraint of Object.values(this.uniqueConstraints || {})) {
+      if (constraint.field in dyUpdatesToSave) return true;
+    }
+
+    if (this.searchable && this.searchConfig) {
+      const searchFields = this.searchConfig.fields || [];
+      if (searchFields.some((f) => f in dyUpdatesToSave)) return true;
+    }
+
+    return false;
   },
 
   _buildUpdateExpression(dyUpdatesToSave, currentItem = null) {
@@ -1018,6 +1185,9 @@ const MutationMethods = {
       updateExpression: parts.join(" "),
       names,
       values,
+      // ADD/DELETE are applied by DynamoDB against the stored value, so the
+      // written row can't be predicted locally; SET/REMOVE can.
+      hasAtomicOps: addExpressions.length > 0 || deleteExpressions.length > 0,
     };
   },
 

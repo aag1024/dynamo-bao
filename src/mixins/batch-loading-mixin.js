@@ -16,8 +16,53 @@ try {
 // Request-scoped batch context
 const batchContext = AsyncLocalStorage ? new AsyncLocalStorage() : null;
 
-const DEFAULT_BATCH_DELAY_MS = 5;
 const BATCH_REQUEST_TIMEOUT = 10000; // 10 seconds max lifetime for a batch
+const BATCH_GET_SIZE = 100; // BatchGetItem's per-request key limit
+const BATCH_GET_CONCURRENCY = 5; // BatchGetItem requests in flight per batchFind
+
+/**
+ * Run `fn` over `items` with at most `limit` calls in flight. Rejects with
+ * the first error once it occurs; in-flight calls are left to settle.
+ * @private
+ */
+async function mapConcurrent(items, limit, fn) {
+  const results = new Array(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const i = next++;
+      results[i] = await fn(items[i], i);
+    }
+  };
+  const workers = [];
+  for (let w = 0; w < Math.min(limit, items.length); w++) {
+    workers.push(worker());
+  }
+  await Promise.all(workers);
+  return results;
+}
+
+/**
+ * Schedule a batch flush. With no delay the batch is sent on the next
+ * macrotask (setImmediate), after every pending microtask has run, so each
+ * find() issued in the current tick (a Promise.all fan-out, loadRelatedData
+ * over a query page) joins one BatchGetItem without a wall-clock wait. A
+ * positive delay opts into a timer-based window instead. Returns a cancel
+ * function.
+ * @private
+ */
+function scheduleBatchFlush(fn, delay) {
+  if (delay > 0) {
+    const timer = setTimeout(fn, delay);
+    return () => clearTimeout(timer);
+  }
+  if (typeof setImmediate === "function") {
+    const handle = setImmediate(fn);
+    return () => clearImmediate(handle);
+  }
+  const timer = setTimeout(fn, 0);
+  return () => clearTimeout(timer);
+}
 
 /**
  * Accumulate capacity units to the current batch context.
@@ -122,11 +167,8 @@ const BatchLoadingMethods = {
    * @private
    */
   _loaderKey(primaryId) {
-    return JSON.stringify([
-      this.name,
-      this.manager.getTenantId() ?? null,
-      this._canonicalPrimaryId(primaryId),
-    ]);
+    // Joined on NUL, which can't appear in a model name, tenant id or key.
+    return `${this.name}\0${this.manager.getTenantId() ?? ""}\0${this._canonicalPrimaryId(primaryId)}`;
   },
 
   /**
@@ -210,10 +252,8 @@ const BatchLoadingMethods = {
       primaryIds.forEach((id) => {
         const loaderKey = this._loaderKey(id);
         if (loaderContext.has(loaderKey)) {
-          const instance = this._createFromDyItem(
-            loaderContext.get(loaderKey)._dyData,
-          );
-          results[id] = instance;
+          // Same instance find() would return for this id.
+          results[id] = loaderContext.get(loaderKey);
         } else {
           idsToLoad.push(id);
         }
@@ -232,9 +272,14 @@ const BatchLoadingMethods = {
     // remove duplicates from idsToLoad
     idsToLoad = [...new Set(idsToLoad)];
 
-    // Process items in batches of 100
-    for (let i = 0; i < idsToLoad.length; i += 100) {
-      const batchIds = idsToLoad.slice(i, i + 100);
+    // Load in chunks of BATCH_GET_SIZE keys, several chunks in flight at
+    // once. Results are keyed by id, so completion order doesn't matter.
+    const chunks = [];
+    for (let i = 0; i < idsToLoad.length; i += BATCH_GET_SIZE) {
+      chunks.push(idsToLoad.slice(i, i + BATCH_GET_SIZE));
+    }
+
+    const loadChunk = async (batchIds) => {
       const Keys = batchIds.map((id) => {
         const pkSk = this._parsePrimaryId(id);
         return this._getDyKeyForPkSk(pkSk);
@@ -301,7 +346,9 @@ const BatchLoadingMethods = {
           `Failed to process ${unprocessedKeys.length} items after ${maxRetries} retries`,
         );
       }
-    }
+    };
+
+    await mapConcurrent(chunks, BATCH_GET_CONCURRENCY, loadChunk);
 
     // Migration read fallback (pk === "modelPrefix", "migrating" mode only):
     // ids not found at the canonical tenant-scoped key may still live at a
@@ -344,16 +391,22 @@ const BatchLoadingMethods = {
    * preferred over {@link BaoModel.batchFind}. Find uses batchFind internally, unless batchDelay
    * is set to 0.
    *
+   * By default, every find() issued in the same tick (for example a
+   * Promise.all fan-out, or loadRelatedData over a page of query results) is
+   * sent as one BatchGetItem on the next macrotask, with no added delay.
+   *
    * @param {string} primaryId - The primary ID of the item to find
    * @param {Object} [options={}] - Optional configuration for the find operation
-   * @param {number} [options.batchDelay=5] - Delay in milliseconds before executing batch request.
-   *                                         Set to 0 for immediate individual requests
+   * @param {number} [options.batchDelay] - Omit to flush the batch on the next tick.
+   *                                       Pass a positive number of milliseconds to hold the
+   *                                       batch open for that long so later calls can join it.
+   *                                       Set to 0 for an immediate individual GetItem.
    * @param {boolean} [options.bypassCache=false] - If true, bypasses both batching and caching entirely
    * @returns {Promise<Object>} Returns a promise that resolves to the found item instance or ObjectNotFound
    * @throws {Error} If the batch request times out or other errors occur during the operation
    */
   async find(primaryId, options = {}) {
-    const batchDelay = options.batchDelay ?? DEFAULT_BATCH_DELAY_MS;
+    const batchDelay = options.batchDelay;
     const bypassCache = options.bypassCache ?? false;
 
     // Ensure we're within a batch context (unless bypassing everything for AsyncLocalStorage availability check)
@@ -452,14 +505,16 @@ const BatchLoadingMethods = {
       // One batch per model, tenant and delay: the batch builds its keys in
       // the first caller's async context, so it must not mix tenants.
       const tenantId = this.manager.getTenantId() ?? "";
-      const batchKey = `${this.name}-${tenantId}-${batchDelay}`;
+      const batchKey = `${this.name}-${tenantId}-${batchDelay ?? "tick"}`;
       const batchRequests = this._getBatchRequests();
       let batchRequest = batchRequests.get(batchKey);
 
       if (!batchRequest) {
         batchRequest = {
           model: this,
-          items: [],
+          // canonical string id -> { id, callbacks }. Keyed by the canonical
+          // form so a string id and its object form share one entry.
+          items: new Map(),
           timer: null,
           timeoutTimer: null,
           delay: batchDelay,
@@ -468,25 +523,22 @@ const BatchLoadingMethods = {
         };
         batchRequests.set(batchKey, batchRequest);
 
-        // Set batch execution timer
-        batchRequest.timer = setTimeout(async () => {
+        // Schedule the flush. `timer` is a cancel function (see scheduleBatchFlush).
+        batchRequest.timer = scheduleBatchFlush(async () => {
           try {
             const currentBatch = batchRequests.get(batchKey);
             if (!currentBatch) return;
 
-            const batchIds = currentBatch.items.map((item) => item.id);
+            const batchIds = Array.from(currentBatch.items.keys());
 
             // Execute bulk find
-            const { items, ConsumedCapacity } = await this.batchFind(
-              batchIds,
-              loaderContext,
-            );
+            const { items, ConsumedCapacity } = await this.batchFind(batchIds);
 
             // total callbacks
-            const totalCallbacks = currentBatch.items.reduce(
-              (sum, item) => sum + item.callbacks.length,
-              0,
-            );
+            let totalCallbacks = 0;
+            for (const item of currentBatch.items.values()) {
+              totalCallbacks += item.callbacks.length;
+            }
 
             // Resolve all promises, including multiple callbacks for the same ID.
             // Sum ALL ConsumedCapacity entries (multiple BatchGet pages and any
@@ -522,7 +574,7 @@ const BatchLoadingMethods = {
               clearTimeout(currentBatch.timeoutTimer);
             }
             if (currentBatch.timer) {
-              clearTimeout(currentBatch.timer);
+              currentBatch.timer();
             }
             batchRequests.delete(batchKey);
           } catch (error) {
@@ -535,7 +587,7 @@ const BatchLoadingMethods = {
                 clearTimeout(currentBatch.timeoutTimer);
               }
               if (currentBatch.timer) {
-                clearTimeout(currentBatch.timer);
+                currentBatch.timer();
               }
               batchRequests.delete(batchKey);
             }
@@ -547,7 +599,7 @@ const BatchLoadingMethods = {
           const currentBatch = batchRequests.get(batchKey);
           if (currentBatch === batchRequest) {
             if (currentBatch.timer) {
-              clearTimeout(currentBatch.timer);
+              currentBatch.timer();
             }
             batchRequests.delete(batchKey);
             currentBatch.items.forEach((batchItem) => {
@@ -560,14 +612,13 @@ const BatchLoadingMethods = {
       }
 
       // Add this request to the batch
-      const existingItem = batchRequest.items.find(
-        (item) => item.id === primaryId,
-      );
+      const canonicalId = this._canonicalPrimaryId(primaryId);
+      const existingItem = batchRequest.items.get(canonicalId);
       if (existingItem) {
         existingItem.callbacks.push({ resolve, reject });
       } else {
-        batchRequest.items.push({
-          id: primaryId,
+        batchRequest.items.set(canonicalId, {
+          id: canonicalId,
           callbacks: [{ resolve, reject }],
         });
       }
@@ -675,6 +726,5 @@ module.exports = {
   runWithBatchContext,
   getBatchContextCapacity,
   _accumulateCapacityToContext,
-  DEFAULT_BATCH_DELAY_MS,
   BATCH_REQUEST_TIMEOUT,
 };

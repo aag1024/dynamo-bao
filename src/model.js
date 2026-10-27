@@ -29,6 +29,20 @@ const {
 } = require("./model-config");
 
 const GID_SEPARATOR = "##__SK__##";
+
+// Passed to the constructor by _createFromDyItem: the instance is about to
+// take its data from a stored row, so skip computing initial field values
+// (which for auto-assigned ULID and version fields means generating ids
+// that would be thrown away).
+const HYDRATE = Symbol("dynamo-bao.hydrate");
+
+// Set on each model class once its field accessors have been defined on the
+// prototype; holds the `fields` object they were built from.
+const FIELD_ACCESSORS_FOR = Symbol("dynamo-bao.fieldAccessorsFor");
+
+// System attributes (_pk, _sk, GSI keys, ...) are plain strings with no
+// per-model options, so one shared field definition serves them all.
+const SYSTEM_STRING_FIELD = StringField();
 const {
   UNIQUE_CONSTRAINT_KEY,
   SYSTEM_FIELDS,
@@ -107,7 +121,7 @@ class BaoModel {
   static _getField(fieldName) {
     let fieldDef;
     if (SYSTEM_FIELDS.includes(fieldName) || fieldName === "modelPrefix") {
-      fieldDef = StringField();
+      fieldDef = SYSTEM_STRING_FIELD;
     } else {
       fieldDef = this.fields[fieldName];
     }
@@ -325,24 +339,98 @@ class BaoModel {
     return this.iterable ? this.iterationBuckets : 1;
   }
 
+  /**
+   * @description
+   * Iterate every row of an `iterable` model, yielding hydrated batches.
+   * Within a bucket the next page of keys is fetched while the current page
+   * is hydrated. Buckets are walked one at a time unless `concurrency` is
+   * raised, in which case that many buckets are read at once and their
+   * batches are yielded as they arrive (bucket order is then interleaved).
+   *
+   * @param {Object} [options]
+   * @param {number} [options.batchSize=100] - Keys per iteration-index Query,
+   *   and so the upper bound on each yielded batch.
+   * @param {Object} [options.filter] - Filter on attributes projected onto
+   *   the iteration index.
+   * @param {number} [options.concurrency=1] - Buckets to read concurrently.
+   * @yields {BaoModel[]} One batch of loaded instances at a time.
+   */
   static async *iterateAll(options = {}) {
     if (!this.iterable) {
       throw new Error(`Model ${this.name} is not configured as iterable`);
     }
 
-    const { batchSize = 100, filter = null } = options;
+    const { batchSize = 100, filter = null, concurrency = 1 } = options;
+    if (!Number.isInteger(concurrency) || concurrency < 1) {
+      throw new Error("concurrency must be a positive integer");
+    }
 
     if (this.iterationBuckets === 1) {
-      yield* this._iterateSingleBucket(null, {
-        batchSize,
-        filter,
-      });
-    } else {
-      for (let bucket = 0; bucket < this.iterationBuckets; bucket++) {
-        yield* this._iterateSingleBucket(bucket, {
-          batchSize,
-          filter,
-        });
+      yield* this._iterateSingleBucket(null, { batchSize, filter });
+      return;
+    }
+
+    const buckets = Array.from({ length: this.iterationBuckets }, (_, b) => b);
+    if (concurrency === 1) {
+      for (const bucket of buckets) {
+        yield* this._iterateSingleBucket(bucket, { batchSize, filter });
+      }
+      return;
+    }
+
+    yield* this._interleaveGenerators(
+      buckets.map(
+        (bucket) => () =>
+          this._iterateSingleBucket(bucket, { batchSize, filter }),
+      ),
+      concurrency,
+    );
+  }
+
+  /**
+   * Drive up to `limit` async generators at once, yielding each value as
+   * soon as any of them produces one. Each generator has exactly one
+   * `next()` outstanding, so no value is lost between races. On error the
+   * remaining generators are closed and the error propagates.
+   * @private
+   */
+  static async *_interleaveGenerators(factories, limit) {
+    const pending = [...factories];
+    const inFlight = new Map(); // generator -> promise of { gen, result }
+
+    const start = () => {
+      const gen = pending.shift()();
+      inFlight.set(
+        gen,
+        gen.next().then((result) => ({ gen, result })),
+      );
+    };
+    const pull = (gen) => {
+      inFlight.set(
+        gen,
+        gen.next().then((result) => ({ gen, result })),
+      );
+    };
+
+    while (pending.length > 0 && inFlight.size < limit) start();
+
+    try {
+      while (inFlight.size > 0) {
+        const { gen, result } = await Promise.race(inFlight.values());
+        if (result.done) {
+          inFlight.delete(gen);
+          if (pending.length > 0) start();
+        } else {
+          pull(gen);
+          yield result.value;
+        }
+      }
+    } finally {
+      // Reached on error or on an early break by the consumer: don't leave
+      // the other generators' in-flight requests as unhandled rejections.
+      for (const [gen, promise] of inFlight) {
+        promise.catch(() => {});
+        gen.return().catch(() => {});
       }
     }
   }
@@ -889,66 +977,80 @@ class BaoModel {
     const iterPk = this._getIterationPk(bucketNum);
     const indexName = this.manager.getIterationIndexName();
 
-    let lastEvaluatedKey = null;
+    // The query is the same for every page except ExclusiveStartKey, so
+    // build it once.
+    const baseParams = {
+      TableName: this.table,
+      IndexName: indexName,
+      KeyConditionExpression: "#pk = :pk",
+      ExpressionAttributeNames: { "#pk": ITERATION_PK_FIELD },
+      ExpressionAttributeValues: { ":pk": iterPk },
+      Limit: batchSize,
+      ReturnConsumedCapacity: "TOTAL",
+    };
 
-    do {
-      const params = {
-        TableName: this.table,
-        IndexName: indexName,
-        KeyConditionExpression: "#pk = :pk",
-        ExpressionAttributeNames: { "#pk": ITERATION_PK_FIELD },
-        ExpressionAttributeValues: { ":pk": iterPk },
-        Limit: batchSize,
-        ReturnConsumedCapacity: "TOTAL",
-      };
-
-      if (lastEvaluatedKey) {
-        params.ExclusiveStartKey = lastEvaluatedKey;
-      }
-
-      const filterParts = [];
-      if (filter) {
-        const { FilterExpressionBuilder } = require("./filter-expression");
-        const filterBuilder = new FilterExpressionBuilder();
-        const filterExpression = filterBuilder.build(filter, this);
-        if (filterExpression) {
-          // Preflight: filter attributes must be in the GSI's projection.
-          // Otherwise DynamoDB returns an opaque "does not project one or
-          // more filter attributes" ValidationException; we surface a clearer
-          // error before the round-trip.
-          this._assertFilterFitsIterIndex(
-            indexName,
-            filterExpression.ExpressionAttributeNames,
-          );
-          filterParts.push(filterExpression.FilterExpression);
-          Object.assign(
-            params.ExpressionAttributeNames,
-            filterExpression.ExpressionAttributeNames,
-          );
-          Object.assign(
-            params.ExpressionAttributeValues,
-            filterExpression.ExpressionAttributeValues,
-          );
-        }
-      }
-      if (searchPredicate) {
-        filterParts.push(searchPredicate.FilterExpression);
+    const filterParts = [];
+    if (filter) {
+      const { FilterExpressionBuilder } = require("./filter-expression");
+      const filterBuilder = new FilterExpressionBuilder();
+      const filterExpression = filterBuilder.build(filter, this);
+      if (filterExpression) {
+        // Preflight: filter attributes must be in the GSI's projection.
+        // Otherwise DynamoDB returns an opaque "does not project one or
+        // more filter attributes" ValidationException; we surface a clearer
+        // error before the round-trip.
+        this._assertFilterFitsIterIndex(
+          indexName,
+          filterExpression.ExpressionAttributeNames,
+        );
+        filterParts.push(filterExpression.FilterExpression);
         Object.assign(
-          params.ExpressionAttributeNames,
-          searchPredicate.ExpressionAttributeNames,
+          baseParams.ExpressionAttributeNames,
+          filterExpression.ExpressionAttributeNames,
         );
         Object.assign(
-          params.ExpressionAttributeValues,
-          searchPredicate.ExpressionAttributeValues,
+          baseParams.ExpressionAttributeValues,
+          filterExpression.ExpressionAttributeValues,
         );
       }
-      if (filterParts.length > 0) {
-        params.FilterExpression = filterParts
-          .map((p) => `(${p})`)
-          .join(" AND ");
-      }
+    }
+    if (searchPredicate) {
+      filterParts.push(searchPredicate.FilterExpression);
+      Object.assign(
+        baseParams.ExpressionAttributeNames,
+        searchPredicate.ExpressionAttributeNames,
+      );
+      Object.assign(
+        baseParams.ExpressionAttributeValues,
+        searchPredicate.ExpressionAttributeValues,
+      );
+    }
+    if (filterParts.length > 0) {
+      baseParams.FilterExpression = filterParts
+        .map((p) => `(${p})`)
+        .join(" AND ");
+    }
 
-      const response = await this._runIterationQuery(params, indexName);
+    const fetchPage = (lastEvaluatedKey) => {
+      const params = lastEvaluatedKey
+        ? { ...baseParams, ExclusiveStartKey: lastEvaluatedKey }
+        : baseParams;
+      const page = this._runIterationQuery(params, indexName);
+      // The page is awaited below, but if the consumer stops iterating first
+      // a failed prefetch must not become an unhandled rejection.
+      page.catch(() => {});
+      return page;
+    };
+
+    // Keep one key page in flight ahead of hydration: the next Query is
+    // issued as soon as the current page's LastEvaluatedKey is known, so
+    // the index read and the BatchGet overlap instead of alternating.
+    let nextPage = fetchPage(null);
+    while (nextPage) {
+      const response = await nextPage;
+      nextPage = response.LastEvaluatedKey
+        ? fetchPage(response.LastEvaluatedKey)
+        : null;
 
       if (response.Items && response.Items.length > 0) {
         const objectIds = response.Items.map(
@@ -962,9 +1064,7 @@ class BaoModel {
           yield batch;
         }
       }
-
-      lastEvaluatedKey = response.LastEvaluatedKey;
-    } while (lastEvaluatedKey);
+    }
   }
 
   /**
@@ -973,37 +1073,62 @@ class BaoModel {
    * @param {Object} [jsData] - The initial data for the model.
    */
   constructor(jsData = {}) {
+    const hydrating = jsData === HYDRATE;
+
     this._dyData = {};
-    SYSTEM_FIELDS.forEach((key) => {
-      if (jsData[key] !== undefined) {
-        this._dyData[key] = jsData[key];
-      }
-    });
+    if (!hydrating) {
+      SYSTEM_FIELDS.forEach((key) => {
+        if (jsData[key] !== undefined) {
+          this._dyData[key] = jsData[key];
+        }
+      });
+    }
 
     this._loadedDyData = {};
     this._changes = new Set();
     this._relatedObjects = {};
     this._consumedCapacity = [];
 
-    // Initialize fields with data
-    Object.entries(this.constructor.fields).forEach(([fieldName, field]) => {
-      // Convert initial value to DynamoDB format
-      let value =
-        jsData[fieldName] === undefined
-          ? field.getInitialValue()
-          : jsData[fieldName];
-      this._dyData[fieldName] = field.toDy(value);
+    this.constructor._ensureFieldAccessors();
 
-      // Define property getter/setter that always works with _dyData
-      Object.defineProperty(this, fieldName, {
-        get: () => {
+    if (!hydrating) {
+      // Convert initial values to DynamoDB format
+      for (const [fieldName, field] of Object.entries(
+        this.constructor.fields,
+      )) {
+        const value =
+          jsData[fieldName] === undefined
+            ? field.getInitialValue()
+            : jsData[fieldName];
+        this._dyData[fieldName] = field.toDy(value);
+      }
+    }
+  }
+
+  /**
+   * Define a getter/setter for each field on this class's prototype, once
+   * per class. Every instance reads and writes its own `_dyData` through
+   * them, so they don't need to be per-instance properties. Keyed by an own
+   * property so a subclass with its own `fields` gets its own accessors.
+   * @private
+   */
+  static _ensureFieldAccessors() {
+    if (Object.prototype.hasOwnProperty.call(this, FIELD_ACCESSORS_FOR)) {
+      if (this[FIELD_ACCESSORS_FOR] === this.fields) return;
+    }
+
+    for (const [fieldName, field] of Object.entries(this.fields)) {
+      Object.defineProperty(this.prototype, fieldName, {
+        configurable: true,
+        enumerable: false,
+        get() {
           // For StringSetField, pass model context to enable proxy
           if (field instanceof StringSetFieldClass) {
             return field.fromDy(this._dyData[fieldName], this, fieldName);
           }
           return field.fromDy(this._dyData[fieldName]);
         },
-        set: (newValue) => {
+        set(newValue) {
           const oldDyValue = this._dyData[fieldName];
           const newDyValue = field.toDy(newValue);
           if (newDyValue !== oldDyValue) {
@@ -1015,16 +1140,20 @@ class BaoModel {
           }
         },
       });
+    }
+
+    Object.defineProperty(this, FIELD_ACCESSORS_FOR, {
+      value: this.fields,
+      configurable: true,
+      enumerable: false,
+      writable: true,
     });
   }
 
   static _createFromDyItem(dyItem) {
-    const newObj = new this();
+    const newObj = new this(HYDRATE);
     newObj._dyData = dyItem;
     newObj._resetChangeTracking();
-
-    logger.debug("_createFromDyItem", dyItem, newObj);
-    logger.debug("_createFromDyItem.name", newObj.name);
     return newObj;
   }
 
@@ -1169,20 +1298,12 @@ class BaoModel {
   // Get only changed fields - convert from Dynamo to JS format
   _getChanges() {
     const changes = {};
-    logger.debug("_changes Set contains:", Array.from(this._changes));
     for (const field of this._changes) {
       const fieldDef = this.constructor._getField(field);
-      logger.debug("Field definition for", field, ":", {
-        type: fieldDef.constructor.name,
-        field: fieldDef,
-      });
-      const dyValue = this._dyData[field];
-      logger.debug("Converting value:", {
-        field,
-        dyValue,
-        fromDyExists: typeof fieldDef.fromDy === "function",
-      });
-      changes[field] = fieldDef.fromDy(dyValue);
+      changes[field] = fieldDef.fromDy(this._dyData[field]);
+    }
+    if (logger.isDebugEnabled()) {
+      logger.debug("_getChanges", Array.from(this._changes), changes);
     }
     return changes;
   }
@@ -1203,7 +1324,12 @@ class BaoModel {
    * @returns {boolean} True if the object has been loaded, false otherwise.
    */
   isLoaded() {
-    return Object.keys(this._loadedDyData).length > 0;
+    for (const key in this._loadedDyData) {
+      if (Object.prototype.hasOwnProperty.call(this._loadedDyData, key)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   // Reset tracking after successful save

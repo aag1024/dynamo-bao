@@ -16,11 +16,26 @@ class Logger {
     this.currentLevel = userConfig.logging.level.toUpperCase();
   }
 
-  log(level, ...args) {
-    if (
+  /**
+   * Whether a message at `level` would be printed. Check this before
+   * building a log argument that is expensive to compute (a JSON dump, a
+   * mapped array), so the cost is only paid when the output is wanted.
+   * @param {"ERROR"|"WARN"|"INFO"|"DEBUG"} level
+   * @returns {boolean}
+   */
+  isLevelEnabled(level) {
+    return (
       this.currentLevel !== "OFF" &&
       LOG_LEVELS[level] <= LOG_LEVELS[this.currentLevel]
-    ) {
+    );
+  }
+
+  isDebugEnabled() {
+    return this.isLevelEnabled("DEBUG");
+  }
+
+  log(level, ...args) {
+    if (this.isLevelEnabled(level)) {
       const prefix = `[${level}] ${this.context}:`;
       console.log(prefix, ...args);
     }

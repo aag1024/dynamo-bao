@@ -280,7 +280,7 @@ models:
       # ...
 ```
 
-The `iterateAll` method handles iterating over all buckets automatically. For parallel processing, you can iterate a specific partition using the `iterateBucket(bucketNum)` method.
+The `iterateAll` method handles iterating over all buckets automatically, one bucket at a time, prefetching each bucket's next page of keys while the current page loads. Pass `concurrency` to read several buckets at once from a single process (`iterateAll({ concurrency: 4 })`); batches from different buckets are then yielded as they arrive. To spread the work across processes, each can iterate its own partitions with the `iterateBucket(bucketNum)` method.
 
 Choosing the number of buckets:
 

@@ -3,6 +3,22 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
+const OPERATION_NAMES = {
+  'GetCommand': 'GetItem',
+  'QueryCommand': 'Query',
+  'PutCommand': 'PutItem',
+  'UpdateCommand': 'UpdateItem',
+  'DeleteCommand': 'DeleteItem',
+  'BatchGetCommand': 'BatchGetItem',
+  'TransactWriteCommand': 'TransactWriteItems',
+  'CreateTableCommand': 'CreateTable',
+  'ListTablesCommand': 'ListTables',
+  'DescribeTableCommand': 'DescribeTable',
+  'UpdateTimeToLiveCommand': 'UpdateTimeToLive',
+  'DescribeTimeToLiveCommand': 'DescribeTimeToLive',
+  'UpdateTableCommand': 'UpdateTable'
+};
+
 class DynamoDBClient {
   constructor(config = {}) {
     this.region = config.region || this._resolveRegion();
@@ -187,23 +203,7 @@ class DynamoDBClient {
   }
 
   _getOperationName(commandName) {
-    const operationMap = {
-      'GetCommand': 'GetItem',
-      'QueryCommand': 'Query',
-      'PutCommand': 'PutItem',
-      'UpdateCommand': 'UpdateItem',
-      'DeleteCommand': 'DeleteItem',
-      'BatchGetCommand': 'BatchGetItem',
-      'TransactWriteCommand': 'TransactWriteItems',
-      'CreateTableCommand': 'CreateTable',
-      'ListTablesCommand': 'ListTables',
-      'DescribeTableCommand': 'DescribeTable',
-      'UpdateTimeToLiveCommand': 'UpdateTimeToLive',
-      'DescribeTimeToLiveCommand': 'DescribeTimeToLive',
-      'UpdateTableCommand': 'UpdateTable'
-    };
-    
-    return operationMap[commandName] || commandName.replace('Command', '');
+    return OPERATION_NAMES[commandName] || commandName.replace('Command', '');
   }
 
   async send(command) {

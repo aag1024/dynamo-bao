@@ -185,29 +185,26 @@ const QueryMethods = {
       },
     );
 
-    // Add debug logging
-    logger.log("DynamoDB Query Params:", {
-      TableName: params.TableName,
-      IndexName: params.IndexName,
-      KeyConditionExpression: params.KeyConditionExpression,
-      ExpressionAttributeNames: params.ExpressionAttributeNames,
-      ExpressionAttributeValues: params.ExpressionAttributeValues,
-    });
+    if (logger.isDebugEnabled()) {
+      logger.debug("DynamoDB Query Params:", {
+        TableName: params.TableName,
+        IndexName: params.IndexName,
+        KeyConditionExpression: params.KeyConditionExpression,
+        ExpressionAttributeNames: params.ExpressionAttributeNames,
+        ExpressionAttributeValues: params.ExpressionAttributeValues,
+      });
+    }
 
     const response = await retryOperation(() =>
       this.documentClient.send(new QueryCommand(params)),
     );
 
-    // Add debug logging
-    logger.log("DynamoDB Response:", {
-      Count: response.Count,
-      ScannedCount: response.ScannedCount,
-      Items: response.Items?.map((item) => ({
-        name: item.name,
-        category: item.category,
-        status: item.status,
-      })),
-    });
+    if (logger.isDebugEnabled()) {
+      logger.debug("DynamoDB Response:", {
+        Count: response.Count,
+        ScannedCount: response.ScannedCount,
+      });
+    }
 
     let totalItems;
     if (options.countOnly) {
@@ -231,13 +228,6 @@ const QueryMethods = {
     const expressionValues = { ":pk": pkValue };
 
     if (skCondition) {
-      logger.log("Building key condition for:", {
-        condition: skCondition,
-        gsiSortKeyName: options.gsiIndexId
-          ? `_${options.gsiIndexId}_sk`
-          : "_sk",
-      });
-
       const skExpr = keyBuilder.buildKeyCondition(
         this,
         options.indexName || "primary",

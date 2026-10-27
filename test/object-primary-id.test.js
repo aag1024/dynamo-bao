@@ -56,6 +56,34 @@ describe("Object primary ids", () => {
     });
   });
 
+  test("finds by object id and by string id in the same tick share one batch entry", async () => {
+    const entity = await runWithBatchContext(() =>
+      AppEntity.create({ appId: "app", entityId: "e1", label: "v1" }),
+    );
+    const client = AppEntity.documentClient;
+    const sent = [];
+    AppEntity.documentClient = {
+      send: (command) => {
+        sent.push(command.constructor.name);
+        return client.send(command);
+      },
+    };
+    try {
+      await runWithBatchContext(async () => {
+        const [byObject, byString] = await Promise.all([
+          AppEntity.find({ appId: "app", entityId: "e1" }),
+          AppEntity.find(entity.getPrimaryId()),
+        ]);
+        expect(sent).toEqual(["BatchGetCommand"]);
+        expect(byObject.exists()).toBe(true);
+        expect(byObject.label).toBe("v1");
+        expect(byString).toBe(byObject);
+      });
+    } finally {
+      AppEntity.documentClient = client;
+    }
+  });
+
   test("update by object id on an iterable model", async () => {
     await runWithBatchContext(async () => {
       const entity = await AppEntity.create({

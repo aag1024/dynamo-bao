@@ -223,7 +223,7 @@ describe("Batch Delay Tests", () => {
       expect(batch).toBeDefined();
       if (batch) {
         // Clear all timers before forcing the timeout
-        if (batch.timer) clearTimeout(batch.timer);
+        if (batch.timer) batch.timer(); // cancel the scheduled flush
         if (batch.timeoutTimer) clearTimeout(batch.timeoutTimer);
 
         batchRequests.delete(batchKey);

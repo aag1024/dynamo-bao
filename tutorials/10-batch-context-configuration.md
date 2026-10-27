@@ -278,6 +278,30 @@ await runWithBatchContext(async () => {
 });
 ```
 
+### How finds are batched
+
+Inside a batch context, every `find()` issued in the same tick is sent as one `BatchGetItem` on the next macrotask, after pending promise callbacks have run. There is no added delay: a `Promise.all` fan-out, or `loadRelatedData` over a page of query results, lands in a single request, while a sequential `await User.find(...)` costs only its own round trip. A find by object id and one by the equivalent string id share a single batch entry.
+
+The `batchDelay` option changes the schedule when you need to:
+
+```javascript
+// Default: flush on the next tick, no added latency
+await User.find(id);
+
+// Hold the batch open for 10 ms so later callers can join it
+await User.find(id, { batchDelay: 10 });
+
+// Skip batching and send an individual GetItem right away
+await User.find(id, { batchDelay: 0 });
+
+// Skip both the batch and the request cache (always reads DynamoDB)
+await User.find(id, { bypassCache: true });
+```
+
+### Write round trips
+
+Writes read the current row first only when they need it. `Model.update(id, changes)` goes straight to a single `UpdateItem` unless the changed fields touch a GSI key, a unique constraint, a `StringSetField`, an indexed counter, or a searchable field (or `forceReindex` is set), in which case the row is read first so the index keys and constraints stay consistent. `Model.delete(id)` is a single conditional `DeleteItem` on models without unique constraints. In both cases a missing row still raises `ItemNotFoundError`. Updates that change a unique value run as one read plus one transaction; the saved instance is built locally rather than read back.
+
 ### Without Batch Context (Direct Mode)
 
 ```javascript

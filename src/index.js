@@ -200,7 +200,7 @@ function initModels(userConfig = {}) {
   // Initialize the manager & 2nd model registration pass
   manager.init(finalConfig);
 
-  logger.log("Models initialized:", {
+  logger.debug("Models initialized:", {
     testId: finalConfig.testId,
     tenantId: manager.getTenantId(),
     managerTestId: manager.getTestId(),

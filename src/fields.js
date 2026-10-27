@@ -4,7 +4,6 @@
  * This module contains the built-in fields for Bao.
  */
 const { ulid, decodeTime } = require("ulid");
-const { defaultLogger: logger } = require("./utils/logger");
 const { ValidationError } = require("./exceptions");
 
 /**
@@ -236,7 +235,6 @@ class DateTimeField extends BaoBaseField {
       const timestamp = this.toDy(value);
       if (!timestamp) return "0";
       const result = timestamp.toString().padStart(20, "0");
-      // logger.log('Converting to GSI:', { value, timestamp, result });
       return result;
     } catch (error) {
       console.warn("Error converting date for GSI:", error);
@@ -544,8 +542,6 @@ class CounterField extends BaoBaseField {
       fieldValue: value,
     };
 
-    logger.log("CounterField - getUpdateExpression", fieldName, value);
-
     if (value === null) {
       expObj = {
         ...expObj,
@@ -746,7 +742,6 @@ class TtlField extends DateTimeField {
   }
 
   toDy(value) {
-    logger.log("TTL toDy", value);
     if (value === undefined) return undefined; // Skip field
     if (value === null) return null; // Remove field
 
@@ -770,7 +765,6 @@ class TtlField extends DateTimeField {
   }
 
   fromDy(value) {
-    logger.log("TTL fromDy", value);
     if (value === undefined || value === null) {
       return null; // Convert both undefined and null to null
     }

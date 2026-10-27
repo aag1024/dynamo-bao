@@ -409,7 +409,13 @@ try {
 
 This convenience comes at a cost: every `create`, `update`, or `delete` operation on an iterable model requires a second write to the database to maintain the iteration index. This doubles the write cost for every item.
 
-To prevent "hot partitions" on large models, the iteration index is automatically split into 10 "buckets" or partitions. The `iterateAll()` method handles fetching from all buckets seamlessly.
+To prevent "hot partitions" on large models, the iteration index is automatically split into 10 "buckets" or partitions. The `iterateAll()` method handles fetching from all buckets seamlessly. Within a bucket it fetches the next page of keys while the current page is being loaded. Buckets are read one at a time by default; pass `concurrency` to read several at once for bulk jobs (batches from different buckets are then interleaved):
+
+```javascript
+for await (const batch of User.iterateAll({ batchSize: 100, concurrency: 4 })) {
+  // ...
+}
+```
 
 **Default**
 

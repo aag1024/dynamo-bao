@@ -38,7 +38,7 @@
     "aws4fetch": "^1.0.20",
     "chokidar": "^4.0.3",
     "dotenv": "^16.4.7",
-    "js-yaml": "^4.1.0",
+    "js-yaml": "^4.3.2",
     "ulid": "^2.3.0"
   },
   "devDependencies": {

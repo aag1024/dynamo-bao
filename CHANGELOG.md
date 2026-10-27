@@ -9,6 +9,26 @@ Each version heading links to the tag that was published to npm. Entries before
 
 ## [Unreleased]
 
+## [0.8.2] - 2026-10-27
+
+### Fixed
+
+- A conditional `update()` or `delete()` of a row that did not exist was
+  reported as `ConditionalError` instead of `ItemNotFoundError` when another
+  writer created the row right after the failed write. Since 0.8.0 the
+  library read the row after a failed condition check to tell the two apart,
+  and that read described a later state. Guarded writes now send
+  `ReturnValuesOnConditionCheckFailure`, so the answer comes from the state
+  DynamoDB evaluated the condition against. The follow-up read is gone, which
+  makes the failure path one call cheaper. It remains only as a fallback for
+  injected clients that do not surface the returned item.
+
+### Changed
+
+- The bundled DynamoDB client attaches `Item` to a
+  `ConditionalCheckFailedException` when the request asked for
+  `ReturnValuesOnConditionCheckFailure` (`null` when the row did not exist).
+
 ## [0.8.1] - 2026-10-27
 
 ### Fixed
@@ -467,7 +487,8 @@ Initial release: single-table models with fields, GSIs, unique constraints,
 related fields, counters, TTL, filters, pagination, batch loading, hooks,
 YAML codegen and a table creation tool.
 
-[Unreleased]: https://github.com/aag1024/dynamo-bao/compare/v0.8.1...HEAD
+[Unreleased]: https://github.com/aag1024/dynamo-bao/compare/v0.8.2...HEAD
+[0.8.2]: https://github.com/aag1024/dynamo-bao/compare/v0.8.1...v0.8.2
 [0.8.1]: https://github.com/aag1024/dynamo-bao/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/aag1024/dynamo-bao/compare/v0.7.3...v0.8.0
 [0.7.3]: https://github.com/aag1024/dynamo-bao/compare/v0.7.2...v0.7.3

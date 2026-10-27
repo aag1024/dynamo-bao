@@ -240,7 +240,16 @@ class DynamoDBClient {
       if (errorName === 'TransactionCanceledException' && errorBody.CancellationReasons) {
         error.CancellationReasons = errorBody.CancellationReasons;
       }
-      
+
+      // With ReturnValuesOnConditionCheckFailure, a failed condition check
+      // carries the item as it was when the condition was evaluated, or no
+      // Item at all when the row did not exist. Surface that as error.Item
+      // (null for "did not exist") so callers can tell the two apart
+      // without a follow-up read.
+      if (command.input.ReturnValuesOnConditionCheckFailure) {
+        error.Item = errorBody.Item ? unmarshallItem(errorBody.Item) : null;
+      }
+
       throw error;
     }
 
@@ -522,6 +531,14 @@ class DynamoDBDocumentClient {
 }
 
 // Marshall JavaScript values to DynamoDB JSON
+function unmarshallItem(item) {
+  const out = {};
+  Object.keys(item).forEach(key => {
+    out[key] = unmarshall(item[key]);
+  });
+  return out;
+}
+
 function marshall(obj) {
   if (obj === null) return { NULL: true };
   if (obj === undefined) return { NULL: true };

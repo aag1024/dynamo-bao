@@ -294,7 +294,7 @@ const MutationMethods = {
       ) {
         if (
           !item &&
-          !(await this._existsAfterGuardFailure(primaryId, options))
+          !(await this._existsAfterGuardFailure(primaryId, options, error))
         ) {
           throw new ItemNotFoundError("Item not found", primaryId);
         }
@@ -336,18 +336,26 @@ const MutationMethods = {
       params.ConditionExpression,
       "attribute_exists(#__existsPk)",
     );
+    // Ask DynamoDB to return the row the condition was evaluated against,
+    // so a failed check can be attributed without a follow-up read (see
+    // _existsAfterGuardFailure).
+    params.ReturnValuesOnConditionCheckFailure = "ALL_OLD";
   },
 
   /**
    * After a guarded write fails its condition check, decide whether the row
-   * exists. With no caller condition the guard is the only thing that could
-   * have failed, so no read is needed; otherwise one GetItem (cache
-   * bypassed) tells a missing row apart from an unmet condition. Only the
-   * failure path pays for this read.
+   * existed when the condition was evaluated. With no caller condition the
+   * guard is the only thing that could have failed, so the row was missing.
+   * Otherwise the error's `Item` (from ReturnValuesOnConditionCheckFailure)
+   * is exact: present means the caller's condition failed, null means the
+   * row did not exist. A read after the fact is only a fallback for clients
+   * that do not surface `Item`; it can be wrong when another writer creates
+   * the row between the failed write and the read.
    * @private
    */
-  async _existsAfterGuardFailure(primaryId, options) {
+  async _existsAfterGuardFailure(primaryId, options, error) {
     if (!options.condition) return false;
+    if (error && error.Item !== undefined) return error.Item !== null;
     const existing = await this.find(primaryId, {
       batchDelay: 0,
       bypassCache: true,
@@ -1020,7 +1028,7 @@ const MutationMethods = {
       if (error.name === "ConditionalCheckFailedException") {
         if (
           existsGuard &&
-          !(await this._existsAfterGuardFailure(primaryId, options))
+          !(await this._existsAfterGuardFailure(primaryId, options, error))
         ) {
           throw new ItemNotFoundError("Item not found", primaryId);
         }

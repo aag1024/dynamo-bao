@@ -834,6 +834,40 @@ gets most of the way, the executor's priority drops and the restructuring
 ships on its own as a product change. One day of runs once Spike 1's
 transport is chosen.
 
+*Result (2026-10-28, `results/spike3.csv`, 45 cells × 50 warm + 10 cold,
+branches owner / group / deny, 6 driver-side "fetch failed" rows
+excluded).* The DOs landed at LAX, ORD, LIS, HKG and MEL. `subscribe` for a
+group member, the common non-owner case, p50 warm in ms:
+
+| DO location | serial (today's code) | parallel (restructured, no executor) | remote (one binding call to Seattle) | hop inside remote |
+|---|---|---|---|---|
+| `wnam` LAX | 192 | 97 | 110 | 46 |
+| `enam` ORD | 347 | 129 | 126 | 61 |
+| `weur` LIS | 837 | 358 | 237 | 169 |
+| `apac` HKG | 847 | 312 | 214 | 151 |
+| `oc` MEL | 831 | 333 | 234 | 171 |
+
+Owner (depth 4 → 2) follows the same shape: 152 / 96 / 103 at LAX, 662 /
+348 / 219 at LIS. Deny (depth 2 → 1) is where remote cannot win: 94 / 41 /
+69 at LAX, 333 / 197 / 195 at LIS, because a one-round path has nothing
+left to collapse and still pays the hop.
+
+Three readings. **Structure first.** At `wnam`, `parallel` gets all the
+way: it halves every path and `remote` only ties it, so by this spike's
+own fail condition the batch-context restructuring ships on its own as a
+product change before any executor. **Location is what the executor is
+for.** Unpinning without it costs a European or Asian user 310 to 360 ms
+per subscription even after the restructuring, against 210 to 240 ms
+through the executor; and the gap widens on a fresh DO: cold `parallel`
+at LIS / HKG / MEL was 830 to 850 ms (owner) because each concurrent read
+opens its own connection and every handshake is a far round trip, while
+cold `remote` stayed at 245 to 255 ms. A DO near a user that has not
+opened connections yet is the normal case for a new document. **The hop
+is the floor.** Remote at a far hint is hop (150 to 170 ms) plus the
+work in Seattle (60 to 70 ms), so no per-operation design beats about 220
+ms from Europe or Asia; what the executor buys is that the number stops
+depending on the path's depth.
+
 **Spike 4: codec coverage.** *Question:* is `_dyData` JSON-safe for every
 model in js-bao-wss? *Method:* a read-only script over js-bao-wss's
 `models.yaml` and `src/models/*.js` listing field types per model against

@@ -140,12 +140,19 @@ Facts from Cloudflare documentation, checked 2026-10-27.
 - RPC serialization is capped at 32 MiB; irrelevant for HTTP bodies but a
   reminder to keep results small.
 
-**Unverified assumption.** No doc sentence confirms that a service-binding
-`fetch()` to a region-placed worker honors the region. Spike 1 tests a
-self-binding, a separate-worker binding, an RPC method, and the hostname
-fallback, from both a remote DO and a Workflow. The executor echoes its own
+**Verified by Spike 1 (2026-10-28).** No doc sentence confirms that a
+service-binding `fetch()` to a region-placed worker honors the region, so
+Spike 1 measured it: a separate-worker binding, an RPC method, and the
+public hostname, from hinted DOs, from a Workflow, and from a worker placed
+in `aws:us-east-1`. Binding and hostname `fetch()` ran in Seattle from every
+caller; RPC ran in the caller's colo every time. The executor echoes its own
 observed colo and timing in every response rather than relying on the
-`cf-placement` header, which the docs describe as request metadata.
+`cf-placement` header, which the docs describe as request metadata. Two
+limits found on the way: a Worker's `fetch()` to another Worker's hostname
+on the same zone (which includes the account's `workers.dev` subdomain) is
+refused with Cloudflare error 1042, while the same fetch from a Durable
+Object succeeds; and a self-binding was not tested, which is fine for the
+single-bundle layout only because that worker is placed as a whole.
 
 ## Architecture
 
@@ -734,6 +741,36 @@ cold and warm. *Decision:* which transport the executor uses, and the real
 per-hop overhead for the estimates. *Fail condition:* no binding form runs
 in Seattle; then the executor is reached by hostname, or the hinted-DO
 fallback is revisited. One day on top of the harness.
+
+*Result (2026-10-28, `results/spike1*.csv`, 20 warm + 5 cold samples per
+cell, cold rounds 90 s apart).* **Passed: use the binding.** Every binding
+and hostname sample ran `spike-data` in SEA, from the `weur` DO (LIS), the
+`wnam` DO (LAX), the unplaced edge worker (SJC), the `us-east-1` worker
+(IAD) and the Workflow (LAX). RPC never did: it ran in the caller's colo and
+made the ten DynamoDB calls from there. Hop is the caller's total minus what
+`spike-data` measured for itself; p50 in ms:
+
+| Caller (colo) | binding hop warm / cold | hostname hop warm | RPC total (runs at caller) warm / cold | ten Gets locally, warm / cold |
+|---|---|---|---|---|
+| `weur` DO (LIS) | 189 / 180 | 182 | 1607 / 2266 | — |
+| `wnam` DO (LAX) | 53 / 62 | 67 | 403 / 639 | — |
+| edge worker, unplaced (SJC) | 41 / — | refused (1042) | 274 / — | 281 / — |
+| `us-east-1` worker (IAD) | 89 / 144 | refused (1042) | 979 / 1055 | 1262 / 1018 |
+| Workflow (LAX), one sample | 169 round trip | — | — | — |
+
+The data-side work, ten sequential `find`s on a missing key from SEA, took
+117 to 136 ms warm and 151 to 174 ms cold in every cell: about 12 ms per
+call, with the first call near 59 ms for connection setup. So the impact
+estimate's 17 ms per call is conservative and its 140 ms cross-region term
+is optimistic for Lisbon (the hop is about 185 ms there, 55 ms from Los
+Angeles, 90 ms from Ashburn). The hop does not go cold; what goes cold is
+the data isolate and its connection, worth 20 to 40 ms. Remote beat local
+even from the nearest vantage: the SJC worker running the ten Gets itself
+took 281 ms against 158 ms through the binding to Seattle. The hostname
+transport works from a DO but a Worker calling another Worker on the same
+zone is refused (error 1042), so hostname is a fallback for DO callers
+only. Decision: the executor is reached by service-binding `fetch()`; RPC
+is out; the hinted-DO fallback is not needed.
 
 **Spike 2: DO baseline, reconstructed.** *Question:* what do the DO paths
 cost today? *Method:* the `serial` mode of each replica, run from the

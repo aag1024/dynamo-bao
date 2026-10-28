@@ -13,9 +13,10 @@
 //   4  RateLimitService.checkAndIncrement, key = buildLimitKey("functionInvoke",
 //        { appId, functionId }) (hashed identifiers), limit 1200/min:
 //        RateLimitWindow.update(id, { count: "+1" }, { condition: { count: { $lt: limit } } })
-//        → on a missing row the guarded UpdateItem fails, the library does one
-//          fallback GetItem (_existsAfterGuardFailure), then
-//          RateLimitWindow.create({ …, count: 1, ttl }): three calls
+//        → on a missing row the guarded UpdateItem fails and
+//          RateLimitWindow.create({ …, count: 1, ttl }) runs: two calls. The
+//          library's fallback GetItem (_existsAfterGuardFailure) is skipped
+//          because the failure carries ReturnValuesOnConditionCheckFailure.
 //        → on a lost race, the increment again in a nested batch context
 //        → at the limit: the failed UpdateItem, then a find to report the count
 //   5  recordAppActivity, once per isolate-hour, under the global-admin tenant

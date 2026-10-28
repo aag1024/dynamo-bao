@@ -787,6 +787,39 @@ is a parameter the report shows both ends of, not a measurement.
 comes later, in Phase B step 1, when `runWithDynamoMetrics` wraps the DO
 paths as product code. Half a day of runs.
 
+*Result (2026-10-28, `results/spike2.csv`, 50 warm + 10 cold samples per
+cell, `wnam` DO in LAX, serial mode, replicas reviewed against the product
+source the same day and found faithful on these two paths).* Every
+DynamoDB call from Los Angeles costs about the same: Get 41 ms, Query 43
+ms, conditional Update 44 ms at p50 warm, p95 51 to 53 ms; so a path costs
+its round-trip depth times about 42 ms, and the branch decides the depth.
+p50 in ms, warm / cold, with the depth in round trips:
+
+| Path, branch | depth | warm | cold |
+|---|---|---|---|
+| subscribe, owner (direct grant short-circuits) | 4 | 182 | 330 |
+| subscribe, reader (direct grant + link floor) | 5 | 216 | 231 |
+| subscribe, group (memberships + group grant) | 5 | 211 | 243 |
+| subscribe, link (no grant, document floor) | 5 | 208 | 232 |
+| subscribe, deny (stops after auth) | 2 | 83 | 94 |
+| per-message check, owner | 1 | 44 | 49 |
+| per-message check, reader / group / link | 2 | 82 to 92 | 86 to 100 |
+| per-message check, deny | 2 | 83 | 87 |
+
+Reading: a new subscription by anyone but the owner costs about 210 ms of
+DynamoDB waiting from the product's current DO location, and every Yjs
+message from a non-owner pays about 85 ms before it is forwarded; the
+owner pays 44 ms. The "pinned today" column of the impact table should use
+these, not the 17 ms × rounds estimate, and the cross-region term from
+Spike 1 says what the same depth would cost from Lisbon (about 190 ms per
+round trip) or Hong Kong (about 160 ms). Two caveats. First, "cold" here
+is only partly cold: the driver runs the ten cells in order within each
+cold round, so only the first cell (subscribe, owner) pays the DO and
+connection start, which is why it alone jumps; cold p95 for a first call
+was 161 ms against 53 ms warm. Second, the harness runs dynamo-bao 0.8.2
+from the working tree, and the product runs the same version, so there is
+no update pre-read difference to account for on these paths.
+
 **Spike 3: location and structure, separated.** *Question:* how much of
 the subscribe gain is parallelism, how much is location, and what does the
 "DOs near users, no executor" column really cost? *Method:* the full

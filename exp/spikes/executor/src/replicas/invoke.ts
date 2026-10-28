@@ -10,14 +10,20 @@
 //   2  ServerFunctionConfig.find(activeConfigId)              (batched)
 //   3  memberships, only if role is not admin/owner and access is non-empty:
 //        AppMembership.queryByIndex(membershipsForApp, …) drained, no cache
-//   4  RateLimitService.checkAndIncrement:
+//   4  RateLimitService.checkAndIncrement, key = buildLimitKey("functionInvoke",
+//        { appId, functionId }) (hashed identifiers), limit 1200/min:
 //        RateLimitWindow.update(id, { count: "+1" }, { condition: { count: { $lt: limit } } })
-//        → on a missing row, RateLimitWindow.create({ …, count: 1, ttl })
+//        → on a missing row the guarded UpdateItem fails, the library does one
+//          fallback GetItem (_existsAfterGuardFailure), then
+//          RateLimitWindow.create({ …, count: 1, ttl }): three calls
 //        → on a lost race, the increment again in a nested batch context
-//        What dynamo-bao does inside update() (pre-read or not) is the
-//        library version's business; the spike measures the working tree.
-//   5  recordAppActivity, once per isolate-hour, in the admin partition:
+//        → at the limit: the failed UpdateItem, then a find to report the count
+//   5  recordAppActivity, once per isolate-hour, under the global-admin tenant
+//        (withAdminContext: the App row is `[global-admin-app]#a#<appId>`):
 //        App.find(appId) (batched) → App.update(…, { condition, instanceObj })
+//        Outcome "allowed:no-app" means the App row was not found and the
+//        write was skipped, which the product would never do; it flags a
+//        seeding or tenant mistake rather than a branch.
 //
 // Not modeled: the member permission middleware upstream, the sandbox, the
 // finally-block decrement (only when the run was not "spent"), and the
@@ -36,10 +42,11 @@ import { getAppModels, getAdminModels, withApp, withBatch } from "../db";
 import type { DbEnv } from "../db";
 import { drainMemberships } from "./auth";
 import { required } from "./subscribe";
+import { ADMIN_TENANT, PLATFORM_RATE_PER_MINUTE, buildLimitKey } from "../limits";
 
 export const branches = ["admin", "member", "member-new-window", "member-limited"] as const;
 
-const LIMIT = 60;
+const LIMIT = PLATFORM_RATE_PER_MINUTE;
 const WINDOW_SECONDS = 60;
 
 export async function run(mode: "serial" | "parallel", branch: string, p: Record<string, string>, env: DbEnv) {
@@ -54,35 +61,34 @@ export async function run(mode: "serial" | "parallel", branch: string, p: Record
 
   const body = async () => {
     const M = getAppModels(env);
-    const A = getAdminModels(env);
-    const limitKey = p.limitKey ?? `functionInvoke_appId_${appId}_functionId_fn`;
 
     if (mode === "serial") {
       const fn = await M.ServerFunction.findByfunctionKeyPerApp(functionKey);
       if (!fn?.exists?.()) return "not-found";
       if (fn.activeConfigId) await M.ServerFunctionConfig.find(fn.activeConfigId);
       if (member) await drainMemberships(M, appId, userId);
+      const limitKey = await buildLimitKey("functionInvoke", { appId, functionId: fn.functionId });
       const rl = await checkAndIncrement(M, { limitKey, windowStart, appId });
       if (rl !== "allowed") return rl;
-      if (member) await recordActivity(A, appId);
-      return "allowed";
+      return member ? recordActivity(env, appId) : "allowed";
     }
 
-    const [fn, , app] = await Promise.all([
+    const [fn, , app]: [any, any, any] = await Promise.all([
       M.ServerFunction.findByfunctionKeyPerApp(functionKey),
       member ? drainMemberships(M, appId, userId) : Promise.resolve([]),
-      member ? A.App.find(appId) : Promise.resolve(null),
+      member ? withApp(ADMIN_TENANT, () => getAdminModels(env).App.find(appId)) : Promise.resolve(null),
     ]);
     if (!fn?.exists?.()) return "not-found";
+    const limitKey = await buildLimitKey("functionInvoke", { appId, functionId: fn.functionId });
     const [, rl] = await Promise.all([
       fn.activeConfigId ? M.ServerFunctionConfig.find(fn.activeConfigId) : Promise.resolve(null),
       checkAndIncrement(M, { limitKey, windowStart, appId }),
-      member && app?.exists?.() ? updateActivity(A, app, appId) : Promise.resolve(),
+      member && app?.exists?.() ? withApp(ADMIN_TENANT, () => updateActivity(getAdminModels(env), app, appId)) : Promise.resolve(),
     ]);
-    return rl;
+    return member && !app?.exists?.() && rl === "allowed" ? "allowed:no-app" : rl;
   };
-  // Product: the whole request is one batch context; admin models run in the
-  // global partition (no tenant) and app models under the app tenant.
+  // Product: the whole request is one batch context; app models run under the
+  // app tenant and the activity step switches to the global-admin tenant.
   return withBatch(() => withApp(appId, body));
 }
 
@@ -115,11 +121,16 @@ async function checkAndIncrement(M: any, k: { limitKey: string; windowStart: str
   return again ?? "unavailable";
 }
 
-/** app-activity-recorder.ts writeActivity, on a cold isolate (gate open). */
-async function recordActivity(A: any, appId: string) {
-  const app = await A.App.find(appId);
-  if (!app?.exists?.() || app.deletingAt) return;
-  await updateActivity(A, app, appId);
+/** app-activity-recorder.ts writeActivity, on a cold isolate (gate open), under withAdminContext. */
+async function recordActivity(env: DbEnv, appId: string): Promise<string> {
+  return withApp(ADMIN_TENANT, async () => {
+    const A = getAdminModels(env);
+    const app = await A.App.find(appId);
+    if (!app?.exists?.()) return "allowed:no-app";
+    if (app.deletingAt) return "allowed";
+    await updateActivity(A, app, appId);
+    return "allowed";
+  });
 }
 
 async function updateActivity(A: any, app: any, appId: string) {

@@ -7,6 +7,9 @@
 // runs ensureConnectionMapping (a blind conditional create) every time.
 //
 // Branches: the same five as subscribe (owner, reader, group, link, deny).
+// For `update` the product refuses reader and link levels in memory after
+// the same reads, so "allowed:reader" here costs exactly what the product's
+// refusal costs; the label is the auth level, not the product's verdict.
 // Param `op`: "update" (default) or "syncStep1" (adds the mapping create).
 //
 // `parallel` is the restructuring: all four auth reads in one round under a

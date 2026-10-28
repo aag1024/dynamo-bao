@@ -5,15 +5,17 @@
 //     mode every find is a direct, uncached GetItem (no withBatch here).
 //   - DOC_PERF_CACHE_ENABLED is set in no environment, so the permission
 //     cache is off and the loader always runs. The memberships SWR cache is
-//     off in production. Neither is modeled.
+//     off in production (on in dev and alpha: wrangler.toml:146, 616, which
+//     is one reason alpha is not a baseline). Neither is modeled.
 //   - systemAuthorityFor and adminDocumentLevelFor are in-memory; the admin
 //     bypass is not a branch here (it makes no DB calls at all).
 //   - ensureConnectionMapping does a blind conditional create (no pre-read).
 //   - The second Document.find runs on every new subscription and re-reads
 //     the row the link floor may just have read.
-//   - requestExistingAwarenessStates queries peers (limit 250, one page here)
-//     and then fans out over DO fetches, which are not DynamoDB and are not
-//     modeled. Its cleanup deletes run only for malformed rows; none seeded.
+//   - requestExistingAwarenessStates drains peers (getAllConnectionMappings,
+//     250 per page; seeded documents have far fewer, so one page) and then
+//     fans out over DO fetches, which are not DynamoDB and are not modeled.
+//     Its cleanup deletes run only for malformed rows; none seeded.
 //
 // Branches (which grant the seeded user has on the seeded document):
 //   owner          direct grant "owner": group query and link floor skipped
@@ -46,9 +48,9 @@ export async function run(mode: "serial" | "parallel", branch: string, p: Record
       await createMapping(M, { connectionId, userId, documentId, appId, ttl });
       // Step 9: routing Document.find for a document this DO has not seen.
       await M.Document.find(documentId);
-      // Step 10: requestExistingAwarenessStates → connectionsForDocument, one page.
-      const peers = await M.ConnectionMapping.queryByIndex("connectionsForDocument", documentId, null, { limit: 250 });
-      return `allowed:${level}:peers=${peers.items.length}`;
+      // Step 10: requestExistingAwarenessStates → connectionsForDocument, drained.
+      const peers = await drainPeers(M, documentId);
+      return `allowed:${level}:peers=${peers}`;
     }
 
     // parallel: round 1 is every read, round 2 is the writes and the peer query.
@@ -62,12 +64,24 @@ export async function run(mode: "serial" | "parallel", branch: string, p: Record
     if (!level) return "denied";
     const [, peers] = await Promise.all([
       createMapping(M, { connectionId, userId, documentId, appId, ttl }),
-      M.ConnectionMapping.queryByIndex("connectionsForDocument", documentId, null, { limit: 250 }),
+      drainPeers(M, documentId),
       M.Document.find(documentId), // loader-cache hit: no call
     ]);
-    return `allowed:${level}:peers=${peers.items.length}`;
+    return `allowed:${level}:peers=${peers}`;
   };
   return withApp(appId, () => (mode === "parallel" ? withBatch(body) : body()));
+}
+
+/** connection-helpers.ts getAllConnectionMappings: pages of 250 until no lastEvaluatedKey. */
+async function drainPeers(M: any, documentId: string): Promise<number> {
+  let n = 0;
+  let startKey: any = undefined;
+  do {
+    const page = await M.ConnectionMapping.queryByIndex("connectionsForDocument", documentId, null, { limit: 250, ...(startKey ? { startKey } : {}) });
+    n += page.items.length;
+    startKey = page.lastEvaluatedKey;
+  } while (startKey);
+  return n;
 }
 
 async function createMapping(M: any, fields: Record<string, unknown>) {

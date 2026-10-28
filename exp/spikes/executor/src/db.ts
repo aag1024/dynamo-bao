@@ -38,7 +38,7 @@ function config(env: DbEnv, tenancy: boolean) {
   return {
     models: tenancy ? appModels : adminModels,
     aws: { region: env.DDB_REGION },
-    db: { tableName: env.DDB_TABLE },
+    db: { tableName: env.DDB_TABLE, iterationIndexName: "iter_search_index" },
     keyMigration: { modelPrefixPkMode: "tenant-scoped" },
     logging: { level: "ERROR" },
     tenancy: { enabled: tenancy },

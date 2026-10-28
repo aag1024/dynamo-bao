@@ -60,8 +60,7 @@ function paramsFor(replica, branch) {
       return { appId: APP, documentId: docId(i), userId: user, connectionId: `run-${run}-${connCursor++}` };
     case "invoke":
       return { appId: APP, userId: branch === "admin" ? USERS.owner : USERS.group, functionKey: "spike-fn",
-        existingWindowStart: "2026-01-01T00:00:00.000Z", limitedWindowStart: "2026-01-01T00:01:00.000Z",
-        limitKey: `functionInvoke_appId_${APP}_functionId_fn` };
+        existingWindowStart: "2026-01-01T00:00:00.000Z", limitedWindowStart: "2026-01-01T00:01:00.000Z" };
     default:
       return { appId: APP };
   }

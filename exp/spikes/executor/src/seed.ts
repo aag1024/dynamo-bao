@@ -7,6 +7,7 @@
 // idempotent in effect (creates that collide are swallowed).
 import { getAppModels, getAdminModels, withApp, withBatch } from "./db";
 import type { DbEnv } from "./db";
+import { ADMIN_TENANT, PLATFORM_RATE_PER_MINUTE, buildLimitKey } from "./limits";
 
 export const APP_ID = "01JSP1KEAPP000000000000000";
 export const USERS = {
@@ -20,7 +21,7 @@ export const FUNCTION_KEY = "spike-fn";
 export const CONFIG_ID = "01JSP1KECFG000000000000000";
 export const EXISTING_WINDOW = "2026-01-01T00:00:00.000Z";
 export const LIMITED_WINDOW = "2026-01-01T00:01:00.000Z";
-export const LIMIT_KEY = `functionInvoke_appId_${APP_ID}_functionId_fn`;
+export const FUNCTION_ID = "01JSP1KEFN0000000000000000";
 
 export function docId(i: number) {
   return `01JSP1KED0C${String(i).padStart(15, "0")}`;
@@ -50,7 +51,9 @@ export async function seed(spec: SeedSpec, env: DbEnv) {
   let created = 0;
   await withBatch(async () => {
     if (spec.from === 0) {
-      if (await swallowExists(A.App.create({ appId: APP_ID, name: "spike", mode: "test", createdBy: "01JSP1KEADM1N0000000000000" }))) created++;
+      // The product creates and reads App rows under withAdminContext, so the
+      // key is `[global-admin-app]#a#<appId>`; a bare `a#<appId>` row is invisible to it.
+      if (await withApp(ADMIN_TENANT, () => swallowExists(A.App.create({ appId: APP_ID, name: "spike", mode: "test", createdBy: "01JSP1KEADM1N0000000000000" })))) created++;
     }
     await withApp(APP_ID, async () => {
       const M = getAppModels(env);
@@ -63,16 +66,17 @@ export async function seed(spec: SeedSpec, env: DbEnv) {
           groupType: "team", groupId: "t1", groupComposite: "team#t1", addedBy: USERS.owner,
         }))) created++;
         if (await swallowExists(M.ServerFunction.create({
-          functionId: "01JSP1KEFN0000000000000000", appId: APP_ID, functionKey: FUNCTION_KEY,
+          functionId: FUNCTION_ID, appId: APP_ID, functionKey: FUNCTION_KEY,
           activeConfigId: CONFIG_ID, access: "member", createdBy: "01JSP1KEADM1N0000000000000",
         }))) created++;
         if (await swallowExists(M.ServerFunctionConfig.create({
-          configId: CONFIG_ID, functionId: "01JSP1KEFN0000000000000000", appId: APP_ID,
+          configId: CONFIG_ID, functionId: FUNCTION_ID, appId: APP_ID,
           entry: "index.js", envelopeKey: "spike-envelope", createdBy: "01JSP1KEADM1N0000000000000",
         }))) created++;
         const far = new Date("2027-01-01T00:00:00Z");
-        if (await swallowExists(M.RateLimitWindow.create({ limitKey: LIMIT_KEY, windowStart: EXISTING_WINDOW, appId: APP_ID, count: 1, ttl: far }))) created++;
-        if (await swallowExists(M.RateLimitWindow.create({ limitKey: LIMIT_KEY, windowStart: LIMITED_WINDOW, appId: APP_ID, count: 60, ttl: far }))) created++;
+        const limitKey = await buildLimitKey("functionInvoke", { appId: APP_ID, functionId: FUNCTION_ID });
+        if (await swallowExists(M.RateLimitWindow.create({ limitKey, windowStart: EXISTING_WINDOW, appId: APP_ID, count: 1, ttl: far }))) created++;
+        if (await swallowExists(M.RateLimitWindow.create({ limitKey, windowStart: LIMITED_WINDOW, appId: APP_ID, count: PLATFORM_RATE_PER_MINUTE, ttl: far }))) created++;
       }
       const metadata = "x".repeat(spec.metadataBytes ?? 2048);
       for (let i = spec.from; i < spec.to; i++) {

@@ -25,6 +25,19 @@ the context resolver, and the deployment.
 The executor collapses N trips into 1. It never collapses 1 into 0. Per-message
 hot paths still need a caller-side cache; the executor is what refreshes it.
 
+**Status (2026-10-28): validated by six spikes, sequence revised.** The
+spikes (section "Validation spikes") measured the design from a standalone
+worker. Placement over a service-binding `fetch()` holds. From the DO's
+current location every DynamoDB call costs about 42 ms, so a path costs its
+round-trip depth times that; restructuring the DO paths under a batch
+context halves them in place, with no topology change, and ships first.
+Unpinning the DOs without the executor is a poor trade: each remaining
+round becomes a far round trip and a fresh DO pays a far TLS handshake per
+concurrent read (830 to 850 ms per subscription from Europe or Asia,
+against about 250 ms through the executor). The executor is therefore the
+enabler for moving DOs near users, not the first win, and the sequence in
+"Implementation sequence" is ordered that way.
+
 ## Decision record
 
 **v1 is procedures-first.** An earlier draft of this document specified a
@@ -45,6 +58,33 @@ weight at that point either way.
 
 The plan language is preserved in Appendix A so it can be revisited when
 callers demonstrate a need to compose ad hoc loads without a deploy.
+
+**Restructure first, executor second (2026-10-28, from Spike 3).** At the
+pinned location the batch-context restructuring of the DO paths wins
+every cell, including the per-message check where the executor loses to
+it by the hop. The restructuring ships as a product change in Phase B
+before any executor consumer, and its read-then-decide functions become
+the procedure bodies later, so nothing is thrown away.
+
+**Unpinning requires the executor (2026-10-28, from Spike 3).** Restructured
+code from a DO in Europe or Asia costs 310 to 360 ms per subscription warm
+and 830 to 850 ms on a fresh DO; the executor costs 210 to 240 and about
+250. Per-message checks from a far DO are one far round, about 170 to 200
+ms, unless the permission cache removes them. Phase C stays gated on the
+executor, and the two-bundle split it needs is required for unpinning in
+any case, because placement is per worker and the HTTP API should stay
+next to the table.
+
+**Transport is a service-binding `fetch()` (Spike 1).** RPC ignores
+placement and is out; the hostname fallback works only for DO callers,
+since a Worker's fetch to another Worker on the same zone is refused.
+
+**Procedures return plain views and `ctx` carries what was ambient
+(Spike 6).** Dates as epoch milliseconds, rows as `fromRemote` input; the
+actor carries system authority; `ctx` has a clock, a logger, the tenant as
+a value and admin models for the named partition. Reconcile splits into a
+read and a ledger-backed write procedure; settlement's R2 put stays with
+the caller.
 
 ## Problem
 
@@ -640,33 +680,40 @@ a durability trade, not a transport change.
 
 ## Impact estimate
 
-Assumptions: 17 ms per DynamoDB call from the data worker, 140 ms cross-region
-round trip for a user in Europe. Halve the 140 ms term for a user in the US
-East. All figures are estimates from round counts, not measurements, and the
-DO paths have no baseline today. Spikes 2 and 3 replace this table with
-measurements from the spike worker before any topology decision, and
-Phase B replaces those with product measurements.
+Measured (2026-10-28) from the spike worker, p50 warm in ms unless stated;
+replicas reviewed against the product source. "Today" is the DO in Los
+Angeles, where the pin puts it. "Near users" is a DO in Lisbon, Hong Kong
+or Melbourne; the range spans the three. The product's own numbers come
+from the Phase B metrics wrapper on real traffic, which also supplies the
+branch mix the spikes cannot know.
 
-| Operation | Pinned today | DOs near users, no executor | DOs near users, with executor |
-|---|---|---|---|
-| WS subscribe (up to 9 rounds) | 150 ms + 140 ms frame RTT | up to 1,260 ms | ~180 to 200 ms |
-| yjs update between two EU users | ~160 to 190 ms | 160 to 440 ms | ~25 ms on cache hit, room permitting |
-| GET /documents/:id (HTTP) | 174 ms | 280 ms | 174 ms (stays on the data worker) |
-| Workflow framework overhead (51 calls) | 8,415 ms measured | 8,415 ms | 870 ms of DynamoDB time plus 140 ms per irreducible boundary; boundary count unknown until the engine's bookkeeping is grouped |
-| Durable function `ctx.db` call (3 rounds) | ~500 ms | ~500 ms | ~190 ms |
+| Operation | Pinned today | Pinned, restructured | Near users, restructured only | Near users, with executor |
+|---|---|---|---|---|
+| WS subscribe, non-owner (5 rounds today) | 191 to 198 | 80 to 86 | 312 to 358; 827 to 849 on a fresh DO | 214 to 237; about 250 on a fresh DO |
+| WS subscribe, owner (4 rounds) | 153 | 80 | 318 to 348 | 204 to 226 |
+| Per-message check, non-owner (2 rounds) | 77 to 84 | 39 to 44 | 166 to 197 (one far round) | 175 to 195 (hop plus one round in Seattle); 0 on a permission-cache hit |
+| Per-message check, owner (1 round) | 40 | 42 | about 170 | about 190; 0 on a cache hit |
+| HTTP routes | unchanged | unchanged | stay on the data worker | stay on the data worker |
+| Workflow step reaching the table | already remote: 10 serial calls cost 1.0 to 1.6 s from where Workflows run | same | same | hop of 169 to 176 ms (Paris, Los Angeles) plus 12 ms per call |
 
-Three conclusions:
+Per-call floors: 12 ms from the data worker, 42 ms from Los Angeles, 46 /
+61 / 169 / 151 / 171 ms hop from the `wnam` / `enam` / `weur` / `apac` /
+`oc` DO to the executor. The hop does not go cold; the data isolate and
+its connection do, worth 20 to 40 ms.
 
-1. For HTTP routes the executor changes nothing. Keep them on the pinned data
-   worker.
-2. Workflows and durable runs are the first customer because they are
-   already remote and already measured at the far-colo rate. They are not
-   risk-free: settlement and replay are exactly where the replay classes
-   bite.
-3. The product win is realtime latency outside the US West, and it comes
-   from unpinning the DOs and relocating rooms. The executor is what makes
-   unpinning affordable; the room relocation strategy is what makes it
-   real.
+Three conclusions, revised:
+
+1. **Restructuring is the first win and needs no topology change.** It
+   halves every DO path where the DOs are today and makes the per-message
+   check about 40 ms for everyone. The executor cannot beat it there.
+2. **For HTTP routes the executor changes nothing.** Keep them on the
+   pinned data worker. Workflows are the executor's first customer: they
+   run wherever they are scheduled and already pay the far-colo rate.
+3. **The product win is realtime latency outside the US West, and it needs
+   the executor.** Unpinning restructured code alone makes far users'
+   subscriptions worse than today on fresh DOs; the executor holds them at
+   about 250 ms. The per-message check from a far DO is one far round
+   either way, which is what the permission cache is for.
 
 ## Validation spikes (before implementation)
 
@@ -1040,9 +1087,26 @@ the other), and that a detached instance refuses to save.
 
 ### Phase B: js-bao-wss adoption (handoff plan)
 
-The handoff to js-bao-wss is this section plus Spike results. It is
-written so the first PR is mechanical and each later PR is one measured
-consumer.
+The handoff to js-bao-wss is this section plus the spike results. Revised
+2026-10-28 after Spike 3: the batch-context restructuring of the DO paths
+comes before any executor consumer, because it wins every cell at the
+pinned location and its read-then-decide functions are the procedure
+bodies later. Executor consumers then start with Workflows, which are
+already remote. The subscribe procedure moves to Phase C, where it pays
+off. The full PR-by-PR plan is `design-docs/executor-implementation-plan.md`.
+
+0. **Restructure the DO paths in place** (before step 1's executor
+   plumbing, after its metrics wrapper). Enter a batch context at the DO
+   entry points (`handleDocumentSubscription`, `forwardInTurn` /
+   `validateDocumentAccess`); split `DocumentPermissionService` into a
+   reads function that issues the direct grant, memberships, group grants
+   and document reads together and a pure decision over their results,
+   keeping the owner short-circuit's logic; batch the mapping create and
+   the peer query after the decision. Spike 3's `parallel` mode is this
+   shape and measured subscribe at 80 to 86 ms and the per-message check at
+   39 to 44 ms from Los Angeles. Acceptance: existing permission tests
+   pass; the step 1 metrics show depth 2 for subscribe and 1 for the
+   check; read capacity per subscribe rises by at most the group query.
 
 1. **Foundation PR.** Upgrade dynamo-bao. Add `src/procedures/index.ts`
    with an empty registry, `src/remote-executor.ts` with the context
@@ -1073,25 +1137,31 @@ consumer.
    described above, with `systemAuthorityFor` replaced by `ctx.actor`. No
    behavior change; existing tests pass. This is the prerequisite for the
    subscribe procedure and is reviewable on its own.
-6. **Subscribe procedure and cache seeding.** `document.subscribe@1`, the
-   `DocumentPermissionCache` seed method and generation counter, push
-   invalidation from `emitAccessDiff`, a stated stale-allow window.
-   Measured against the step 1 baseline, which by then has had weeks of
-   traffic. Acceptance: subscribe p50 within the range Spike 3's `remote`
-   mode measured, and the revocation race test passes.
-7. **Handshake and the remaining ConnectionWorker reads**, then
-   `AgentSessionDO` and `CronTriggerDO`, one procedure per existing
-   function, each measured. At the end of this step the ESLint restriction
-   becomes an error.
+6. **Permission cache decision.** `DOC_PERF_CACHE_ENABLED` is set in no
+   environment. Turn it on in alpha behind the step 1 metrics and state
+   the stale-allow window; it is the only lever that takes the
+   per-message check to zero from a far DO. Acceptance: cache hit rate and
+   revocation-race test on alpha.
+
+Moved to Phase C, where they pay off: the subscribe procedure and cache
+seeding (`document.subscribe@1`, push invalidation from `emitAccessDiff`),
+then the handshake and remaining ConnectionWorker reads, `AgentSessionDO`
+and `CronTriggerDO`, one procedure per existing function, each measured;
+the ESLint restriction becomes an error at the end.
 
 ### Phase C: topology (separate project)
 
-Split edge and data workers, version the room namespace, unpin the edge,
-A/B it the way #2862 did the original pin, with a rollback that re-pins
-without losing rooms. Alpha is the rehearsal for the mechanics, not the
-measurement: its traffic is too thin, so the go/no-go reads the Phase B
-step 1 metrics from production. Gated on Phase B step 6's numbers and on
-Spike 3's answer about how much the pinned topology is costing.
+Split edge and data workers (required for unpinning whether or not the
+executor exists, since placement is per worker and the HTTP API stays
+next to the table), ship the subscribe procedure and the remaining DO
+procedures against the pinned edge first, version the room namespace,
+unpin the edge, A/B it the way #2862 did the original pin, with a rollback
+that re-pins without losing rooms. Alpha is the rehearsal for the
+mechanics, not the measurement: its traffic is too thin, so the go/no-go
+reads the Phase B step 1 metrics from production. Gated on Phase B steps
+0 and 6 and on Spike 3's answer: with restructuring alone, far users'
+subscriptions on fresh DOs would be worse than today, so the executor is a
+precondition.
 
 Before production, in addition: fault tests for lost responses after
 commit, replay beyond ten minutes, permission revocation racing a mapping

@@ -8,10 +8,11 @@ import { traceColo } from "./trace";
  * inside a Workflow and records both colos, because Workflows are the first
  * intended customer of the executor and are not covered by placement.
  *
- * Spike 5: step "sleep" sleeps `sleepMinutes`, then step "after" logs
- * env.BUILD_TAG. Redeploy with a different BUILD_TAG during the sleep: if
- * "after" logs the new tag, an in-flight instance picks up new code at its
- * next step and the procedure registry must keep serving old versions.
+ * Spike 5: step "sleep" sleeps `sleepMinutes`, then step "after" returns
+ * env.BUILD_TAG. Redeploy with a different BUILD_TAG during the sleep. Result
+ * 2026-10-28: "after" reported the new tag, so an in-flight instance runs
+ * the newest deploy at its next step; instances are not version-pinned, and
+ * the registry's previous-version rule only needs to span a deploy window.
  */
 export interface SpikeWorkflowParams {
   sleepMinutes?: number;

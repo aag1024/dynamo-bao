@@ -889,6 +889,21 @@ long sleep across a redeploy of `spike-edge` that changes a logged
 constant. *Decision:* how aggressive the previous-version serving rule in
 the registry has to be. Half a day.
 
+*Result (2026-10-28).* **Instances are not pinned.** A `SpikeWorkflow`
+instance started under `BUILD_TAG=dev`, ran its first step, slept six
+minutes; `spike-edge` was redeployed with `BUILD_TAG=v2` at 16:50 UTC; the
+step after the sleep ran at 16:55 and reported `v2`. So a Workflow's later
+steps run whatever is deployed when they execute, and a long-lived
+instance never calls the executor with a stale procedure version on its
+own account. The registry's previous-version rule only has to cover the
+two-bundle deploy window (edge callers deployed before the data worker),
+not instance lifetimes; what a redeploy does put at risk is the reverse,
+new step code consuming a persisted result produced by old step code,
+which is the application's step-output compatibility problem and not the
+executor's. Incidentally this instance ran in CDG (the earlier probe ran in
+LAX): Workflows run wherever they are scheduled, and the binding still
+reached Seattle, with a 176 ms hop from Paris.
+
 **Spike 6: ambient context audit.** *Question:* what do the services to be
 moved read from module globals or `env`? *Method:* read
 `document-permission-service.ts`, `rate-limit.ts`, `app-activity-recorder.ts`,

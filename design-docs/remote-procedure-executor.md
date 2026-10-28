@@ -894,6 +894,14 @@ work in Seattle (60 to 70 ms), so no per-operation design beats about 220
 ms from Europe or Asia; what the executor buys is that the number stops
 depending on the path's depth.
 
+*Addendum (2026-10-28, `results/la-modes.csv`, 50 warm per cell, all ten
+branches at `wnam`).* The full three-mode picture at today's location, p50
+ms: subscribe serial 153 (owner) / 191 to 198 (reader, group, link) / 78
+(deny); restructured 80 to 86 / 43; executor 107 to 115 / 67. Per-message
+check serial 40 (owner) / 77 to 84 (others); restructured 39 to 44 for
+everyone; executor 61 to 70, because a one-round check pays the 46 ms hop
+for nothing. At the pinned location the restructuring wins every cell.
+
 **Spike 4: codec coverage.** *Question:* is `_dyData` JSON-safe for every
 model in js-bao-wss? *Method:* a read-only script over js-bao-wss's
 `models.yaml` and `src/models/*.js` listing field types per model against

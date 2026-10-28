@@ -17,56 +17,58 @@ async function cleanupTestDataByIteration(tenantId, modelClasses) {
   }
 
   try {
-    TenantContext.setCurrentTenant(tenantId);
+    await TenantContext.runWithTenant(tenantId, () =>
+      runWithBatchContext(async () => {
+        for (const ModelClass of modelClasses) {
+          // All test models should be iterable, but add safety check
+          if (ModelClass.iterable) {
+            logger.debug(
+              `Cleaning up ${ModelClass.name} for tenant ${tenantId}`,
+            );
 
-    await runWithBatchContext(async () => {
-      for (const ModelClass of modelClasses) {
-        // All test models should be iterable, but add safety check
-        if (ModelClass.iterable) {
-          logger.debug(`Cleaning up ${ModelClass.name} for tenant ${tenantId}`);
-
-          for await (const batch of ModelClass.iterateAll({ batchSize: 50 })) {
-            const deletePromises = batch.map(async (item) => {
-              try {
-                logger.debug(
-                  `Deleting ${ModelClass.name} item: ${item.getPrimaryId()}`,
-                );
-                return await ModelClass.delete(item.getPrimaryId());
-              } catch (error) {
-                // Ignore TransactionCanceledException and ConditionalCheckFailed during cleanup
-                if (
-                  error.name === "TransactionCanceledException" ||
-                  error.message?.includes("ConditionalCheckFailed") ||
-                  error.message?.includes("Transaction cancelled")
-                ) {
+            for await (const batch of ModelClass.iterateAll({
+              batchSize: 50,
+            })) {
+              const deletePromises = batch.map(async (item) => {
+                try {
                   logger.debug(
-                    `Ignoring delete error for ${ModelClass.name} item ${item.getPrimaryId()}: ${error.message}`,
+                    `Deleting ${ModelClass.name} item: ${item.getPrimaryId()}`,
                   );
-                  return;
+                  return await ModelClass.delete(item.getPrimaryId());
+                } catch (error) {
+                  // Ignore TransactionCanceledException and ConditionalCheckFailed during cleanup
+                  if (
+                    error.name === "TransactionCanceledException" ||
+                    error.message?.includes("ConditionalCheckFailed") ||
+                    error.message?.includes("Transaction cancelled")
+                  ) {
+                    logger.debug(
+                      `Ignoring delete error for ${ModelClass.name} item ${item.getPrimaryId()}: ${error.message}`,
+                    );
+                    return;
+                  }
+                  throw error;
                 }
-                throw error;
-              }
-            });
-            await Promise.all(deletePromises);
+              });
+              await Promise.all(deletePromises);
+            }
+
+            logger.debug(`Completed cleanup for ${ModelClass.name}`);
+          } else {
+            logger.warn(
+              `Model ${ModelClass.name} is not iterable - consider adding iterable: true for easier test cleanup`,
+            );
           }
-
-          logger.debug(`Completed cleanup for ${ModelClass.name}`);
-        } else {
-          logger.warn(
-            `Model ${ModelClass.name} is not iterable - consider adding iterable: true for easier test cleanup`,
-          );
         }
-      }
-    });
+      }),
+    );
 
-    TenantContext.clearTenant();
     logger.debug("Cleanup complete for tenant:", tenantId);
 
     // Small delay to ensure DynamoDB consistency
     await new Promise((resolve) => setTimeout(resolve, 100));
   } catch (err) {
     logger.error("Error during iteration cleanup:", err);
-    TenantContext.clearTenant();
     throw err;
   }
 }
@@ -83,32 +85,30 @@ async function cleanupTestDataByIds(tenantId, trackedItems) {
   }
 
   try {
-    TenantContext.setCurrentTenant(tenantId);
-
-    await runWithBatchContext(async () => {
-      const deletePromises = trackedItems.map(async ({ modelClass, id }) => {
-        try {
-          const item = await modelClass.find(id);
-          if (item.exists()) {
-            logger.debug(`Deleting tracked ${modelClass.name} item: ${id}`);
-            await modelClass.delete(id);
+    await TenantContext.runWithTenant(tenantId, () =>
+      runWithBatchContext(async () => {
+        const deletePromises = trackedItems.map(async ({ modelClass, id }) => {
+          try {
+            const item = await modelClass.find(id);
+            if (item.exists()) {
+              logger.debug(`Deleting tracked ${modelClass.name} item: ${id}`);
+              await modelClass.delete(id);
+            }
+          } catch (error) {
+            // Continue if item doesn't exist
+            logger.debug(
+              `Item not found or already deleted: ${modelClass.name}:${id}`,
+            );
           }
-        } catch (error) {
-          // Continue if item doesn't exist
-          logger.debug(
-            `Item not found or already deleted: ${modelClass.name}:${id}`,
-          );
-        }
-      });
+        });
 
-      await Promise.all(deletePromises);
-    });
+        await Promise.all(deletePromises);
+      }),
+    );
 
-    TenantContext.clearTenant();
     logger.debug("Tracked items cleanup complete for tenant:", tenantId);
   } catch (err) {
     logger.error("Error during tracked items cleanup:", err);
-    TenantContext.clearTenant();
     throw err;
   }
 }
@@ -148,39 +148,39 @@ async function verifyCleanup(tenantId, modelClasses = []) {
   }
 
   try {
-    TenantContext.setCurrentTenant(tenantId);
-
-    await runWithBatchContext(async () => {
-      for (const ModelClass of modelClasses) {
-        if (ModelClass.iterable) {
-          let itemCount = 0;
-          for await (const batch of ModelClass.iterateAll({ batchSize: 10 })) {
-            itemCount += batch.length;
-            if (itemCount > 0) {
-              logger.warn(
-                `Warning: Found ${itemCount} items of ${ModelClass.name} after cleanup for tenant ${tenantId}`,
-              );
-              // Attempt cleanup again
-              for await (const batch of ModelClass.iterateAll({
-                batchSize: 50,
-              })) {
-                const deletePromises = batch.map((item) =>
-                  ModelClass.delete(item.getPrimaryId()),
+    await TenantContext.runWithTenant(tenantId, () =>
+      runWithBatchContext(async () => {
+        for (const ModelClass of modelClasses) {
+          if (ModelClass.iterable) {
+            let itemCount = 0;
+            for await (const batch of ModelClass.iterateAll({
+              batchSize: 10,
+            })) {
+              itemCount += batch.length;
+              if (itemCount > 0) {
+                logger.warn(
+                  `Warning: Found ${itemCount} items of ${ModelClass.name} after cleanup for tenant ${tenantId}`,
                 );
-                await Promise.all(deletePromises);
+                // Attempt cleanup again
+                for await (const batch of ModelClass.iterateAll({
+                  batchSize: 50,
+                })) {
+                  const deletePromises = batch.map((item) =>
+                    ModelClass.delete(item.getPrimaryId()),
+                  );
+                  await Promise.all(deletePromises);
+                }
+                break;
               }
-              break;
             }
           }
         }
-      }
-    });
+      }),
+    );
 
-    TenantContext.clearTenant();
     return true;
   } catch (err) {
     logger.error("Error during cleanup verification:", err);
-    TenantContext.clearTenant();
     return false;
   }
 }
@@ -193,7 +193,7 @@ async function verifyCleanup(tenantId, modelClasses = []) {
  * @returns {ModelManager} The initialized model manager
  */
 function initTestModelsWithTenant(config, tenantId, overrides = {}) {
-  TenantContext.setCurrentTenant(tenantId);
+  TenantContext.setDefaultTenant(tenantId);
   const dynamoBao = require("../../src/index");
   return dynamoBao.initModels({
     ...config,

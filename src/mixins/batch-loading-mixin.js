@@ -716,14 +716,22 @@ function runWithBatchContext(fn) {
     timers: new Set(),
     startTime: Date.now(),
     capacityAccumulator: { read: 0, write: 0 }, // Track total capacity consumed
+    // A tenant set with setCurrentTenant() inside a batch context lives here,
+    // scoped to the request. Nested contexts inherit it.
+    tenantId: batchContext.getStore()?.tenantId ?? null,
   };
 
   return batchContext.run(context, fn);
 }
 
+function getBatchContextStore() {
+  return batchContext?.getStore() ?? null;
+}
+
 module.exports = {
   BatchLoadingMethods,
   runWithBatchContext,
+  getBatchContextStore,
   getBatchContextCapacity,
   _accumulateCapacityToContext,
   BATCH_REQUEST_TIMEOUT,

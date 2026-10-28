@@ -183,11 +183,6 @@ function initModels(userConfig = {}) {
     models: userConfig.models || config.models || null,
   };
 
-  // Validate tenant context if tenancy enabled
-  if (finalConfig.tenancy?.enabled) {
-    TenantContext.validateTenantRequired(finalConfig);
-  }
-
   const modelsDir = finalConfig.paths.modelsDir;
 
   // Get/create manager instance with tenantId

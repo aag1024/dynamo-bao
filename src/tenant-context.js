@@ -11,6 +11,10 @@ function getModelManager() {
   return _ModelManager;
 }
 
+function getBatchContextStore() {
+  return require('./mixins/batch-loading-mixin').getBatchContextStore();
+}
+
 /**
  * @class TenantContext
  * @description Manages tenant context for multi-tenant applications using DynamoBao.
@@ -18,46 +22,63 @@ function getModelManager() {
  */
 class TenantContext {
   static _asyncStorage = new AsyncLocalStorage();
-  static _instances = new Map(); // tenantId -> ModelManager
   static _resolvers = [];
-  static _fallbackTenant = null; // For backward compatibility when not in async context
+  // Process-wide tenant, set by setCurrentTenant() outside any request
+  // context (scripts and tests). Never consulted inside runWithTenant().
+  static _fallbackTenant = null;
 
   /**
    * Sets the current tenant ID and returns the associated ModelManager instance.
-   * For backward compatibility and simple use cases (like tests).
+   *
+   * Inside runWithTenant() or runWithBatchContext() the tenant is set for that
+   * context only. Outside both, it sets a process-wide tenant, which is only
+   * appropriate for scripts and tests: concurrent requests that have no tenant
+   * of their own would see it.
    * @param {string} tenantId - The tenant identifier
    * @returns {ModelManager} The ModelManager instance for the tenant
    */
   static setCurrentTenant(tenantId) {
     const store = this._asyncStorage.getStore();
+    const batchStore = getBatchContextStore();
     if (store) {
-      // We're inside an async context, set the tenant there
       store.tenantId = tenantId;
+    } else if (batchStore) {
+      batchStore.tenantId = tenantId;
     } else {
-      // We're not in an async context, use fallback
       this._fallbackTenant = tenantId;
     }
     return this.getInstance(tenantId);
   }
 
   /**
-   * Gets the current tenant ID using async context or resolver chain.
-   * Concurrency-safe using AsyncLocalStorage.
+   * Sets the process-wide tenant regardless of the current context. Meant for
+   * scripts, jobs and tests that handle one tenant at a time; never call it
+   * from request handling code.
+   * @param {string|null} tenantId - The tenant identifier, or null to clear it
+   * @returns {ModelManager} The ModelManager instance for the tenant
+   */
+  static setDefaultTenant(tenantId) {
+    this._fallbackTenant = tenantId || null;
+    return this.getInstance(tenantId);
+  }
+
+  /**
+   * Gets the current tenant ID. Checked in order: the runWithTenant() context,
+   * a tenant set inside the current batch context, resolvers, and finally the
+   * process-wide tenant (only outside runWithTenant()).
    * @returns {string|null} The current tenant ID or null if not found
    */
   static getCurrentTenant() {
-    // 1. Check async context first (for concurrent request safety)
     const store = this._asyncStorage.getStore();
     if (store?.tenantId) {
       return store.tenantId;
     }
 
-    // 2. Check fallback tenant (for backward compatibility)
-    if (this._fallbackTenant) {
-      return this._fallbackTenant;
+    const batchTenant = getBatchContextStore()?.tenantId;
+    if (batchTenant) {
+      return batchTenant;
     }
 
-    // 3. Try resolvers in order (for request-scoped resolution)
     for (const resolver of this._resolvers) {
       const tenantId = resolver();
       if (tenantId) {
@@ -65,7 +86,13 @@ class TenantContext {
       }
     }
 
-    return null;
+    // runWithTenant() is an explicit request scope; a process-wide tenant
+    // must not leak into it.
+    if (store) {
+      return null;
+    }
+
+    return this._fallbackTenant || null;
   }
 
   /**
@@ -109,27 +136,26 @@ class TenantContext {
    */
   static getInstance(tenantId = null) {
     const ModelManager = getModelManager();
-    const effectiveTenantId = tenantId || this.getCurrentTenant();
-    const key = effectiveTenantId || "default";
-    
-    if (!this._instances.has(key)) {
-      const manager = ModelManager.getInstance(effectiveTenantId);
-      this._instances.set(key, manager);
-    }
-    
-    return this._instances.get(key);
+    return ModelManager.forTenant(tenantId || this.getCurrentTenant());
   }
 
   /**
-   * Clears the current tenant context.
-   * For test cleanup and simple use cases.
+   * Clears the current tenant. Inside runWithTenant() or runWithBatchContext()
+   * this clears only that context's tenant; outside both it clears the
+   * process-wide tenant.
    */
   static clearTenant() {
     const store = this._asyncStorage.getStore();
+    const batchStore = getBatchContextStore();
     if (store) {
       delete store.tenantId;
     }
-    this._fallbackTenant = null;
+    if (batchStore) {
+      batchStore.tenantId = null;
+    }
+    if (!store && !batchStore) {
+      this._fallbackTenant = null;
+    }
   }
 
   /**
@@ -157,7 +183,6 @@ class TenantContext {
    * Resets all tenant context state (for testing).
    */
   static reset() {
-    this._instances.clear();
     this._resolvers = [];
     this._fallbackTenant = null;
     
@@ -169,6 +194,7 @@ class TenantContext {
     if (ModelManager._instances) {
       ModelManager._instances.clear();
     }
+    ModelManager._primary = null;
   }
 }
 

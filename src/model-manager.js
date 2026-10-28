@@ -5,6 +5,9 @@ const { ConfigurationError } = require("./exceptions");
 
 class ModelManager {
   static _instances = new Map();
+  // The most recently initialized manager. Runtime tenants borrow its models,
+  // client and config through forTenant().
+  static _primary = null;
 
   constructor(config = {}) {
     this._initialized = false;
@@ -26,11 +29,26 @@ class ModelManager {
     return ModelManager._instances.get(key);
   }
 
-  async init(config = {}) {
-    // Validate tenant requirement
-    const { TenantContext } = require("./tenant-context");
-    TenantContext.validateTenantRequired(config);
+  /**
+   * Returns the manager to use for a tenant at request time. A manager that
+   * was explicitly initialized for this tenant wins; otherwise this returns a
+   * lightweight view of the primary manager with the tenant id swapped in.
+   * Views are not cached, so arbitrary tenant ids don't grow memory.
+   */
+  static forTenant(tenantId) {
+    const existing = ModelManager._instances.get(tenantId || "default");
+    if (existing) {
+      return existing;
+    }
+    if (!ModelManager._primary) {
+      return ModelManager.getInstance(tenantId);
+    }
+    const view = Object.create(ModelManager._primary);
+    view._tenantId = tenantId;
+    return view;
+  }
 
+  async init(config = {}) {
     // Store config for models to access
     this._config = config;
 
@@ -55,6 +73,7 @@ class ModelManager {
     }
 
     this._initialized = true;
+    ModelManager._primary = this;
     return this;
   }
 

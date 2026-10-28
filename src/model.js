@@ -115,7 +115,17 @@ class BaoModel {
   static get manager() {
     const { TenantContext } = require("./tenant-context");
     const tenantId = TenantContext.getCurrentTenant();
-    return ModelManager.getInstance(tenantId || this._tenantId);
+    if (tenantId) {
+      return ModelManager.forTenant(tenantId);
+    }
+    // Fail closed: never fall back to the tenant that was current at init.
+    if (this._config?.tenancy?.enabled) {
+      throw new ConfigurationError(
+        `No tenant in context for ${this.name}. Wrap the operation in ` +
+          "TenantContext.runWithTenant(tenantId, fn) or register a resolver.",
+      );
+    }
+    return ModelManager.getInstance(this._tenantId);
   }
 
   static _getField(fieldName) {

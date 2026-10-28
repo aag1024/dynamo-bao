@@ -43,7 +43,7 @@ class MpItem extends BaoModel {
 }
 
 function initWithMode(tenantId, mode) {
-  TenantContext.setCurrentTenant(tenantId);
+  TenantContext.setDefaultTenant(tenantId);
   const manager = dynamoBao.initModels({
     ...testConfig,
     tenancy: { enabled: true },

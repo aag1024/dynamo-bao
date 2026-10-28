@@ -9,6 +9,8 @@ Each version heading links to the tag that was published to npm. Entries before
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-10-28
+
 ### Security
 
 - With tenancy enabled, an operation with no tenant in context now throws
@@ -565,7 +567,8 @@ Initial release: single-table models with fields, GSIs, unique constraints,
 related fields, counters, TTL, filters, pagination, batch loading, hooks,
 YAML codegen and a table creation tool.
 
-[Unreleased]: https://github.com/aag1024/dynamo-bao/compare/v0.8.2...HEAD
+[Unreleased]: https://github.com/aag1024/dynamo-bao/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/aag1024/dynamo-bao/compare/v0.8.2...v0.9.0
 [0.8.2]: https://github.com/aag1024/dynamo-bao/compare/v0.8.1...v0.8.2
 [0.8.1]: https://github.com/aag1024/dynamo-bao/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/aag1024/dynamo-bao/compare/v0.7.3...v0.8.0

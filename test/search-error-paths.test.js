@@ -279,20 +279,20 @@ describe("filter on non-projected attribute → friendly error before round-trip
     // system field names — that's tracked as a separate enhancement).
     expect(() =>
       ModelClass._assertFilterFitsIterIndex("iter_search_index", {
-        "#n1": "_searchText",
+        "#__f1": "_searchText",
       }),
     ).not.toThrow();
     expect(() =>
       ModelClass._assertFilterFitsIterIndex("iter_search_index", {
-        "#n1": "_pk",
-        "#n2": "_sk",
-        "#n3": "_iter_pk",
-        "#n4": "_iter_sk",
+        "#__f1": "_pk",
+        "#__f2": "_sk",
+        "#__f3": "_iter_pk",
+        "#__f4": "_iter_sk",
       }),
     ).not.toThrow();
     expect(() =>
       ModelClass._assertFilterFitsIterIndex("iter_search_index", {
-        "#n1": "title",
+        "#__f1": "title",
       }),
     ).toThrow(/aren't projected.*\[title\]/i);
   });
@@ -300,12 +300,12 @@ describe("filter on non-projected attribute → friendly error before round-trip
   test("preflight knows iter_index (legacy) is KEYS_ONLY — even _searchText is rejected", () => {
     expect(() =>
       ModelClass._assertFilterFitsIterIndex("iter_index", {
-        "#n1": "_searchText",
+        "#__f1": "_searchText",
       }),
     ).toThrow(/aren't projected.*\[_searchText\]/);
     expect(() =>
       ModelClass._assertFilterFitsIterIndex("iter_index", {
-        "#n1": "_iter_pk",
+        "#__f1": "_iter_pk",
       }),
     ).not.toThrow();
   });

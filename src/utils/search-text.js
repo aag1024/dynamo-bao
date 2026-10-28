@@ -182,7 +182,7 @@ function buildSearchPredicate(terms, searchConfig, options = {}) {
   }
 
   // `:stN` placeholders are deliberately a separate namespace from the
-  // FilterExpressionBuilder convention (`:vN`, see src/filter-expression.js)
+  // FilterExpressionBuilder convention (`:__fN`, see src/filter-expression.js)
   // so the two can be merged into a single FilterExpression without colliding.
   const join = operator === "$or" ? " OR " : " AND ";
   const parts = [];

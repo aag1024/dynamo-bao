@@ -47,6 +47,9 @@ const SYSTEM_FIELDS = [
 
 const UNIQUE_CONSTRAINT_KEY = "_raft_uc";
 
+// Joins pk and sk in the string primary id of a composite-key model.
+const GID_SEPARATOR = "##__SK__##";
+
 module.exports = {
   GSI_INDEX_ID1,
   GSI_INDEX_ID2,
@@ -64,4 +67,5 @@ module.exports = {
   UNIQUE_CONSTRAINT_ID3,
   SYSTEM_FIELDS,
   UNIQUE_CONSTRAINT_KEY,
+  GID_SEPARATOR,
 };

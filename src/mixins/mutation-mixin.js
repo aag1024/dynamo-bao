@@ -16,7 +16,7 @@ const {
   ValidationError,
 } = require("../exceptions");
 const { computeSearchTextUpdate } = require("../utils/search-text");
-const { SEARCH_TEXT_FIELD } = require("../constants");
+const { SEARCH_TEXT_FIELD, GID_SEPARATOR } = require("../constants");
 
 /**
  * AND a guard onto an optional ConditionExpression. The existing expression
@@ -324,7 +324,7 @@ const MutationMethods = {
   /**
    * AND an `attribute_exists(_pk)` guard into a write's ConditionExpression.
    * Uses a "#__" placeholder so it can't clobber a field placeholder (user
-   * field names can't start with "_"; filter placeholders are "#nN").
+   * field names can't start with "_"; filter placeholders are "#__fN").
    * @private
    */
   _addExistsGuard(params) {
@@ -486,10 +486,47 @@ const MutationMethods = {
     return { relocated: true, from: sourceKey._pk, to: canonicalKey._pk };
   },
 
+  /**
+   * An update can't move a row to a different key, so reject a change to any
+   * field the primary key is built from. Re-sending the current value is fine.
+   * @private
+   */
+  _assertPrimaryKeyUnchanged(primaryId, jsUpdates) {
+    const current = this._parsePrimaryId(primaryId);
+    for (const [part, fieldName] of [
+      ["pk", this.primaryKey.pk],
+      ["sk", this.primaryKey.sk],
+    ]) {
+      if (
+        !fieldName ||
+        fieldName === "modelPrefix" ||
+        jsUpdates[fieldName] === undefined
+      ) {
+        continue;
+      }
+      const field = this._getField(fieldName);
+      if (String(field.toGsi(jsUpdates[fieldName])) !== String(current[part])) {
+        throw new ValidationError(
+          `Cannot change primary key field ${fieldName} on update`,
+        );
+      }
+    }
+  },
+
   _createNewPrimaryId(jsUpdates) {
     // Now calculate primary key values using the processed data
     const pkValue = this._getPkValue(jsUpdates);
     const skValue = this._getSkValue(jsUpdates);
+
+    // The primary id joins pk and sk with GID_SEPARATOR, so a key value that
+    // contains it would parse back to a different record's key.
+    for (const value of [pkValue, skValue]) {
+      if (typeof value === "string" && value.includes(GID_SEPARATOR)) {
+        throw new ValidationError(
+          `Primary key values cannot contain "${GID_SEPARATOR}"`,
+        );
+      }
+    }
 
     // Format the primary key
     const pk = this._formatPrimaryKey(this.modelPrefix, pkValue);
@@ -535,8 +572,16 @@ const MutationMethods = {
 
     logger.debug("jsUpdates", jsUpdates);
 
+    if (!isNew) {
+      this._assertPrimaryKeyUnchanged(primaryId, jsUpdates);
+    }
+
     // Generate Dynamo Updates to save
     for (const [key, field] of Object.entries(this.fields)) {
+      if (field.serverGenerated || (!isNew && field.immutable)) {
+        delete jsUpdates[key];
+      }
+
       if (isNew && jsUpdates[key] === undefined) {
         // Only set initial values during creation
         const initialValue = field.getInitialValue();
@@ -589,7 +634,10 @@ const MutationMethods = {
     // the loaded value plus the delta, guarded on the loaded value, so a
     // concurrent change fails the update (ConditionalError) instead of
     // leaving the index key stale. Other counters keep the atomic ADD.
-    const counterGuards = [];
+    // Fields whose stored value must still equal the loaded value for the
+    // write to apply. Filled for index-key counters here and for unchanged
+    // unique values below.
+    const loadedValueGuards = [];
     const { CounterFieldClass } = require("../fields");
     for (const [key, field] of Object.entries(this.fields)) {
       const dyValue = dyUpdatesToSave[key];
@@ -612,7 +660,7 @@ const MutationMethods = {
       ) {
         const loadedValue = currentItem._loadedDyData[key];
         value = Number(loadedValue ?? 0) + delta;
-        counterGuards.push({ fieldName: key, loadedValue });
+        loadedValueGuards.push({ fieldName: key, loadedValue });
       } else {
         continue;
       }
@@ -728,6 +776,15 @@ const MutationMethods = {
             ),
           );
         }
+      } else if (dyNewValue !== undefined && currentItem) {
+        // Re-sending the unchanged value writes no constraint rows, so guard
+        // the update on the stored value: if a concurrent update moved this
+        // record off the value (releasing its constraint), this write must
+        // not set it back without owning the constraint.
+        loadedValueGuards.push({
+          fieldName,
+          loadedValue: dyCurrentValue,
+        });
       }
     }
 
@@ -870,9 +927,9 @@ const MutationMethods = {
       );
     }
 
-    for (const { fieldName, loadedValue } of counterGuards) {
-      const name = `#__counterGuard_${fieldName}`;
-      const value = `:__counterGuard_${fieldName}`;
+    for (const { fieldName, loadedValue } of loadedValueGuards) {
+      const name = `#__loadedGuard_${fieldName}`;
+      const value = `:__loadedGuard_${fieldName}`;
       updateParams.ExpressionAttributeNames = {
         ...updateParams.ExpressionAttributeNames,
         [name]: fieldName,

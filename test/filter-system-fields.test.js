@@ -62,7 +62,7 @@ describe("FilterExpressionBuilder — _searchText system field", () => {
         { _searchText: { $contains: "Hello, World!" } },
         model,
       );
-      expect(e.FilterExpression).toMatch(/^contains\(#n\d+, :v\d+\)$/);
+      expect(e.FilterExpression).toMatch(/^contains\(#__f\d+, :__f\d+\)$/);
       expect(Object.values(e.ExpressionAttributeNames)).toContain(
         "_searchText",
       );

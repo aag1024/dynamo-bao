@@ -18,13 +18,13 @@ class KeyConditionBuilder {
   }
 
   generateName(fieldName) {
-    const key = `#n${++this.nameCount}`;
+    const key = `#__k${++this.nameCount}`;
     this.names[key] = fieldName;
     return key;
   }
 
   generateValue(value) {
-    const key = `:v${++this.valueCount}`;
+    const key = `:__k${++this.valueCount}`;
     this.values[key] = value;
     return key;
   }

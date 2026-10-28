@@ -155,9 +155,26 @@ class BaoBaseField {
  * A field that stores a string value.
  */
 class StringField extends BaoBaseField {
+  constructor(options = {}) {
+    super(options);
+    this.maxLength = options.maxLength;
+  }
+
   validate(value) {
     if (this.required && !value) {
       throw new ValidationError("Field is required", null, value);
+    }
+    if (
+      value !== null &&
+      value !== undefined &&
+      typeof value !== "string" &&
+      typeof value !== "number"
+    ) {
+      throw new ValidationError(
+        "StringField value must be a string",
+        null,
+        value,
+      );
     }
     if (value && this.maxLength && value.length > this.maxLength) {
       throw new ValidationError(
@@ -194,6 +211,9 @@ class DateTimeField extends BaoBaseField {
         null,
         value,
       );
+    }
+    if (value !== undefined && value !== null && isNaN(this.toDy(value))) {
+      throw new ValidationError("Invalid date value", null, value);
     }
   }
 
@@ -250,6 +270,21 @@ class DateTimeField extends BaoBaseField {
  * A field that stores an integer value.
  */
 class IntegerField extends BaoBaseField {
+  validate(value) {
+    super.validate(value);
+    if (value !== undefined && value !== null) {
+      const num = Number(value);
+      if (typeof value === "boolean" || !Number.isInteger(num)) {
+        throw new ValidationError(
+          "IntegerField value must be an integer",
+          null,
+          value,
+        );
+      }
+    }
+    return true;
+  }
+
   getInitialValue() {
     return this.options.defaultValue !== undefined
       ? this.options.defaultValue
@@ -283,6 +318,20 @@ class IntegerField extends BaoBaseField {
  * A field that stores a floating point number value.
  */
 class FloatField extends BaoBaseField {
+  validate(value) {
+    super.validate(value);
+    if (value !== undefined && value !== null) {
+      if (typeof value === "boolean" || !Number.isFinite(Number(value))) {
+        throw new ValidationError(
+          "FloatField value must be a number",
+          null,
+          value,
+        );
+      }
+    }
+    return true;
+  }
+
   getInitialValue() {
     return this.options.defaultValue !== undefined
       ? this.options.defaultValue
@@ -325,6 +374,8 @@ class CreateDateField extends DateTimeField {
       ...options,
       required: true,
     });
+    // Set once on create; updates leave the stored value alone.
+    this.immutable = true;
   }
 
   getInitialValue() {
@@ -335,7 +386,7 @@ class CreateDateField extends DateTimeField {
     if (!value) {
       return Date.now();
     }
-    return value instanceof Date ? value.getTime() : value;
+    return super.toDy(value);
   }
 }
 
@@ -643,6 +694,9 @@ class VersionField extends BaoBaseField {
       required: true,
     });
     this.defaultValue = options.defaultValue || ulid;
+    // Every save gets a fresh version; a caller-supplied value is ignored,
+    // so it can't be rolled back to defeat optimistic locking.
+    this.serverGenerated = true;
   }
 
   validate(value) {

@@ -25,6 +25,16 @@ const SYSTEM_FILTERABLE_FIELDS = {
   },
 };
 
+// Deep nesting is never needed in practice and would otherwise let a
+// forwarded filter overflow the stack.
+const MAX_FILTER_DEPTH = 16;
+
+// Filter keys are often user input, so look fields up as own properties only;
+// keys like "constructor" or "__proto__" must not resolve through prototypes.
+function lookupOwn(obj, key) {
+  return Object.prototype.hasOwnProperty.call(obj, key) ? obj[key] : undefined;
+}
+
 /**
  * Supporting class for building DynamoDB filter expressions.
  * @class
@@ -42,27 +52,28 @@ class FilterExpressionBuilder {
     this.valueCount = 0;
   }
 
-  // Generate unique name placeholder
+  // Placeholders use a "__" prefix: user field names can't start with "_",
+  // so these never collide with the "#field"/":field" update placeholders
+  // they get merged with in conditional writes.
   generateName(fieldName) {
-    const key = `#n${++this.nameCount}`;
+    const key = `#__f${++this.nameCount}`;
     this.names[key] = fieldName;
     return key;
   }
 
-  // Generate unique value placeholder
   generateValue(value) {
-    const key = `:v${++this.valueCount}`;
+    const key = `:__f${++this.valueCount}`;
     this.values[key] = value;
     return key;
   }
 
   // Simplified value conversion - let the field handle it
   convertValue(value, model, fieldName) {
-    const systemField = SYSTEM_FILTERABLE_FIELDS[fieldName];
+    const systemField = lookupOwn(SYSTEM_FILTERABLE_FIELDS, fieldName);
     if (systemField) {
       return systemField.convertValue(value, model);
     }
-    const field = model.fields[fieldName];
+    const field = lookupOwn(model.fields, fieldName);
     return field.toDy(value);
   }
 
@@ -214,7 +225,7 @@ class FilterExpressionBuilder {
         expressions.push(this.buildLogicalExpression(key, value, model));
       } else if (key === "$not") {
         const innerExpr = this.buildFilterExpression(value, model);
-        expressions.push(`NOT ${innerExpr}`);
+        expressions.push(`NOT (${innerExpr})`);
       } else {
         expressions.push(this.buildFieldExpression(key, value, model));
       }
@@ -235,6 +246,10 @@ class FilterExpressionBuilder {
    *     - $or: [{condition1}, {condition2}] - At least one condition must match
    *     - $not: {condition} - Condition must not match
    * @param {BaoModel} model - The model to build the expression for. Used to validate field names.
+   * @param {Object} [options]
+   * @param {string[]} [options.allowedFields] - When set, the filter may only reference
+   *   these fields. Pass this whenever the filter comes from user input, so callers
+   *   can't probe fields they shouldn't see.
    * @example
    * filterExp1 = {
    *     status: 'active',  // Exact match
@@ -264,9 +279,9 @@ class FilterExpressionBuilder {
    *   - ExpressionAttributeNames: Map of attribute name placeholders
    *   - ExpressionAttributeValues: Map of attribute value placeholders
    */
-  build(filter, model) {
+  build(filter, model, options = {}) {
     // Validate field names against model
-    this.validateFields(filter, model);
+    this.validateFields(filter, model, options);
 
     const filterExpression = this.buildFilterExpression(filter, model);
 
@@ -282,27 +297,41 @@ class FilterExpressionBuilder {
   }
 
   // Validate fields against model definition
-  validateFields(filter, model) {
-    const validateObject = (obj) => {
+  validateFields(filter, model, { allowedFields } = {}) {
+    const validateObject = (obj, depth) => {
+      if (depth > MAX_FILTER_DEPTH) {
+        throw new QueryError(
+          `Filter is nested more than ${MAX_FILTER_DEPTH} levels deep`,
+        );
+      }
+      if (!obj || typeof obj !== "object" || Array.isArray(obj)) {
+        throw new QueryError("Filter conditions must be objects");
+      }
       for (const [key, value] of Object.entries(obj)) {
         // Skip logical operators
         if (["$and", "$or", "$not"].includes(key)) {
-          if (Array.isArray(value)) {
-            value.forEach(validateObject);
+          if (key === "$not") {
+            validateObject(value, depth + 1);
+          } else if (Array.isArray(value)) {
+            value.forEach((condition) => validateObject(condition, depth + 1));
           } else {
-            validateObject(value);
+            throw new QueryError(`${key} requires an array of conditions`);
           }
           continue;
+        }
+
+        if (allowedFields && !allowedFields.includes(key)) {
+          throw new QueryError(`Field not allowed in filter: ${key}`);
         }
 
         // Allow whitelisted system fields (e.g., _searchText) without
         // requiring a matching entry in model.fields. Operator validation
         // below still runs so bad operators are rejected the same way.
-        const isSystemField = !!SYSTEM_FILTERABLE_FIELDS[key];
+        const isSystemField = !!lookupOwn(SYSTEM_FILTERABLE_FIELDS, key);
 
         if (!isSystemField) {
           // Validate field exists in model
-          const field = model.fields[key];
+          const field = lookupOwn(model.fields, key);
           if (!field) {
             throw new QueryError(`Unknown field in filter: ${key}`);
           }
@@ -338,7 +367,7 @@ class FilterExpressionBuilder {
       }
     };
 
-    validateObject(filter);
+    validateObject(filter, 0);
   }
 }
 

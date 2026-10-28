@@ -102,6 +102,7 @@ const QueryMethods = {
    * @param {Object} options.startKey - Exclusive start key for pagination
    * @param {boolean} options.countOnly - If true, returns only the count of matching items
    * @param {Object} options.filter - Additional filter conditions for the query. For full filter syntax, see {@link FilterExpressionBuilder#build}
+   * @param {string[]} options.allowedFilterFields - Fields `filter` may reference. Set this when the filter comes from user input.
    * @param {boolean} options.returnWrapped - If false, returns raw DynamoDB items instead of model instances
    * @param {boolean} options.loadRelated - If true, loads related models for RelatedFields
    * @param {string[]} options.relatedFields - Array of field names to load related data for (used with loadRelated)
@@ -268,7 +269,9 @@ const QueryMethods = {
     // Add filter expression if provided
     if (options.filter) {
       const filterBuilder = new FilterExpressionBuilder();
-      const filterExpression = filterBuilder.build(options.filter, this);
+      const filterExpression = filterBuilder.build(options.filter, this, {
+        allowedFields: options.allowedFilterFields,
+      });
 
       if (filterExpression) {
         params.FilterExpression = filterExpression.FilterExpression;

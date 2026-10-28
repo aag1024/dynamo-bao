@@ -28,8 +28,6 @@ const {
   UniqueConstraintConfig: UniqueConstraintConfigClass,
 } = require("./model-config");
 
-const GID_SEPARATOR = "##__SK__##";
-
 // Passed to the constructor by _createFromDyItem: the instance is about to
 // take its data from a stored row, so skip computing initial field values
 // (which for auto-assigned ULID and version fields means generating ids
@@ -51,6 +49,7 @@ const {
   ITERATION_PK_FIELD,
   ITERATION_SK_FIELD,
   SEARCH_TEXT_FIELD,
+  GID_SEPARATOR,
 } = require("./constants");
 const {
   ConfigurationError,
@@ -362,6 +361,8 @@ class BaoModel {
    *   and so the upper bound on each yielded batch.
    * @param {Object} [options.filter] - Filter on attributes projected onto
    *   the iteration index.
+   * @param {string[]} [options.allowedFilterFields] - Fields `filter` may
+   *   reference. Set this when the filter comes from user input.
    * @param {number} [options.concurrency=1] - Buckets to read concurrently.
    * @yields {BaoModel[]} One batch of loaded instances at a time.
    */
@@ -370,20 +371,33 @@ class BaoModel {
       throw new Error(`Model ${this.name} is not configured as iterable`);
     }
 
-    const { batchSize = 100, filter = null, concurrency = 1 } = options;
+    const {
+      batchSize = 100,
+      filter = null,
+      allowedFilterFields,
+      concurrency = 1,
+    } = options;
     if (!Number.isInteger(concurrency) || concurrency < 1) {
       throw new Error("concurrency must be a positive integer");
     }
 
     if (this.iterationBuckets === 1) {
-      yield* this._iterateSingleBucket(null, { batchSize, filter });
+      yield* this._iterateSingleBucket(null, {
+        batchSize,
+        filter,
+        allowedFilterFields,
+      });
       return;
     }
 
     const buckets = Array.from({ length: this.iterationBuckets }, (_, b) => b);
     if (concurrency === 1) {
       for (const bucket of buckets) {
-        yield* this._iterateSingleBucket(bucket, { batchSize, filter });
+        yield* this._iterateSingleBucket(bucket, {
+          batchSize,
+          filter,
+          allowedFilterFields,
+        });
       }
       return;
     }
@@ -391,7 +405,11 @@ class BaoModel {
     yield* this._interleaveGenerators(
       buckets.map(
         (bucket) => () =>
-          this._iterateSingleBucket(bucket, { batchSize, filter }),
+          this._iterateSingleBucket(bucket, {
+            batchSize,
+            filter,
+            allowedFilterFields,
+          }),
       ),
       concurrency,
     );
@@ -525,6 +543,8 @@ class BaoModel {
    * @param {Object} [options.filter] - Additional filter combined via AND
    *   with the search predicate. Must reference only attributes projected
    *   on `iter_search_index` (i.e., `_searchText` and the index/base keys).
+   * @param {string[]} [options.allowedFilterFields] - Fields `filter` may
+   *   reference. Set this when the filter comes from user input.
    * @returns {Promise<{items: BaoModel[], cursor: string|null}>} `items` is
    *   never longer than `limit`. `cursor` is `null` when the search is
    *   fully exhausted; otherwise pass it back to get the next page.
@@ -607,6 +627,7 @@ class BaoModel {
       operator = "$and",
       batchSize = 100,
       filter = null,
+      allowedFilterFields,
       limit = 100,
       maxQueriesPerBucket = 50,
       parallel = true,
@@ -703,6 +724,7 @@ class BaoModel {
       const page = await this._searchSingleBucketPage(bucketArg(bucketIdx), {
         batchSize,
         filter,
+        allowedFilterFields,
         searchPredicate,
         exclusiveStartKey: lek || null,
       });
@@ -918,6 +940,7 @@ class BaoModel {
     const {
       batchSize = 100,
       filter = null,
+      allowedFilterFields,
       searchPredicate = null,
       exclusiveStartKey = null,
     } = options;
@@ -939,7 +962,9 @@ class BaoModel {
     if (filter) {
       const { FilterExpressionBuilder } = require("./filter-expression");
       const filterBuilder = new FilterExpressionBuilder();
-      const filterExpression = filterBuilder.build(filter, this);
+      const filterExpression = filterBuilder.build(filter, this, {
+        allowedFields: allowedFilterFields,
+      });
       if (filterExpression) {
         this._assertFilterFitsIterIndex(
           indexName,
@@ -983,7 +1008,12 @@ class BaoModel {
   }
 
   static async *_iterateSingleBucket(bucketNum, options = {}) {
-    const { batchSize = 100, filter = null, searchPredicate = null } = options;
+    const {
+      batchSize = 100,
+      filter = null,
+      allowedFilterFields,
+      searchPredicate = null,
+    } = options;
     const iterPk = this._getIterationPk(bucketNum);
     const indexName = this.manager.getIterationIndexName();
 
@@ -1003,7 +1033,9 @@ class BaoModel {
     if (filter) {
       const { FilterExpressionBuilder } = require("./filter-expression");
       const filterBuilder = new FilterExpressionBuilder();
-      const filterExpression = filterBuilder.build(filter, this);
+      const filterExpression = filterBuilder.build(filter, this, {
+        allowedFields: allowedFilterFields,
+      });
       if (filterExpression) {
         // Preflight: filter attributes must be in the GSI's projection.
         // Otherwise DynamoDB returns an opaque "does not project one or
@@ -1284,7 +1316,11 @@ class BaoModel {
     }
 
     if (primaryId.indexOf(GID_SEPARATOR) !== -1) {
-      const [pk, sk] = primaryId.split(GID_SEPARATOR);
+      const parts = primaryId.split(GID_SEPARATOR);
+      if (parts.length !== 2) {
+        throw new ValidationError(`Invalid primary id: ${primaryId}`);
+      }
+      const [pk, sk] = parts;
       return { pk, sk };
     } else {
       if (this.primaryKey.pk === "modelPrefix") {

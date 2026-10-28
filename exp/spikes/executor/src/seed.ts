@@ -30,6 +30,8 @@ export function connId(i: number, j: number) {
 }
 
 export interface SeedSpec {
+  /** Only fix linkAccess on already-seeded documents in [from, to); create nothing. */
+  relinkOnly?: boolean;
   from: number;   // document index range [from, to)
   to: number;
   peers: number;  // connection mappings per document
@@ -75,8 +77,20 @@ export async function seed(spec: SeedSpec, env: DbEnv) {
       const metadata = "x".repeat(spec.metadataBytes ?? 2048);
       for (let i = spec.from; i < spec.to; i++) {
         const documentId = docId(i);
+        // Even documents carry a link floor (the `link` branch); odd ones have
+        // none, so the `deny` branch can be denied. The product stores no
+        // attribute at all when link access is off.
+        const linkAccess = i % 2 ? undefined : "reader";
+        if (spec.relinkOnly) {
+          const d = await M.Document.find(documentId);
+          if (d.exists() && (d.linkAccess ?? undefined) !== linkAccess) {
+            await M.Document.update(documentId, { linkAccess: linkAccess ?? null });
+            created++;
+          }
+          continue;
+        }
         const ops: Promise<any>[] = [
-          M.Document.create({ documentId, appId: APP_ID, title: `doc ${i}`, createdBy: USERS.owner, metadata, linkAccess: "reader" }),
+          M.Document.create({ documentId, appId: APP_ID, title: `doc ${i}`, createdBy: USERS.owner, metadata, linkAccess }),
           M.DocumentPermission.create({ documentId, userId: USERS.owner, permission: "owner", grantedBy: USERS.owner }),
           M.DocumentPermission.create({ documentId, userId: USERS.reader, permission: "reader", grantedBy: USERS.owner }),
           M.DocumentGroupPermission.create({

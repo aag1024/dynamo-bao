@@ -50,7 +50,9 @@ let docCursor = 0;
 let connCursor = 0;
 
 function paramsFor(replica, branch) {
-  const i = docCursor++ % docs;
+  let i = docCursor++ % docs;
+  if (branch === "link" && i % 2) i = (i + 1) % docs;     // even documents carry the link floor
+  if (branch === "deny" && !(i % 2)) i = (i + 1) % docs;  // odd documents have no link access
   const user = USERS[branch] ?? USERS.owner;
   switch (replica) {
     case "subscribe":

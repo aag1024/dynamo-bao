@@ -754,6 +754,8 @@ made the ten DynamoDB calls from there. Hop is the caller's total minus what
 |---|---|---|---|---|
 | `weur` DO (LIS) | 189 / 180 | 182 | 1607 / 2266 | — |
 | `wnam` DO (LAX) | 53 / 62 | 67 | 403 / 639 | — |
+| `apac` DO (HKG), warm only | 157 | — | — | 1650 |
+| `oc` DO (MEL), warm only | 176 | — | — | 1645 |
 | edge worker, unplaced (SJC) | 41 / — | refused (1042) | 274 / — | 281 / — |
 | `us-east-1` worker (IAD) | 89 / 144 | refused (1042) | 979 / 1055 | 1262 / 1018 |
 | Workflow (LAX), one sample | 169 round trip | — | — | — |
@@ -763,7 +765,7 @@ The data-side work, ten sequential `find`s on a missing key from SEA, took
 call, with the first call near 59 ms for connection setup. So the impact
 estimate's 17 ms per call is conservative and its 140 ms cross-region term
 is optimistic for Lisbon (the hop is about 185 ms there, 55 ms from Los
-Angeles, 90 ms from Ashburn). The hop does not go cold; what goes cold is
+Angeles, 90 ms from Ashburn, 157 ms from Hong Kong, 176 ms from Melbourne). The hop does not go cold; what goes cold is
 the data isolate and its connection, worth 20 to 40 ms. Remote beat local
 even from the nearest vantage: the SJC worker running the ten Gets itself
 took 281 ms against 158 ms through the binding to Seattle. The hostname

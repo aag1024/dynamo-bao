@@ -231,7 +231,23 @@ crosses the wire.
 `actor` carries whatever ambient authority the application's code reads
 today (in js-bao-wss, `systemAuthorityFor(appId)` and the caller's role).
 Moving a function body behind the executor must not silently change what it
-believes about who is calling; the envelope makes that explicit.
+believes about who is calling; the envelope makes that explicit. Spike 6
+fixed its shape for js-bao-wss:
+
+```ts
+interface Actor {
+  kind: "user" | "system" | "admin";
+  userId?: string;              // attribution; ids a procedure acts on are args
+  appId: string;                // must equal the call's tenant or the executor refuses
+  systemAuthority: boolean;     // what systemAuthorityFor(appId) answered at the caller
+  preAuthenticated: boolean;    // "a person started this": the activity recorder's gate
+  adminPartition?: string;      // GLOBAL_ADMIN_APP_ID the caller resolved, for scope "admin"
+}
+```
+
+The other fields the gateway's store holds (agent-driven, function
+principal, asserted step, dispatch run id and deadline) are not read by
+any of the five services and are added when a procedure needs them.
 
 ### Outcomes
 
@@ -347,16 +363,26 @@ Properties:
 ```ts
 interface ProcedureContext {
   models: AppModels;            // the call tenant's dynamo-bao models, batching on
-  adminModels?: AdminModels;    // only when the registry entry declares scope "admin" | "both"
-  tenant: string;               // read-only
+  adminModels?: AdminModels;    // only when the registry entry declares scope "admin" | "both",
+                                // built for the admin partition the envelope names
+  tenant: string;               // read-only; also a value, since rows store appId
   actor: Actor;                 // the envelope's actor, for code that read ambient authority
   requestId: string;
-  logger: Logger;
+  logger: Logger;               // info/warn/debug/error(message, detail?), bound to requestId + tenant
+  now(): number;                // the call's clock; tests pin it, four of the five services stamp it
   fresh<T>(fn: () => Promise<T>): Promise<T>;   // nested batch context; see below
-  waitUntil(p: Promise<unknown>): void;         // deferred work next to DynamoDB, 30 s cap
-  config: ReadonlyEnvConfig;    // flags and settings, no bindings
+  waitUntil(p: Promise<unknown>): void;         // deferred work next to DynamoDB, 30 s cap, really awaited
+  config: ReadonlyEnvConfig;    // flags and settings (DB_PERF_CACHE_*, LOG_LEVEL), no bindings
 }
 ```
+
+Spike 6 fixed the shape above (see its result). `now`, the logger
+signature, the admin partition and `tenant` as a value each come from a
+service that reads them ambiently today. Return values are plain views:
+dates as epoch milliseconds, rows as `fromRemote` input, never a `Date` or
+a model instance, because `resetAt`, the activity record and reconcile's
+`row` all cross the boundary today as class instances and at least one
+caller calls a method on them.
 
 `fresh` runs `fn` in a nested `runWithBatchContext` for the "re-read after a
 lost conditional write" pattern. A nested context has its own loader cache
@@ -912,6 +938,53 @@ moved read from module globals or `env`? *Method:* read
 Read-only; the findings go in `exp/spikes/executor/audit/ambient-context.md`.
 *Decision:* the
 final shape of `ProcedureContext` and the `actor` type. One day of reading.
+
+*Result (2026-10-28, `exp/spikes/executor/audit/ambient-context.md`, every
+claim cited to a line; the highest-impact ones re-checked by hand).* Two of
+the five live elsewhere than named: settlement is
+`server-functions/run-row-settlement.ts` and reconcile is
+`function-runs/dispatch-reconcile.ts`. Findings that change the design,
+folded into the context and actor sections above:
+
+- **One ambient authority read.** `authorizeDocumentAction` grants `owner`
+  from `systemAuthorityFor(appId)`, an AsyncLocalStorage value only the
+  server-function gateway sets. It must travel on `actor`, scoped to the
+  app, and the executor refuses an actor whose app is not the call tenant.
+- **Tenant as a value, admin partition as an argument.** The rate limiter
+  writes `appId` into its row and takes the tenant from `TenantContext`
+  with no `env` at all; the activity recorder's admin partition is
+  `env.GLOBAL_ADMIN_APP_ID` (overridable by header only when local test
+  routes are on), so `adminModels` is built for the partition the call
+  names.
+- **`fresh` is correctness, not performance.** Three of the five use a
+  nested batch context to re-read after a lost conditional write.
+- **Wire-format hazards, all findable.** `RateLimitResult.resetAt` is a
+  `Date` and a caller calls `.getTime()` on it; the activity record carries
+  `Date`s; reconcile returns the `WorkflowRun` model instance and the
+  controller keeps using it. Procedures return plain views, with dates as
+  epoch milliseconds and rows as `fromRemote` input.
+- **Per-isolate gates move together or break.** The activity recorder's
+  once-per-isolate-hour gate becomes once-per-executor-isolate-hour, which
+  is safe because the conditional write bounds it, but `clearActivityEntry`
+  and `storedActivityFields` in `admin-api.ts` read the same map and must
+  become procedures with it. The memberships SWR cache is invalidated from
+  nine controller sites per isolate; in the executor those invalidations
+  only land if those mutations are procedures too, so the design names
+  them.
+- **Two of the five do not move whole.** Reconcile interleaves DynamoDB
+  with Workflow-binding `status()` and `terminate()`, a DO notify, Analytics
+  Engine and R2, exactly what `ctx` excludes: it splits into a read
+  procedure (row, slice summary, newest invocation record) and a
+  `needs-ledger` write procedure (settle row, claim slice, close step rows),
+  with probe, terminate and notify staying in the dispatch DO between them.
+  Settlement puts the output to R2 before the row write and the row's
+  fields depend on the put's disposition, so the caller does the put and
+  passes the stored-output fields in. The sync invoke path moves only its
+  two limiter calls and the activity record; sandbox, token mint, secrets
+  and the `finally` stay in the controller.
+- **Nothing creates a logger**, and several modules write `console.*` on
+  purpose to bypass `LOG_LEVEL`; those operator lines will now appear in
+  the executor's logs under the same prefixes.
 
 ### What the spikes cannot answer
 

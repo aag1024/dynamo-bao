@@ -46,7 +46,8 @@ npm install
 
 ```
 node scripts/run.mjs --help
-node scripts/run.mjs --replicas ping --modes remote --transports binding,rpc,hostname --hints weur,wnam   # Spike 1
+node scripts/run.mjs --replicas ping --modes remote --transports binding,rpc,hostname --hints weur,wnam   # Spike 1 from hinted DOs
+node scripts/run.mjs --replicas ping --modes remote --transports binding,rpc,hostname --hints worker --edge use1   # Spike 1 from a worker placed in us-east-1
 node scripts/run.mjs --replicas subscribe,message --modes serial --hints wnam                              # Spike 2
 node scripts/run.mjs --replicas subscribe --modes serial,parallel,remote                                   # Spike 3
 node scripts/summarize.mjs results/*.csv
@@ -55,6 +56,9 @@ node audit/codec-coverage.mjs                                                   
 ```
 
 Spike 6 is a reading exercise; its notes go in `audit/ambient-context.md`.
+
+The hint `worker` runs the spec in the edge worker itself instead of a DO;
+`none` uses a DO created without a hint.
 
 `GET /whereami` on either edge script reports where each hinted DO instance
 landed. Check it once after the first deploy: a hint is a request, not a

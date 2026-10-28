@@ -1,15 +1,9 @@
 import { DurableObject } from "cloudflare:workers";
-import { runLocal } from "./run";
+import { execute, type ExecEnv } from "./execute";
 import { traceColo } from "./trace";
-import type { RunSpec, RunResult, Transport } from "./shared";
-import type { DbEnv } from "./db";
+import type { RunSpec, RunResult } from "./shared";
 
-export type DoEnv = DbEnv & {
-  DATA: Fetcher;
-  DATA_RPC: Fetcher & { run(spec: RunSpec): Promise<RunResult>; ping(): Promise<any> };
-  DATA_HOSTNAME?: string;
-  SPIKE_TOKEN: string;
-};
+export type DoEnv = ExecEnv;
 
 /**
  * Stands in for the product's DOs (ConnectionWorker, YjsRoomV2). One instance
@@ -29,36 +23,6 @@ export class SpikeDO extends DurableObject<DoEnv> {
   }
 
   async run(spec: RunSpec): Promise<RunResult> {
-    if (spec.mode !== "remote") return runLocal(spec, this.env);
-
-    const transport: Transport = spec.transport ?? "binding";
-    const inner: RunSpec = { ...spec, mode: "serial", transport: undefined };
-    const t0 = performance.now();
-    let remote: RunResult;
-    if (transport === "rpc") {
-      remote = await this.env.DATA_RPC.run(inner);
-    } else {
-      // A service binding ignores the URL's host, so the hostname transport
-      // must go through global fetch to reach spike-data over the public edge.
-      const [doFetch, base] = transport === "hostname"
-        ? [fetch, `https://${this.env.DATA_HOSTNAME}`]
-        : [this.env.DATA.fetch.bind(this.env.DATA), "https://spike-data"];
-      const res = await doFetch(`${base}/run`, {
-        method: "POST",
-        headers: { authorization: `Bearer ${this.env.SPIKE_TOKEN}`, "content-type": "application/json" },
-        body: JSON.stringify(inner),
-      });
-      if (!res.ok) throw new Error(`spike-data ${res.status}: ${await res.text()}`);
-      remote = (await res.json()) as RunResult;
-    }
-    const totalMs = performance.now() - t0;
-    return {
-      ...remote,
-      spec,
-      colo: await traceColo(),
-      remoteColo: remote.colo,
-      hopMs: totalMs - remote.totalMs,
-      totalMs,
-    };
+    return execute(spec, this.env);
   }
 }

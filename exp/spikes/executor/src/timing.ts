@@ -50,24 +50,34 @@ function capacity(resp: any): { rcu?: number; wcu?: number } {
   return any ? { rcu, wcu } : {};
 }
 
-/** Patch the shared document client once. Idempotent. */
+/**
+ * Patch `send` on the prototype of dynamo-bao's DynamoDBDocumentClient, once.
+ * The product (and db.ts) call initModels per request and per tenant, and
+ * each ModelManager makes its own client, so patching one instance misses
+ * every other; the class is shared by all of them. The inner DynamoDBClient
+ * is a different class, so each command is recorded exactly once.
+ */
 export function instrument(documentClient: any) {
   if (patched || !documentClient) return;
+  let proto = Object.getPrototypeOf(documentClient);
+  while (proto && !Object.prototype.hasOwnProperty.call(proto, "send")) proto = Object.getPrototypeOf(proto);
+  if (!proto) throw new Error("document client has no send to instrument");
   patched = true;
-  const send = documentClient.send.bind(documentClient);
-  documentClient.send = async (command: any, ...rest: any[]) => {
+  const send = proto.send;
+  proto.send = async function (this: any, command: any, ...rest: any[]) {
     const store = als.getStore();
-    if (!store) return send(command, ...rest);
+    if (!store) return send.call(this, command, ...rest);
+    const input = command?.input ?? {};
     const call: Call = {
       op: opName(command),
-      table: command?.input?.TableName ?? command?.input?.RequestItems ? "batch" : "?",
+      table: input.TableName ?? (input.RequestItems || input.TransactItems ? "batch" : "?"),
       start: performance.now() - store.t0,
       end: 0,
       ok: false,
     };
     store.calls.push(call);
     try {
-      const resp = await send(command, ...rest);
+      const resp = await send.call(this, command, ...rest);
       call.ok = true;
       Object.assign(call, capacity(resp));
       return resp;

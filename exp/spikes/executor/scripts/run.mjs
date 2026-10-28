@@ -2,7 +2,10 @@
 // The load generator. Loops over { hint × replica × mode × branch [× transport] }
 // and writes one CSV row per sample to results/<run>.csv. Where the laptop is
 // does not matter: the measured quantity is DO-to-DynamoDB and DO-to-data
-// time, and edgeToDoMs is reported separately.
+// time, and edgeToDoMs is reported separately. Hints are the DO location
+// hints, plus "none" (a DO with no hint) and "worker" (no DO: the spec runs
+// in the edge worker itself, which with --edge use1 is a worker placed in
+// aws:us-east-1).
 //
 //   node scripts/run.mjs                       the default matrix, 50 warm + 10 cold
 //   node scripts/run.mjs --hints weur,oc --replicas subscribe --modes serial,remote

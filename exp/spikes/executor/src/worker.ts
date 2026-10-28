@@ -2,6 +2,7 @@ import { WorkerEntrypoint } from "cloudflare:workers";
 import { SpikeDO, type DoEnv } from "./spike-do";
 import { SpikeWorkflow } from "./spike-workflow";
 import { runLocal } from "./run";
+import { execute } from "./execute";
 import { traceColo } from "./trace";
 import { seed, status } from "./seed";
 import { HINTS, type Hint, type RunSpec } from "./shared";
@@ -16,8 +17,11 @@ export { SpikeDO, SpikeWorkflow };
  *          exposed as the RPC entrypoint `DataEntrypoint` below.
  *   edge   the product's edge. POST /run hands a spec to the SpikeDO for the
  *          requested hint (serial/parallel run there; remote forwards to
- *          data). POST /seed and GET /status manage the table. POST /workflow
- *          starts SpikeWorkflow.
+ *          data); hint "worker" runs the spec in this worker itself, so a
+ *          region-placed edge (spike-edge-use1) is a vantage point without a
+ *          DO in the path; hint "none" is a DO created with no hint. POST
+ *          /seed and GET /status manage the table. POST /workflow starts
+ *          SpikeWorkflow.
  *
  * Every route needs `authorization: Bearer <SPIKE_TOKEN>`.
  */
@@ -55,10 +59,14 @@ async function dataRoutes(request: Request, env: Env, url: URL): Promise<Respons
 
 async function edgeRoutes(request: Request, env: Env, url: URL): Promise<Response> {
   if (url.pathname === "/run" && request.method === "POST") {
-    const body = (await request.json()) as RunSpec & { hint: Hint | "none" };
+    const body = (await request.json()) as RunSpec & { hint: Hint | "none" | "worker" };
     const { hint, ...spec } = body;
     const name = hint ?? "none";
-    if (name !== "none" && !HINTS.includes(name)) return json({ error: `hint must be one of none, ${HINTS.join(", ")}` }, 400);
+    if (name === "worker") {
+      const result = await execute(spec, env);
+      return json({ hint: name, edge: await here(request, env), edgeToDoMs: 0, ...result });
+    }
+    if (name !== "none" && !HINTS.includes(name)) return json({ error: `hint must be one of none, worker, ${HINTS.join(", ")}` }, 400);
     const stub = name === "none"
       ? env.SPIKE.get(env.SPIKE.idFromName("none"))
       : env.SPIKE.get(env.SPIKE.idFromName(name), { locationHint: name });

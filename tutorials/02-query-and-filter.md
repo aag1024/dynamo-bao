@@ -224,6 +224,25 @@ const result = await User.queryByIndex("byStatus", "active", null, {
 });
 ```
 
+#### Filters From User Input
+
+A filter can reference any field on the model, and the results show whether
+a condition matched. If you pass a filter that came from a request, a caller
+can probe fields they shouldn't see (for example
+`{ apiKeyHash: { $beginsWith: "a" } }`, one character at a time). Pass
+`allowedFilterFields` to limit the fields such a filter may use; any other
+field throws a `QueryError`. `iterateAll()` and `searchAll()` accept the same
+option.
+
+```javascript
+const result = await User.queryByIndex("byStatus", "active", null, {
+  filter: req.body.filter,
+  allowedFilterFields: ["country", "isVerified", "score"],
+});
+```
+
+Filters may be nested at most 16 levels deep.
+
 #### Date Field Filtering
 
 ```javascript

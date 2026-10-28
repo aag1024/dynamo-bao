@@ -457,7 +457,7 @@ Create a new Dynamo table for your project. You should have one table per projec
 npx bao-init
 ```
 
-This creates a `config.js` which contains settings for your project like AWS region and the table name.
+This creates a `dynamo-bao.config.js` which contains settings for your project like AWS region and the table name.
 
 It also creates a `models.yaml` file with a simple example model, and a `models` directory where
 the generated models will be stored.
@@ -514,10 +514,10 @@ You should now have generated models in the `models` directory.
 
 ### ESM Support
 
-DynamoBao supports generating models as ESM (ECMAScript Modules) for modern JavaScript projects. To enable ESM code generation, add the `codegen` configuration to your `config.js`:
+DynamoBao supports generating models as ESM (ECMAScript Modules) for modern JavaScript projects. To enable ESM code generation, add the `codegen` configuration to your `dynamo-bao.config.js`:
 
 ```javascript
-// config.js
+// dynamo-bao.config.js
 module.exports = {
   aws: {
     region: "us-west-2",

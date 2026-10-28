@@ -34,7 +34,9 @@ module.exports = {
 
 ## Setting Tenant Context
 
-When tenancy is enabled, you must provide a tenant context before performing any database operations. DynamoBao provides concurrency-safe tenant management using Node.js AsyncLocalStorage.
+When tenancy is enabled, every database operation needs a tenant. `initModels()` itself doesn't: initialize once at startup, then supply the tenant per request. An operation that runs with no tenant throws a `ConfigurationError`; it never falls back to some other tenant. DynamoBao provides concurrency-safe tenant management using Node.js AsyncLocalStorage.
+
+Tenant ids are part of every key (`[tenantId]#prefix#value`), so they must be strings and can't contain `]` or `#`.
 
 ### 1. Recommended: Using runWithTenant (Concurrency-Safe)
 
@@ -68,17 +70,24 @@ const adminService = {
 };
 ```
 
-### 3. Direct Tenant Setting (Backward Compatibility)
+### 3. Direct Tenant Setting
+
+`setCurrentTenant()` sets the tenant for the context it's called in:
+
+- Inside `runWithTenant()` or `runWithBatchContext()`, it applies to that context only (nested batch contexts inherit it).
+- Outside both, it sets a **process-wide** tenant. That is only safe in scripts and tests that handle one tenant at a time: in a server, concurrent requests with no tenant of their own would use it.
 
 ```javascript
-const { TenantContext } = require("dynamo-bao");
+const { TenantContext, runWithBatchContext } = require("dynamo-bao");
 
-// Set tenant for the current context (simple use cases)
-TenantContext.setCurrentTenant("tenant-123");
-
-// Now all operations will be scoped to tenant-123
-const users = await User.queryByIndex("byStatus", "active");
+// In a request handler: scoped to this request
+await runWithBatchContext(async () => {
+  TenantContext.setCurrentTenant("tenant-123");
+  const users = await User.queryByIndex("byStatus", "active");
+});
 ```
+
+For a script that should use one tenant everywhere, `setDefaultTenant()` sets the process-wide tenant explicitly, regardless of the context it's called from. The process-wide tenant is never used inside `runWithTenant()`, and registered resolvers take precedence over it.
 
 ### 4. Tenant Resolvers
 
@@ -99,7 +108,9 @@ TenantContext.addResolver(() => {
   return user?.tenantId;
 });
 
-// Tenant will be resolved automatically
+// Tenant will be resolved automatically. Inside runWithTenant(null, ...),
+// if no resolver returns a tenant, operations throw rather than falling back
+// to a process-wide tenant.
 await TenantContext.runWithTenant(null, async () => {
   const users = await User.queryByIndex("byStatus", "active");
 });
@@ -202,22 +213,18 @@ exports.handler = async (event) => {
 const { TenantContext } = require('dynamo-bao');
 
 async function processTenantData(tenantId) {
-  try {
-    TenantContext.setCurrentTenant(tenantId);
-    
-    // Process data for this tenant
+  // runWithTenant scopes the tenant to this job, so jobs running
+  // concurrently in the same process can't see each other's tenant.
+  await TenantContext.runWithTenant(tenantId, async () => {
     const expiredSubscriptions = await Subscription.queryByIndex(
-      'byStatus', 
+      'byStatus',
       'expired'
     );
-    
+
     for (const sub of expiredSubscriptions.items) {
       await sub.delete();
     }
-    
-  } finally {
-    TenantContext.clearTenant();
-  }
+  });
 }
 
 // Process multiple tenants
@@ -367,7 +374,7 @@ TenantContext.runWithTenant('tenant-b', async () => {
 
 - **Node.js 12.17.0+** for AsyncLocalStorage support
 - Use `runWithTenant()` for production applications with concurrent requests
-- Use `setCurrentTenant()` for simple use cases and tests
+- Use `setDefaultTenant()` only in scripts and tests that handle one tenant at a time
 
 ## Best Practices
 
@@ -385,25 +392,18 @@ app.use((req, res, next) => {
 });
 ```
 
-### 2. Backward Compatibility Support
-
-`setCurrentTenant()` still works for simple use cases and maintains backward compatibility:
+### 2. Process-Wide Tenants Are for Scripts and Tests
 
 ```javascript
 // ✅ OK for tests and simple scripts
-TenantContext.setCurrentTenant(tenantId);
+TenantContext.setDefaultTenant(tenantId);
 const users = await User.find();
-TenantContext.clearTenant();
+TenantContext.setDefaultTenant(null);
 ```
 
 ### 3. Validate Tenant Context Early
 
-When tenancy is enabled, operations will fail if no tenant context is set. Validate early in your request pipeline:
-
-```javascript
-// This will throw if tenancy.enabled: true but no tenant is set
-const manager = initModels(config);
-```
+When tenancy is enabled, any operation without a tenant throws a `ConfigurationError`. Reject requests that carry no tenant early in your request pipeline, as the middleware examples above do, so the error never reaches a handler.
 
 ### 4. Use Tenant Resolvers for Complex Apps
 
@@ -449,7 +449,7 @@ const manager = dynamoBao.initModels({
 
 **After:**
 ```javascript
-TenantContext.setCurrentTenant(tenantId);
+TenantContext.setDefaultTenant(tenantId);
 const manager = dynamoBao.initModels({
   ...config,
   tenancy: { enabled: true }
@@ -465,7 +465,7 @@ The key formatting remains the same - `[testId]#modelPrefix#value` becomes `[ten
 2. **Tenant ID in Keys**: Tenant IDs are prefixed to all keys, so choose tenant IDs wisely. They should be:
    - Unique and immutable
    - Reasonably short to minimize storage
-   - Safe for use in DynamoDB keys (no special characters)
+   - Free of `]` and `#` (DynamoBao rejects these)
 
 3. **No Cross-Tenant Queries**: By design, you cannot query across tenants in a single operation. This ensures complete isolation but means admin operations must iterate through tenants.
 

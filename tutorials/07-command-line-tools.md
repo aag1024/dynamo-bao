@@ -60,6 +60,16 @@ Updates an existing DynamoDB table to match the expected schema. This is useful 
 - Enables TTL on the `ttl` attribute if not already enabled
 - Adds one GSI at a time, waiting for the table to become active between each addition
 - Uses configuration from `dynamo-bao.config.js`
+- Asks for confirmation before changing the table. Pass `--yes` to skip the prompt; without a terminal (e.g. in CI) it refuses unless `--yes` is given
+
+## bao-rebuild-search-text
+
+Re-saves every row of a searchable model so its `_searchText` attribute is populated. Use it after making an existing model `searchable`.
+
+`npx bao-rebuild-search-text <ModelName> [--tenant <tenantId>] [--yes]`
+
+- With tenancy enabled, `--tenant` is required and only that tenant's rows are rebuilt
+- Asks for confirmation first; pass `--yes` to skip the prompt
 
 ## bao-delete
 

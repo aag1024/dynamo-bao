@@ -9,6 +9,84 @@ Each version heading links to the tag that was published to npm. Entries before
 
 ## [Unreleased]
 
+### Security
+
+- With tenancy enabled, an operation with no tenant in context now throws
+  `ConfigurationError`. It used to fall back to the tenant that was current
+  when `initModels()` ran, so a request that lost its tenant read and wrote
+  that tenant's data.
+- `setCurrentTenant()` inside `runWithBatchContext()` now sets the tenant for
+  that context only. It used to set a process-wide tenant that concurrent
+  requests picked up. Registered resolvers now take precedence over the
+  process-wide tenant, `runWithTenant()` never sees it, and `clearTenant()`
+  inside a context clears only that context's tenant.
+- Each distinct tenant id no longer adds a cached `ModelManager` that is
+  never freed. A caller sending random tenant ids could grow memory without
+  limit.
+- Tenant ids containing `]` or `#`, which could produce another tenant's
+  keys, are rejected.
+- A model with a field named like `n1` or `v1` could have that field's
+  placeholder overwritten by a write `condition`, writing the value into the
+  attribute the condition checked. Filter placeholders now use a reserved
+  prefix.
+- `update()` rejects changes to primary key fields, and composite key values
+  can't contain the id separator `##__SK__##`. Either one could make an id
+  address a different record.
+- `VersionField` is always generated on save and `CreateDateField` is set
+  only on create, so callers can't roll a version back to get around
+  optimistic locking.
+- An `update()` that re-sends an unchanged unique value is now conditioned
+  on the stored value, so a concurrent change can't leave the value without
+  its constraint row for another record to claim.
+- Codegen emits YAML values as literals and requires model, field, index
+  and constraint names to be JavaScript identifiers. Crafted YAML could
+  inject code into generated models or write files outside the output
+  directory.
+
+### Added
+
+- `allowedFilterFields` option on `queryByIndex()`, `iterateAll()` and
+  `searchAll()` (`allowedFields` on `FilterExpressionBuilder#build`) to limit
+  the fields a filter that comes from user input may reference.
+- `TenantContext.setDefaultTenant()` sets the process-wide tenant
+  explicitly, for scripts and tests.
+- `bao-rebuild-search-text --tenant <id>` for tenancy-enabled tables.
+
+### Changed
+
+- **Breaking:** importing the library no longer loads `.env` from the
+  working directory. Apps that relied on this should call
+  `require("dotenv").config()` themselves. The CLI tools still load `.env`.
+- **Breaking:** config lookup no longer loads generic `config.js`,
+  `config.mjs` or `config.cjs` files, which could be an unrelated project's
+  config. It now refuses with a message saying to rename the file to
+  `dynamo-bao.config.js` or set `DYNAMO_BAO_CONFIG`.
+- **Breaking:** `bao-update-table` and `bao-rebuild-search-text` ask before
+  changing the table. Pass `--yes` in scripts and CI.
+- **Breaking:** field validation is stricter. `StringField` rejects objects,
+  arrays and booleans and now enforces `maxLength`. `IntegerField` rejects
+  non-integers and `FloatField` rejects non-numbers. Date fields reject
+  unparseable strings.
+- `initModels()` no longer requires a tenant when tenancy is enabled.
+- The `logging.level` passed to `initModels()` now takes effect
+  (`DYNAMO_BAO_LOG_LEVEL` still wins).
+- Transactional writes send a `ClientRequestToken`, and updates that use
+  `ADD` (counters, set changes) are no longer retried, so a retry can't apply
+  a write twice.
+
+### Fixed
+
+- `$not` over more than one condition negated only the first one.
+- Filter keys such as `constructor` or `toString` were looked up through the
+  prototype chain and either built an expression on a bogus attribute or
+  threw a `TypeError`. Filters are also limited to 16 levels of nesting.
+- `CreateDateField` stored an ISO string as-is instead of converting it to a
+  timestamp.
+- Model managers created for a tenant at runtime had no models, client or
+  config, so related-model lookups under that tenant could fail.
+- A unique-constraint lookup error was logged with `console.error`,
+  bypassing the configured log level.
+
 ## [0.8.2] - 2026-10-27
 
 ### Fixed

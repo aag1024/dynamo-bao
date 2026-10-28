@@ -73,7 +73,9 @@ const q = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
 
 async function sample(temp, hint, replica, mode, transport, branch) {
   const spec = { hint, replica, mode, branch, params: paramsFor(replica, branch), tag: run, ...(mode === "remote" ? { transport } : {}) };
-  const r = await api(edge, env.token, "/run", spec);
+  // A failed sample is a row, not the end of the run: `error` carries the
+  // message and `outcome` is "error" so summarize.mjs can count it.
+  const r = await api(edge, env.token, "/run", spec).catch((e) => ({ outcome: "error", error: String(e?.message ?? e).slice(0, 300) }));
   const row = [run, new Date().toISOString(), temp, opt("edge", "default"), hint, replica, mode, mode === "remote" ? transport : "", branch,
     r.outcome, r.colo, r.remoteColo, r.edge?.enteredAt, r.totalMs?.toFixed(1), r.hopMs?.toFixed(1), r.edgeToDoMs?.toFixed(1),
     r.depth, r.callMs?.toFixed(1), r.calls?.map((c) => `${c.op}:${c.ms.toFixed(0)}${c.ok ? "" : "!"}`).join(" "), r.error];

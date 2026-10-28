@@ -36,6 +36,16 @@ class ModelManager {
    * Views are not cached, so arbitrary tenant ids don't grow memory.
    */
   static forTenant(tenantId) {
+    // Keys are built as "[tenant]#prefix#value", so a tenant id containing
+    // "]" or "#" could produce another tenant's keys.
+    if (
+      tenantId != null &&
+      (typeof tenantId !== "string" || /[\]#]/.test(tenantId))
+    ) {
+      throw new ConfigurationError(
+        `Invalid tenant id ${JSON.stringify(tenantId)}: must be a string without "]" or "#"`,
+      );
+    }
     const existing = ModelManager._instances.get(tenantId || "default");
     if (existing) {
       return existing;

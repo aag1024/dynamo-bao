@@ -1,6 +1,6 @@
 const fs = require("fs");
 const path = require("path");
-const dotenv = require("dotenv");
+const { pathToFileURL } = require("url");
 
 async function findConfig() {
   // First check environment variable
@@ -22,10 +22,10 @@ async function findConfig() {
     "dynamo-bao.config.cjs",
     ".dynamo-bao/config.js",
     ".dynamo-bao/config.mjs",
-    "config.js",
-    "config.mjs",
-    "config.cjs",
   ];
+  // Older versions also loaded these generic names, which meant running any
+  // project's config.js. Refuse them rather than silently using defaults.
+  const legacyNames = ["config.js", "config.mjs", "config.cjs"];
   const searchPaths = [
     process.cwd(), // Project root
   ];
@@ -40,10 +40,20 @@ async function findConfig() {
         return normalizeConfig(rawConfig, configDir);
       }
     }
+    for (const name of legacyNames) {
+      if (fs.existsSync(path.join(searchPath, name))) {
+        throw new Error(
+          `Found ${name} but no dynamo-bao.config.js in ${searchPath}. ` +
+            "dynamo-bao no longer loads generic config file names: rename it " +
+            `to dynamo-bao.config.js, or set DYNAMO_BAO_CONFIG=${name}.`,
+        );
+      }
+    }
   }
 
-  // If no config file found, create default config from env
-  dotenv.config();
+  // If no config file found, create default config from env. Only the CLI
+  // tools reach this, so loading .env here doesn't affect library users.
+  require("dotenv").config();
   return {
     aws: {
       region: process.env.AWS_REGION || "us-west-2",
@@ -78,8 +88,7 @@ async function loadConfigFile(configPath) {
     return require(configPath);
   } else if (configPath.endsWith(".mjs") || configPath.endsWith(".js")) {
     // Use dynamic import for ESM files
-    const fileUrl = "file://" + configPath;
-    const module = await import(fileUrl);
+    const module = await import(pathToFileURL(configPath).href);
     return module.default || module;
   } else {
     // Default to require for legacy files
@@ -142,10 +151,11 @@ async function initConfig() {
   return config;
 }
 
-// For backward compatibility - try to load config synchronously
+// Defaults read from the environment when the library is imported. This
+// deliberately doesn't load .env: a library shouldn't change process.env, or
+// pick its table and credentials from whatever .env is in the working
+// directory. Apps that use .env should load it themselves.
 try {
-  // For now, create a basic synchronous config
-  const dotenvResult = dotenv.config();
   config = {
     aws: {
       region: process.env.AWS_REGION || "us-west-2",

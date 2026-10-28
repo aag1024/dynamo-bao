@@ -77,7 +77,10 @@ function validateSearchable(modelName, modelDef) {
     }
   }
 
-  if (raw.caseSensitive !== undefined && typeof raw.caseSensitive !== "boolean") {
+  if (
+    raw.caseSensitive !== undefined &&
+    typeof raw.caseSensitive !== "boolean"
+  ) {
     throw new Error(
       `Model "${modelName}": \`searchable.caseSensitive\` must be a boolean.`,
     );
@@ -130,4 +133,72 @@ function applyModelDefaults(models) {
   return models;
 }
 
-module.exports = { applyModelDefaults };
+// Names from model definitions become identifiers, string literals, file
+// names and import paths in generated code, so they must be plain JavaScript
+// identifiers. Anything else could inject code or write outside the output
+// directory.
+const IDENTIFIER = /^[A-Za-z_$][\w$]*$/;
+
+function assertIdentifier(value, what) {
+  if (typeof value !== "string" || !IDENTIFIER.test(value)) {
+    throw new Error(
+      `Invalid ${what} ${JSON.stringify(value)}: must be a JavaScript identifier`,
+    );
+  }
+}
+
+function assertIdSuffix(value, what) {
+  if (typeof value !== "string" || !/\d$/.test(value)) {
+    throw new Error(`Invalid ${what} ${JSON.stringify(value)}`);
+  }
+}
+
+function validateModelNames(models) {
+  for (const [modelName, modelDef] of Object.entries(models)) {
+    assertIdentifier(modelName, "model name");
+    const where = (what) => `${what} in model ${modelName}`;
+
+    for (const [fieldName, fieldDef] of Object.entries(modelDef.fields || {})) {
+      assertIdentifier(fieldName, where("field name"));
+      if (fieldDef.type !== undefined) {
+        assertIdentifier(fieldDef.type, where(`type of field ${fieldName}`));
+      }
+      if (fieldDef.model !== undefined) {
+        assertIdentifier(fieldDef.model, where(`model of field ${fieldName}`));
+      }
+      for (const option of Object.keys(fieldDef)) {
+        assertIdentifier(option, where(`option of field ${fieldName}`));
+      }
+    }
+
+    const { partitionKey, sortKey } = modelDef.primaryKey || {};
+    assertIdentifier(partitionKey, where("primary partition key"));
+    if (sortKey !== undefined) {
+      assertIdentifier(sortKey, where("primary sort key"));
+    }
+
+    for (const [indexName, index] of Object.entries(modelDef.indexes || {})) {
+      assertIdentifier(indexName, where("index name"));
+      if (index === "primaryKey") continue;
+      assertIdentifier(
+        index.partitionKey,
+        where(`partition key of ${indexName}`),
+      );
+      assertIdentifier(index.sortKey, where(`sort key of ${indexName}`));
+      assertIdSuffix(index.indexId, where(`indexId of ${indexName}`));
+    }
+
+    for (const [name, constraint] of Object.entries(
+      modelDef.uniqueConstraints || {},
+    )) {
+      assertIdentifier(name, where("unique constraint name"));
+      assertIdentifier(constraint.field, where(`field of ${name}`));
+      assertIdSuffix(
+        constraint.uniqueConstraintId,
+        where(`uniqueConstraintId of ${name}`),
+      );
+    }
+  }
+}
+
+module.exports = { applyModelDefaults, validateModelNames };

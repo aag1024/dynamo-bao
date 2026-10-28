@@ -1,6 +1,7 @@
 const path = require("path");
 const fs = require("fs");
 const { createLogger } = require("../utils/scriptLogger");
+const { validateModelNames } = require("../lib/process-models");
 
 // const __dirname = __dirname;
 const logger = createLogger("ModelGen");
@@ -59,18 +60,14 @@ function generateModelClass(
       }
 
       if (fieldConfig.type === "RelatedField") {
-        return `    ${fieldName}: ${fieldConfig.type}('${fieldConfig.model}', { required: ${!!fieldConfig.required} }),`;
+        return `    ${fieldName}: ${fieldConfig.type}(${JSON.stringify(fieldConfig.model)}, { required: ${!!fieldConfig.required} }),`;
       }
 
       // Build options object from all field config properties except 'type'
       const options = Object.entries(fieldConfig)
         .filter(([key]) => key !== "type")
-        .map(([key, value]) => {
-          // Handle different types of values
-          if (typeof value === "string") return `${key}: '${value}'`;
-          if (Array.isArray(value)) return `${key}: ${JSON.stringify(value)}`;
-          return `${key}: ${value}`;
-        });
+        // Values are always emitted as literals, never as code.
+        .map(([key, value]) => `${key}: ${JSON.stringify(value)}`);
 
       const optionsStr = options.length ? `{ ${options.join(", ")} }` : "";
       return `    ${fieldName}: ${fieldConfig.type}(${optionsStr}),`;
@@ -244,7 +241,7 @@ ${customFieldImports ? customFieldImports + '\n' : ''}
 ${relatedModelImports ? relatedModelImports + '\n' : ''}
 
 class ${modelName} extends BaoModel {
-  static modelPrefix = '${modelConfig.modelPrefix}';
+  static modelPrefix = ${JSON.stringify(modelConfig.modelPrefix)};
   static iterable = ${iterable};
   static iterationBuckets = ${iterationBuckets};
   static searchable = ${searchable};
@@ -281,6 +278,8 @@ function generateUniqueConstraintMethods(modelConfig) {
 }
 
 function generateModelFiles(models, outputDir, fieldResolver, moduleSystem = 'commonjs') {
+  validateModelNames(models);
+
   if (!fs.existsSync(outputDir)) {
     fs.mkdirSync(outputDir, { recursive: true });
   }

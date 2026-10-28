@@ -183,6 +183,12 @@ function initModels(userConfig = {}) {
     models: userConfig.models || config.models || null,
   };
 
+  // The logger is created at import, before this config exists. The
+  // environment variable still wins, as it does at import.
+  if (finalConfig.logging?.level && !process.env.DYNAMO_BAO_LOG_LEVEL) {
+    logger.currentLevel = finalConfig.logging.level.toUpperCase();
+  }
+
   const modelsDir = finalConfig.paths.modelsDir;
 
   // Get/create manager instance with tenantId

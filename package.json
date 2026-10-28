@@ -17,6 +17,7 @@
   },
   "files": [
     "bin/",
+    "!bin/chokidar-test.js",
     "src/",
     "README.md",
     "CHANGELOG.md"

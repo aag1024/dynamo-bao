@@ -6,12 +6,22 @@
 // `searchable: true` on a model with existing data.
 
 const resolve = require("./lib/resolve");
-const { initModels, runWithBatchContext } = resolve("src/index.js");
+const { confirm } = require("./lib/confirm");
+const { initModels, runWithBatchContext, TenantContext } =
+  resolve("src/index.js");
 const { initConfig } = resolve("src/config.js");
 
-const modelName = process.argv[2];
-if (!modelName) {
-  console.error("Usage: bao-rebuild-search-text <ModelName>");
+const args = process.argv.slice(2);
+const tenantFlag = args.indexOf("--tenant");
+const tenantId = tenantFlag === -1 ? null : args[tenantFlag + 1];
+const modelName = args.find(
+  (arg, i) =>
+    !arg.startsWith("-") && (tenantFlag === -1 || i !== tenantFlag + 1),
+);
+if (!modelName || (tenantFlag !== -1 && !tenantId)) {
+  console.error(
+    "Usage: bao-rebuild-search-text <ModelName> [--tenant <tenantId>] [--yes]",
+  );
   process.exit(1);
 }
 
@@ -40,20 +50,36 @@ if (!modelName) {
     process.exit(1);
   }
 
-  console.log(`Rebuilding _searchText for ${modelName}...`);
+  if (config.tenancy?.enabled && !tenantId) {
+    console.error("Tenancy is enabled: pass --tenant <tenantId>.");
+    process.exit(1);
+  }
+
+  const scope = tenantId ? ` for tenant '${tenantId}'` : "";
+  if (
+    !(await confirm(
+      `Re-save every ${modelName} row${scope} in table '${config.db.tableName}'?`,
+    ))
+  ) {
+    process.exit(1);
+  }
+
+  console.log(`Rebuilding _searchText for ${modelName}${scope}...`);
   let total = 0;
 
-  await runWithBatchContext(async () => {
-    for await (const batch of ModelClass.iterateAll({ batchSize: 50 })) {
-      for (const item of batch) {
-        await item.save({ forceReindex: true });
-        total++;
-        if (total % 100 === 0) {
-          console.log(`  rebuilt ${total} so far...`);
+  await TenantContext.runWithTenant(tenantId, () =>
+    runWithBatchContext(async () => {
+      for await (const batch of ModelClass.iterateAll({ batchSize: 50 })) {
+        for (const item of batch) {
+          await item.save({ forceReindex: true });
+          total++;
+          if (total % 100 === 0) {
+            console.log(`  rebuilt ${total} so far...`);
+          }
         }
       }
-    }
-  });
+    }),
+  );
 
   console.log(`Done. Rebuilt _searchText on ${total} ${modelName} item(s).`);
 })().catch((err) => {

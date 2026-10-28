@@ -239,3 +239,114 @@ describe("field validation", () => {
     );
   });
 });
+
+describe("codegen", () => {
+  const fs = require("fs");
+  const os = require("os");
+  const path = require("path");
+  const FieldResolver = require("../src/fieldResolver");
+  const { generateModelFiles } = require("../bin/generators/model");
+
+  const resolver = new FieldResolver(require("../src/fields"), null);
+  let outDir;
+
+  beforeEach(() => {
+    outDir = fs.mkdtempSync(path.join(os.tmpdir(), "bao-codegen-"));
+  });
+  afterEach(() => {
+    fs.rmSync(outDir, { recursive: true, force: true });
+  });
+
+  const model = (overrides = {}) => ({
+    modelPrefix: "u",
+    fields: { userId: { type: "UlidField" }, name: { type: "StringField" } },
+    primaryKey: { partitionKey: "userId" },
+    ...overrides,
+  });
+
+  test("YAML values are emitted as literals, not code", () => {
+    const payload = "a', x: globalThis.__baoPwned = true, y: 'b";
+    generateModelFiles(
+      {
+        User: model({
+          modelPrefix: "u'; globalThis.__baoPwned = true; //",
+          fields: {
+            userId: { type: "UlidField" },
+            name: { type: "StringField", defaultValue: payload },
+          },
+        }),
+      },
+      outDir,
+      resolver,
+    );
+
+    const source = fs.readFileSync(path.join(outDir, "user.js"), "utf8");
+    expect(source).toContain(`defaultValue: ${JSON.stringify(payload)}`);
+    expect(source).toContain(
+      `modelPrefix = ${JSON.stringify("u'; globalThis.__baoPwned = true; //")}`,
+    );
+    expect(
+      () => new Function(source.replace(/require\(/g, "(() => ({}))(")),
+    ).not.toThrow();
+  });
+
+  test.each([
+    ["model name", { "../../escaped": model() }],
+    [
+      "field name",
+      { User: model({ fields: { "a-b": { type: "StringField" } } }) },
+    ],
+    [
+      "unique constraint id",
+      {
+        User: model({
+          uniqueConstraints: {
+            uniqueName: { field: "name", uniqueConstraintId: "uc1;x" },
+          },
+        }),
+      },
+    ],
+  ])("rejects an invalid %s before writing anything", (_, models) => {
+    expect(() => generateModelFiles(models, outDir, resolver)).toThrow(
+      /Invalid/,
+    );
+    expect(fs.readdirSync(outDir)).toEqual([]);
+  });
+});
+
+describe("tenant ids", () => {
+  const { ModelManager } = require("../src/model-manager");
+  const { ConfigurationError } = require("../src/exceptions");
+
+  test.each([["a]#d#q"], ["a#b"], [5]])("rejects %p", (tenantId) => {
+    expect(() => ModelManager.forTenant(tenantId)).toThrow(ConfigurationError);
+  });
+});
+
+describe("config lookup", () => {
+  const fs = require("fs");
+  const os = require("os");
+  const path = require("path");
+  const { initConfig } = require("../src/config");
+
+  test("refuses a generic config.js instead of loading it", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bao-config-"));
+    const marker = path.join(dir, "loaded");
+    fs.writeFileSync(
+      path.join(dir, "config.js"),
+      `require("fs").writeFileSync(${JSON.stringify(marker)}, "x");`,
+    );
+    const cwd = process.cwd();
+    const envConfig = process.env.DYNAMO_BAO_CONFIG;
+    delete process.env.DYNAMO_BAO_CONFIG;
+    process.chdir(dir);
+    try {
+      await expect(initConfig()).rejects.toThrow(/rename it/);
+      expect(fs.existsSync(marker)).toBe(false);
+    } finally {
+      process.chdir(cwd);
+      if (envConfig !== undefined) process.env.DYNAMO_BAO_CONFIG = envConfig;
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

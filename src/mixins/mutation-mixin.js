@@ -8,6 +8,7 @@ const {
 const { defaultLogger: logger } = require("../utils/logger");
 const { pluginManager } = require("../plugin-manager");
 const { retryOperation } = require("../utils/retry-helper");
+const { ulid } = require("ulid");
 const assert = require("assert");
 const { FilterExpressionBuilder } = require("../filter-expression");
 const {
@@ -222,10 +223,14 @@ const MutationMethods = {
           }
         }
 
+        // The token makes a retry after a lost response a no-op instead of
+        // applying the transaction twice.
+        const clientRequestToken = ulid();
         response = await retryOperation(() =>
           this.documentClient.send(
             new TransactWriteCommand({
               TransactItems: transactItems,
+              ClientRequestToken: clientRequestToken,
               ReturnConsumedCapacity: "TOTAL",
             }),
           ),
@@ -964,10 +969,14 @@ const MutationMethods = {
           logger.debug("transactItems", JSON.stringify(transactItems, null, 2));
         }
 
+        // The token makes a retry after a lost response a no-op instead of
+        // applying the transaction twice.
+        const clientRequestToken = ulid();
         response = await retryOperation(() =>
           this.documentClient.send(
             new TransactWriteCommand({
               TransactItems: transactItems,
+              ClientRequestToken: clientRequestToken,
               ReturnConsumedCapacity: "TOTAL",
             }),
           ),
@@ -1037,14 +1046,18 @@ const MutationMethods = {
           logger.debug("updateParams", JSON.stringify(updateParams, null, 2));
         }
 
-        response = await retryOperation(() =>
+        // ADD isn't idempotent: if a request times out after DynamoDB applied
+        // it, a retry would apply it again. Only retry pure SET/REMOVE writes.
+        const sendUpdate = () =>
           this.documentClient.send(
             new UpdateCommand({
               ...updateParams,
               ReturnConsumedCapacity: "TOTAL",
             }),
-          ),
-        );
+          );
+        response = hasAtomicOps
+          ? await sendUpdate()
+          : await retryOperation(sendUpdate);
 
         const savedItem = this._createFromDyItem(response.Attributes);
         logger.debug("savedItem", savedItem);

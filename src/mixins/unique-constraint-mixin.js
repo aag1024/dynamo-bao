@@ -63,7 +63,7 @@ const UniqueConstraintMethods = {
         if (innerError instanceof ConditionalError) {
           throw innerError;
         }
-        console.error("Error checking unique constraint:", innerError);
+        logger.error("Error checking unique constraint:", innerError);
         throw new ConditionalError(
           `Failed to validate ${constraint.field} uniqueness`,
           "unique_constraint",

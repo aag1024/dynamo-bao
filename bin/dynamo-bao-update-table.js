@@ -97,6 +97,7 @@ const ALL_ATTRIBUTE_DEFINITIONS = [
 ];
 
 const { waitForTableActive } = require("./lib/create-table-params");
+const { confirm } = require("./lib/confirm");
 
 let client;
 
@@ -118,9 +119,16 @@ async function checkAndAddMissingGSIs(tableName) {
     return;
   }
 
-  console.log(
-    `Missing GSIs: ${missingGSIs.map((g) => g.IndexName).join(", ")}`,
-  );
+  const missingNames = missingGSIs.map((g) => g.IndexName).join(", ");
+  console.log(`Missing GSIs: ${missingNames}`);
+  if (
+    !(await confirm(
+      `Add GSIs ${missingNames} to table '${tableName}' (${client.region})?`,
+    ))
+  ) {
+    console.log("Skipped adding GSIs.");
+    return;
+  }
 
   // DynamoDB only allows adding one GSI per UpdateTable call
   for (const gsi of missingGSIs) {
@@ -178,6 +186,15 @@ async function checkAndEnableTTL(tableName) {
     console.log(
       "TTL is currently being disabled. Please wait for it to finish, then run this script again.",
     );
+    return;
+  }
+
+  if (
+    !(await confirm(
+      `Enable TTL on attribute 'ttl' for table '${tableName}' (${client.region})?`,
+    ))
+  ) {
+    console.log("Skipped enabling TTL.");
     return;
   }
 

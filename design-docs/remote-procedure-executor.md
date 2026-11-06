@@ -536,7 +536,7 @@ New entry point `dynamo-bao/remote`, implemented in `src/remote/`:
 | Module | Exports | Tests |
 |---|---|---|
 | `procedures.js` | `defineProcedure`, `ProcedureRegistry` | Registration, version lookup, previous-version serving, refusal without replay class or scope |
-| `context.js` | `createContext`, `fresh` | Tenant entry, batch context, capacity merge from `fresh`, outer cache priming, `waitUntil` passthrough |
+| `context.js` | `createContext`, `fresh`, and the `ProcedureContext`, `ContextResolver` and `Actor` types | Tenant entry, batch context, capacity merge from `fresh`, outer cache priming, `waitUntil` passthrough; a resolver type-checks without a cast; the library reads only `actor.appId` and never interprets the other actor fields |
 | `codec.js` | `encodeValue`, `decodeRow` | Every field type in `fields.js`, including binary, date, set, counter, TTL; rejection of non-JSON values |
 | `executor.js` | `createExecutor({ procedures, context, ingress, budget })` | Envelope validation, unknown procedure, scope check, multi-call concurrency and isolation, outcome encoding, capacity reporting, placement echo, budget refusal, ingress refusal |
 | `client.js` | `remote`, `inProcess` | Round trip through the executor in process, outcome typing, `unknown` on transport failure, no auto-resend for `needs-ledger`, capacity passthrough |

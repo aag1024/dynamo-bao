@@ -10,7 +10,7 @@ const {
   getBatchContextStore,
 } = require("../mixins/batch-loading-mixin");
 const { SCOPES } = require("./procedures");
-const { findNonJson, isPlainObject, deepFreeze } = require("./json");
+const { findNonJson, isPlainObject, deepFreeze, jsonClone } = require("./json");
 
 /** Default cap on one piece of deferred work, in milliseconds. */
 const WAIT_UNTIL_CAP_MS = 30_000;
@@ -232,8 +232,12 @@ function createContext(options) {
   if (typeof tenant !== "string" || tenant === "") {
     throw new TypeError("createContext: tenant must be a non-empty string");
   }
-  if (!actor || typeof actor !== "object") {
-    throw new TypeError("createContext: actor is required");
+  if (!isPlainObject(actor)) {
+    throw new TypeError("createContext: actor is required and must be an object");
+  }
+  const badActor = findNonJson(actor, "actor");
+  if (badActor) {
+    throw new TypeError(`createContext: ${badActor.path} is ${badActor.found}; the actor must be JSON`);
   }
   if (!models || typeof models !== "object") {
     throw new TypeError("createContext: models is required");
@@ -258,7 +262,7 @@ function createContext(options) {
   const ctx = {
     models,
     tenant,
-    actor: deepFreeze(structuredClone(actor)),
+    actor: deepFreeze(jsonClone(actor)),
     requestId,
     operationId,
     logger,
@@ -270,7 +274,7 @@ function createContext(options) {
       }
       sink(capped(promise, waitUntilCapMs, logger));
     },
-    config: deepFreeze(structuredClone(config)),
+    config: deepFreeze(jsonClone(config)),
   };
   if (wantsAdmin) {
     ctx.adminModels = adminPartition

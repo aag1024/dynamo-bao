@@ -2,7 +2,7 @@
  * Named, versioned procedures and the registry the executor serves them from.
  * @module remote/procedures
  */
-const { findNonJson, deepFreeze } = require("./json");
+const { findNonJson, deepFreeze, jsonClone } = require("./json");
 
 /**
  * What a resend after an `unknown` outcome does. Frozen vocabulary: see
@@ -87,7 +87,7 @@ function defineProcedure(spec) {
     version,
     scope,
     replay,
-    args: args === null ? null : deepFreeze(structuredClone(args)),
+    args: args === null ? null : deepFreeze(jsonClone(args)),
     run,
   });
   DESCRIPTORS.add(descriptor);
@@ -181,7 +181,7 @@ class ProcedureRegistry {
         version,
         scope,
         replay,
-        args: args === null ? null : structuredClone(args),
+        args: args === null ? null : jsonClone(args),
       }));
   }
 }

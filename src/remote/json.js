@@ -50,8 +50,7 @@ function findNonJson(value, path = "$", allow = null, seen = new Set()) {
       }
       return null;
     }
-    const proto = Object.getPrototypeOf(value);
-    if (proto !== Object.prototype && proto !== null) {
+    if (!isPlainObject(value)) {
       return { path, found: describe(value) };
     }
     if (Object.getOwnPropertySymbols(value).length > 0) {
@@ -71,12 +70,27 @@ function findNonJson(value, path = "$", allow = null, seen = new Set()) {
   }
 }
 
+/**
+ * True for `{}` literals and `Object.create(null)` objects, from any realm
+ * (a Worker, a vm context and Node each have their own Object.prototype).
+ */
 function isPlainObject(value) {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
     return false;
   }
   const proto = Object.getPrototypeOf(value);
-  return proto === Object.prototype || proto === null;
+  if (proto === null || proto === Object.prototype) return true;
+  return (
+    Object.getPrototypeOf(proto) === null &&
+    typeof proto.constructor === "function" &&
+    proto.constructor.name === "Object" &&
+    Object.prototype.toString.call(value) === "[object Object]"
+  );
+}
+
+/** Deep copy of a value already known to be plain JSON. */
+function jsonClone(value) {
+  return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
 }
 
 function deepFreeze(value) {
@@ -87,4 +101,4 @@ function deepFreeze(value) {
   return value;
 }
 
-module.exports = { findNonJson, isPlainObject, deepFreeze };
+module.exports = { findNonJson, isPlainObject, deepFreeze, jsonClone };

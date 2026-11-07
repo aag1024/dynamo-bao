@@ -2,7 +2,9 @@
 
 Status: draft for review, 2026-10-28. Companion to
 `remote-procedure-executor.md`, which holds the design and the spike
-results this plan is ordered by. Nothing here is started.
+results this plan is ordered by. W2.1 to W2.6 are implemented (2026-11-06,
+branch `feat/remote-executor`) and W2.7 is ready to release as 0.10.0; W1,
+W3 and W4 are not started.
 
 ## What the spikes decided
 

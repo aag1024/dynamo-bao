@@ -105,6 +105,30 @@ describe("dynamo-bao/remote entry point", () => {
   });
 });
 
+describe("release notes (issue #18 items 1, 2 and 6)", () => {
+  const changelog = fs.readFileSync(path.join(ROOT, "CHANGELOG.md"), "utf8");
+  const unreleased = changelog.slice(
+    changelog.indexOf("## [Unreleased]"),
+    changelog.indexOf("\n## [", changelog.indexOf("## [Unreleased]") + 1),
+  );
+
+  test("name the dynamo-bao/remote entry point and every export", () => {
+    expect(unreleased).toMatch(/`dynamo-bao\/remote`/);
+    for (const name of REMOTE_EXPORTS) expect(unreleased).toContain(`\`${name}`);
+    expect(unreleased).toContain("Model.fromRemote");
+  });
+
+  test("say this is a semver-minor release and whether key code changed", () => {
+    expect(unreleased).toMatch(/Semver minor \(0\.10\.0\)/);
+    expect(unreleased).toMatch(/Key format: no key code changed/);
+  });
+
+  test("name the model shapes the codec refuses", () => {
+    expect(unreleased).toMatch(/### Codec refusals/);
+    expect(unreleased).toMatch(/custom field whose stored value is\s+not JSON/);
+  });
+});
+
 describe("TypeScript contract", () => {
   function typecheck(compilerOptions) {
     const dir = fs.mkdtempSync(path.join(consumer, "ts-"));

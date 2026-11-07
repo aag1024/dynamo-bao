@@ -9,6 +9,83 @@ Each version heading links to the tag that was published to npm. Entries before
 
 ## [Unreleased]
 
+Semver minor (0.10.0). Adds the `dynamo-bao/remote` entry point; nothing
+existing changes behavior.
+
+**Key format: no key code changed.** Primary keys, GSI keys, unique
+constraint keys, iteration keys and tenant prefixes are built exactly as in
+0.9.0. Outside `src/remote/`, the only source changes are additions to
+`src/model.js` (`fromRemote`, `isDetached`, and a guard at the top of
+`save`, `loadRelatedData` and `getOrLoadRelatedField` that only fires on
+instances `fromRemote` created) and one new exception class. The root
+`dynamo-bao` entry exports the same names as before.
+
+### Added
+
+- **`dynamo-bao/remote`**, a new entry point (`require("dynamo-bao/remote")`
+  or `import ... from "dynamo-bao/remote"`) for running named, versioned
+  procedures next to DynamoDB and calling them from far away in one round
+  trip. See `tutorials/11-remote-procedures.md`, which freezes
+  `ProcedureContext`, `Actor`, the outcome tags (`ok` / `error` /
+  `unknown`) and the replay classes (`idempotent` / `conditional` /
+  `needs-ledger`). Exports:
+  - `defineProcedure`, `ProcedureRegistry` (with `get`, `has`, `versions`,
+    `latest`, `manifest`), `REPLAY_CLASSES`, `SCOPES`: registration by name,
+    version, scope and replay class. A procedure without a replay class or
+    scope is refused, and so is a version gap. Previous-version serving is
+    the application's obligation: the registry serves `@1` beside `@2` while
+    both descriptors are registered.
+  - `createContext`, `fresh`, `bindModelsToTenant`: the procedure context
+    (models, admin models bound to the resolver's admin partition, tenant as
+    a value, actor passed through, request and operation ids, a logger bound
+    to request id and tenant, `now()`, `fresh` with capacity merge and
+    outer-cache priming, `waitUntil` with a 30 s cap, frozen config).
+  - `encodeValue`, `decodeRow`, `CodecError`: the wire codec, covering every
+    field type in `fields.js`. Dates and TTLs travel as epoch milliseconds,
+    `BinaryField` as `{ $binary }`, `StringSetField` as an array; any
+    non-JSON value is refused with its path.
+  - `createExecutor({ procedures, context, ingress, budget, region,
+    plainReturns })`: the fetch handler. Envelope validation, unknown
+    procedure and scope refusal, the actor check (the actor's `appId` must
+    equal the call tenant; no other actor field is read), concurrent and
+    isolated calls, tagged outcomes with capacity and duration, placement
+    echo, budget and ingress refusal, `drain()`.
+  - `remote(transport, { actor, retries, headers })` with `call` and
+    `batch`, and `inProcess(executor, { env, headers, ctx })`: `unknown` on
+    transport failure, no automatic resend of `needs-ledger` calls, reported
+    capacity added to the caller's batch context.
+  - `DetachedInstanceError` (also in `exceptions`).
+- **`Model.fromRemote(row)`** hydrates a detached, read-only instance from an
+  encoded row, and **`instance.isDetached()`** reports it. On a detached
+  instance `save`, `update`, `delete`, `loadRelatedData` and
+  `getOrLoadRelatedField` throw `DetachedInstanceError`.
+- **TypeScript declarations** for the entry point in `src/remote/index.d.ts`
+  (`ProcedureContext`, `ContextResolver`, `Actor`, the descriptor, outcome
+  and replay types, and every export), resolvable with `moduleResolution`
+  `node`, `node16` and `bundler`. The package `exports` map gains
+  `./remote`, and `typesVersions` maps it for `moduleResolution: node`.
+- **`examples/cloudflare-remote-executor/`**: a data worker with the
+  placement line, the `DATA` self-binding and the ingress secret, tested in
+  workerd with `@cloudflare/vitest-pool-workers` (`npm run test:workerd`).
+- `tutorials/11-remote-procedures.md`.
+
+### Codec refusals
+
+The codec refuses one model shape: a **custom field whose stored value is
+not JSON** (for example a custom field whose `toDy` returns a `Map`). Such a
+row throws `CodecError` naming the model and field. Every built-in field
+type encodes. A `Date` anywhere in a procedure result is refused; return
+epoch milliseconds.
+
+### For consumers adopting the executor
+
+The Spike 6 audit's consumer-facing lists (the callers that cross the
+boundary with a `Date` or a model instance, the memberships-cache
+invalidation sites, and the activity-gate helpers) were handed over on
+issue #18 on 2026-11-07:
+https://github.com/aag1024/dynamo-bao/issues/18#issuecomment-6703195120
+
+
 ## [0.9.0] - 2026-10-28
 
 ### Security

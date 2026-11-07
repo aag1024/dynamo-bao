@@ -28,5 +28,8 @@
   },
   "10-batch-context-configuration": {
     "title": "Batch Context Configuration"
+  },
+  "11-remote-procedures": {
+    "title": "Remote Procedures"
   }
 }

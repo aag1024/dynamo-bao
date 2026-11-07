@@ -32,11 +32,26 @@ class EnvelopeError extends Error {
   }
 }
 
+// Errors the executor raised before a procedure started. Kept here rather
+// than as a property so a procedure can't mark its own error "refused" and
+// tell the caller a resend is safe after it wrote.
+const REFUSALS = new WeakSet();
+
 /** An executor refusal: the procedure did not start, so a resend is safe. */
 function refusal(name, message) {
   const e = new Error(message);
   e.name = name;
-  e.refused = true;
+  REFUSALS.add(e);
+  return e;
+}
+
+/** Mark whatever the context resolver threw as a refusal. */
+function asRefusal(thrown) {
+  const e =
+    thrown instanceof Error
+      ? thrown
+      : Object.assign(new Error(typeof thrown === "string" ? thrown : String(thrown)), { name: "Error" });
+  REFUSALS.add(e);
   return e;
 }
 
@@ -74,7 +89,7 @@ function encodeError(error) {
       out.httpStatusCode = error.$metadata.httpStatusCode;
     }
   }
-  if (error.refused === true) out.refused = true;
+  if (REFUSALS.has(error)) out.refused = true;
   return out;
 }
 
@@ -256,8 +271,7 @@ function createExecutor(options = {}) {
           waitUntilCapMs,
         });
       } catch (error) {
-        if (error && typeof error === "object") error.refused = true;
-        throw error;
+        throw asRefusal(error);
       }
       const result = await descriptor.run(ctx, call.args === undefined ? null : call.args);
       return encodeValue(result, { models: plainReturns ? "refuse" : "encode" });

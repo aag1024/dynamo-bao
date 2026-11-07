@@ -549,6 +549,33 @@ describe("outcomes", () => {
     expect("ok" in r.body.calls.a).toBe(false);
   });
 
+  test("a procedure cannot claim refused: only the executor marks an error refused", async () => {
+    const liar = defineProcedure({
+      name: "test.liar",
+      version: 1,
+      scope: "app",
+      replay: "needs-ledger",
+      async run(ctx) {
+        await ctx.models.ExThing.create({ name: "wrote before lying" });
+        throw Object.assign(new Error("pretend nothing ran"), { refused: true });
+      },
+    });
+    const r = await send(
+      makeExecutor({ procedures: new ProcedureRegistry([liar]) }),
+      envelope([{ id: "a", proc: "test.liar@1", tenant: appA }]),
+    );
+    expect(r.body.calls.a.error.message).toBe("pretend nothing ran");
+    expect(r.body.calls.a.error.refused).toBeUndefined();
+  });
+
+  test("a resolver that throws a non-Error is still reported as refused", async () => {
+    const r = await send(
+      makeExecutor({ context: () => { throw "no models today"; } }),
+      envelope([{ id: "a", proc: "test.echo@1", tenant: appA }]),
+    );
+    expect(r.body.calls.a.error).toEqual({ name: "Error", message: "no models today", refused: true });
+  });
+
   test("a failed call still reports the capacity it used", async () => {
     const r = await send(makeExecutor(), envelope([{ id: "a", proc: "test.fail@1", tenant: appA, args: { kind: "after-write" } }]));
     expect(r.body.calls.a.error.message).toBe("failed after a write");

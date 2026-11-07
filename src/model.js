@@ -38,6 +38,16 @@ const HYDRATE = Symbol("dynamo-bao.hydrate");
 // prototype; holds the `fields` object they were built from.
 const FIELD_ACCESSORS_FOR = Symbol("dynamo-bao.fieldAccessorsFor");
 
+// Set on instances hydrated by fromRemote(): read-only views of a row a remote
+// procedure returned. Persistence methods refuse to run on them.
+const DETACHED = Symbol("dynamo-bao.detached");
+
+function assertAttached(instance, method) {
+  if (instance[DETACHED]) {
+    throw new DetachedInstanceError(instance.constructor.name, method);
+  }
+}
+
 // System attributes (_pk, _sk, GSI keys, ...) are plain strings with no
 // per-model options, so one shared field definition serves them all.
 const SYSTEM_STRING_FIELD = StringField();
@@ -53,6 +63,7 @@ const {
 } = require("./constants");
 const {
   ConfigurationError,
+  DetachedInstanceError,
   ValidationError,
   QueryError,
   DataFormatError,
@@ -1201,6 +1212,42 @@ class BaoModel {
 
   /**
    * @description
+   * Hydrate a detached, read-only instance from a row a remote procedure
+   * returned (`{ $model, data }`, as produced by `encodeValue` in
+   * `dynamo-bao/remote`). Field getters work as on a loaded instance;
+   * `save`, `update`, `delete`, `loadRelatedData` and `getOrLoadRelatedField`
+   * throw `DetachedInstanceError`. Static model methods are not guarded.
+   * @param {{ $model: string, data: Object }} encoded - The encoded row.
+   * @returns {BaoModel} A detached instance of this model.
+   */
+  static fromRemote(encoded) {
+    const { decodeRow } = require("./remote/codec");
+    const instance = this._createFromDyItem(decodeRow(this, encoded));
+    Object.defineProperty(instance, DETACHED, { value: true });
+    // Instances have no update/delete methods (those are static), but a
+    // detached row is the place a caller is most likely to try them.
+    for (const method of ["update", "delete"]) {
+      if (!Object.prototype.hasOwnProperty.call(this.fields, method)) {
+        Object.defineProperty(instance, method, {
+          value: async () => assertAttached(instance, method),
+          enumerable: false,
+        });
+      }
+    }
+    return instance;
+  }
+
+  /**
+   * @description
+   * Returns true for an instance hydrated with {@link BaoModel.fromRemote}.
+   * @returns {boolean}
+   */
+  isDetached() {
+    return this[DETACHED] === true;
+  }
+
+  /**
+   * @description
    * Clear the related cache for a given field.
    * @param {string} fieldName - The name of the field to clear.
    */
@@ -1401,6 +1448,7 @@ class BaoModel {
    * @returns {Promise<Object>} Returns a promise that resolves to the updated item.
    */
   async save(options = {}) {
+    assertAttached(this, "save");
     const { forceReindex = false, ...otherOptions } = options;
 
     if (!forceReindex && !this.hasChanges() && this.isLoaded()) {
@@ -1447,6 +1495,7 @@ class BaoModel {
    * @returns {Promise<Object>} Returns a promise that resolves to the loaded item.
    */
   async getOrLoadRelatedField(fieldName) {
+    assertAttached(this, "getOrLoadRelatedField");
     if (this._relatedObjects[fieldName]) {
       return this._relatedObjects[fieldName];
     }
@@ -1474,6 +1523,7 @@ class BaoModel {
    * @returns {Promise<Object>} Returns a promise that resolves to the loaded items and their consumed capacity
    */
   async loadRelatedData(fieldNames = null) {
+    assertAttached(this, "loadRelatedData");
     const promises = [];
 
     for (const [fieldName, field] of Object.entries(this.constructor.fields)) {

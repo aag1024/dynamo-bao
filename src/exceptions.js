@@ -86,6 +86,22 @@ class DataFormatError extends BaoError {
   }
 }
 
+/**
+ * Thrown by a persistence method called on an instance hydrated with
+ * `Model.fromRemote()`. Such an instance is a read-only view of a row a
+ * remote procedure returned; writes and related loads belong in a procedure.
+ */
+class DetachedInstanceError extends BaoError {
+  constructor(modelName, method) {
+    super(
+      `${modelName}.${method}() was called on a detached instance (hydrated with fromRemote). ` +
+        "Detached rows are read-only; do the write or load in a procedure and call it with remote(...).call().",
+    );
+    this.modelName = modelName;
+    this.method = method;
+  }
+}
+
 module.exports = {
   BaoError,
   ConfigurationError,
@@ -94,4 +110,5 @@ module.exports = {
   ItemNotFoundError,
   ConditionalError,
   DataFormatError,
+  DetachedInstanceError,
 };

@@ -308,7 +308,12 @@ function createExecutor(options = {}) {
     }
     let envelope;
     try {
-      const text = await request.text();
+      let text;
+      try {
+        text = await request.text();
+      } catch {
+        throw new EnvelopeError("EnvelopeError", "the request body could not be read", 400);
+      }
       if (text.length > budget.maxRequestBytes) {
         throw new EnvelopeError(
           "BudgetExceeded",
@@ -323,8 +328,7 @@ function createExecutor(options = {}) {
       }
       validateEnvelope(envelope, budget);
     } catch (error) {
-      if (error instanceof EnvelopeError) return envelopeFailure(error);
-      throw error;
+      return envelopeFailure(error);
     }
 
     const requestId = envelope.requestId ?? ulid();

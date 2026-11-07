@@ -73,6 +73,10 @@ describe("defineProcedure", () => {
     expect(() => proc({ version })).toThrow(/version/);
   });
 
+  test("refuses something that is not a descriptor object", () => {
+    expect(() => defineProcedure(null)).toThrow(/descriptor object/);
+  });
+
   test("refuses a missing run function", () => {
     expect(() => proc({ run: "nope" })).toThrow(/run/);
   });

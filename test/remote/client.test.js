@@ -221,6 +221,10 @@ describe("batch: several calls in one envelope", () => {
     expect(Object.keys(out)).toEqual(["c0", "c1"]);
   });
 
+  test("refuses an empty batch", async () => {
+    await expect(remote(transport(), { actor: actorFor(appA) }).batch([])).rejects.toThrow(/non-empty/);
+  });
+
   test("refuses duplicate ids", async () => {
     await expect(
       remote(transport(), { actor: actorFor(appA) }).batch([
@@ -242,6 +246,15 @@ describe("transport failure", () => {
     expect(r.unknown).toBe(true);
     expect(typeof r.reason).toBe("string");
     expect("ok" in r || "error" in r).toBe(false);
+  });
+
+  test.each([
+    ["200 JSON that is not an envelope", () => Response.json({ hello: 1 })],
+    ["a non-200 envelope without an error", () => Response.json({ v: 1 }, { status: 500 })],
+    ["a 200 envelope without calls", () => Response.json({ v: 1 })],
+  ])("%s gives unknown", async (_label, respond) => {
+    const r = await remote({ fetch: async () => respond() }, { actor: actorFor(appA) }).call(guarded, {}, { tenant: appA });
+    expect(r.unknown).toBe(true);
   });
 
   test("no resend by default", async () => {

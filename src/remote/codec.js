@@ -181,7 +181,7 @@ function encodeAt(value, path, models, seen) {
       }
       return out;
     }
-    if (!isPlainObject(value)) {
+    if (!isPlainObject(value) || Object.getOwnPropertySymbols(value).length > 0) {
       throw nonJson(findNonJson(value, path));
     }
     const out = {};

@@ -346,6 +346,32 @@ describe("envelope validation", () => {
     expect(r.body.error.message).toMatch(pattern);
   });
 
+  test.each([
+    ["an empty requestId", { requestId: "" }, /requestId/],
+    ["an envelope actor that is not an object", { actor: "me" }, /actor must be an object/],
+  ])("refuses %s", async (_label, extra, pattern) => {
+    const r = await send(makeExecutor(), envelope([call()], extra));
+    expect(r.status).toBe(400);
+    expect(r.body.error.message).toMatch(pattern);
+  });
+
+  test("refuses a call that is not an object", async () => {
+    const r = await send(makeExecutor(), envelope(["nope"]));
+    expect(r.status).toBe(400);
+    expect(r.body.error.message).toMatch(/calls\[0\] must be an object/);
+  });
+
+  test("a body that cannot be read is a 400, not a crash", async () => {
+    const broken = {
+      method: "POST",
+      headers: new Headers({ "x-data-binding": SECRET }),
+      text: () => Promise.reject(new Error("stream torn")),
+    };
+    const res = await makeExecutor().fetch(broken, ENV);
+    expect(res.status).toBe(400);
+    expect((await res.json()).error.message).toMatch(/could not be read/);
+  });
+
   test("refuses duplicate call ids", async () => {
     const r = await send(makeExecutor(), envelope([call(), call()]));
     expect(r.status).toBe(400);
@@ -437,6 +463,13 @@ describe("dispatch refusals", () => {
     );
     expect(r.body.calls.a.error).toMatchObject({ name: "ActorTenantMismatch", refused: true });
     expect(lastRun).toEqual({});
+  });
+
+  test("a resolver that returns no models is refused", async () => {
+    const executor = makeExecutor({ context: () => ({}) });
+    const r = await send(executor, envelope([{ id: "a", proc: "test.echo@1", tenant: appA }]));
+    expect(r.body.calls.a.error).toMatchObject({ name: "TypeError", refused: true });
+    expect(r.body.calls.a.error.message).toMatch(/no models for test\.echo@1/);
   });
 
   test("a resolver failure is reported for that call only, as refused", async () => {

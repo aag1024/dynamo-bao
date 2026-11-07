@@ -192,8 +192,4 @@ module.exports = {
   REPLAY_CLASSES,
   SCOPES,
   isDescriptor,
-  parseProcedureId(id) {
-    const m = typeof id === "string" ? ID.exec(id) : null;
-    return m ? { name: m[1], version: Number(m[2]) } : null;
-  },
 };

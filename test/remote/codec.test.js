@@ -213,6 +213,43 @@ describe("encodeValue: model rows", () => {
     expect(e.next).toBeNull();
   });
 
+  test("a stored string set that is not an array of strings is refused", () => {
+    const row = RemoteEveryField._createFromDyItem(sampleDy({ tags: "not-a-list" }));
+    expect(() => encodeValue(row)).toThrow(/RemoteEveryField\.tags.*array of strings/);
+  });
+
+  test("a stored Set (as some unmarshallers produce) encodes as an array", () => {
+    const row = RemoteEveryField._createFromDyItem(sampleDy({ tags: new Set(["s"]) }));
+    expect(encodeValue(row).data.tags).toEqual(["s"]);
+  });
+
+  test.each([
+    ["date", { when: "yesterday" }, /when.*not a number/],
+    ["TTL", { ttl: "soon" }, /ttl.*not a number/],
+    ["binary", { blob: "bytes" }, /blob.*not bytes/],
+  ])("a stored %s of the wrong type is refused", (_label, overrides, pattern) => {
+    const row = RemoteEveryField._createFromDyItem(sampleDy(overrides));
+    expect(() => encodeValue(row)).toThrow(pattern);
+  });
+
+  test("binary encodes and decodes without Buffer (plain Uint8Array runtimes)", () => {
+    const saved = globalThis.Buffer;
+    const bytes = new Uint8Array([0, 1, 2, 250, 255]);
+    let wire;
+    let back;
+    try {
+      const row = RemoteEveryField._createFromDyItem(sampleDy({ blob: bytes }));
+      globalThis.Buffer = undefined;
+      wire = encodeValue(row).data.blob;
+      back = decodeRow(RemoteEveryField, { $model: "RemoteEveryField", data: { blob: wire } }).blob;
+    } finally {
+      globalThis.Buffer = saved;
+    }
+    expect(wire).toEqual({ $binary: Buffer.from(bytes).toString("base64") });
+    expect(back).toBeInstanceOf(Uint8Array);
+    expect([...back]).toEqual([...bytes]);
+  });
+
   test("ObjectNotFound encodes as null", () => {
     expect(encodeValue({ row: new ObjectNotFound({ CapacityUnits: 0.5 }) })).toEqual({
       row: null,
@@ -263,6 +300,16 @@ describe("encodeValue: plain values", () => {
   ])("refuses %s, naming its path", (_label, value, pattern) => {
     expect(() => encodeValue(value)).toThrow(CodecError);
     expect(() => encodeValue(value)).toThrow(pattern);
+  });
+
+  test("refuses an object with symbol keys", () => {
+    expect(() => encodeValue({ a: { [Symbol("k")]: 1 } })).toThrow(/\$\.a.*symbol keys/);
+  });
+
+  test("refuses a custom field whose wire value is not JSON", () => {
+    expect(() =>
+      decodeRow(RemoteJsonCustom, { $model: "RemoteJsonCustom", data: { id: "x", code: { $binary: 1, d: new Date() } } }),
+    ).toThrow(/RemoteJsonCustom\.code.*expected JSON/);
   });
 
   test("refuses a cycle", () => {

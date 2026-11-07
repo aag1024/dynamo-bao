@@ -122,6 +122,11 @@ describe("createContext: fields", () => {
     expect(() => makeCtx({ models: undefined })).toThrow(/models/);
   });
 
+  test("refuses an actor that is not JSON and an unknown scope", () => {
+    expect(() => makeCtx({ actor: { appId: "a", at: new Date() } })).toThrow(/actor\.at.*Date/);
+    expect(() => makeCtx({ scope: "global" })).toThrow(/unknown scope/);
+  });
+
   test("adminModels is absent for scope app even if supplied", () => {
     const ctx = makeCtx({ scope: "app", adminModels: { CtxThing } });
     expect(ctx.adminModels).toBeUndefined();
@@ -167,6 +172,18 @@ describe("createContext: logger", () => {
     const { base, lines } = recorder();
     makeCtx({ logger: base }).logger.info("n", 42);
     expect(lines[0].detail).toEqual({ requestId: "req-1", tenant: appTenant, detail: 42 });
+  });
+
+  test("a base logger missing a level falls back to info, then to nothing", () => {
+    const lines = [];
+    const ctx = makeCtx({ logger: { info: (m, d) => lines.push([m, d]) } });
+    ctx.logger.debug("d");
+    ctx.logger.error("e", [1, 2]);
+    expect(lines).toEqual([
+      ["d", { requestId: "req-1", tenant: appTenant }],
+      ["e", { requestId: "req-1", tenant: appTenant, detail: [1, 2] }],
+    ]);
+    expect(() => makeCtx({ logger: {} }).logger.warn("dropped")).not.toThrow();
   });
 
   test("defaults to a console logger with the same signature", () => {
@@ -220,6 +237,13 @@ describe("createContext: waitUntil", () => {
 
   test("the default cap is 30 s", () => {
     expect(require("../../src/remote/context").WAIT_UNTIL_CAP_MS).toBe(30_000);
+  });
+
+  test("without a sink the work still runs and nothing throws", async () => {
+    let ran = false;
+    makeCtx().waitUntil(Promise.resolve().then(() => (ran = true)));
+    await new Promise((r) => setImmediate(r));
+    expect(ran).toBe(true);
   });
 
   test("refuses something that is not a promise", () => {
@@ -345,8 +369,10 @@ describe("adminModels bound to the admin partition", () => {
     expect(stored.exists()).toBe(true);
   });
 
-  test("refuses an invalid partition id", () => {
+  test("refuses an invalid or missing partition id", () => {
     expect(() => bindModelsToTenant({ CtxThing }, "bad#id")).toThrow(/tenant/);
+    expect(() => bindModelsToTenant({ CtxThing }, null)).toThrow(/tenant id/);
+    expect(() => bindModelsToTenant({ CtxThing }, "")).toThrow(/tenant id/);
   });
 });
 

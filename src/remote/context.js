@@ -136,10 +136,10 @@ function bindModel(Base, tenantId) {
  * @returns {Object<string, Function>}
  */
 function bindModelsToTenant(models, tenantId) {
-  ModelManager.forTenant(tenantId); // validates the id
   if (!tenantId || typeof tenantId !== "string") {
     throw new TypeError("bindModelsToTenant needs a tenant id");
   }
+  ModelManager.forTenant(tenantId); // rejects ids that could forge keys
   const out = {};
   for (const [name, Model] of Object.entries(models)) {
     out[name] = typeof Model === "function" ? bindModel(Model, tenantId) : Model;

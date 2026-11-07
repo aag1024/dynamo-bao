@@ -92,7 +92,7 @@ function remote(transport, options = {}) {
             return [e.id, { unknown: true, reason: "the response has no outcome for this call" }];
           }
           addCapacity(outcome.capacity);
-          return [e.id, outcome];
+          return [e.id, result.placement ? { ...outcome, placement: result.placement } : outcome];
         }),
       );
     }
@@ -132,7 +132,10 @@ function remote(transport, options = {}) {
     if (!isPlainObject(parsed.calls)) {
       return { transportFailure: true, reason: "the response has no calls" };
     }
-    return { calls: parsed.calls, placement: parsed.placement };
+    const placement = isPlainObject(parsed.placement)
+      ? { colo: parsed.placement.colo ?? null, region: parsed.placement.region ?? null }
+      : undefined;
+    return { calls: parsed.calls, placement };
   }
 
   function prepare(entry, i) {
@@ -152,8 +155,9 @@ function remote(transport, options = {}) {
      * @param {Object} procedure - A descriptor from defineProcedure.
      * @param {any} args - JSON arguments; model instances are encoded.
      * @param {{tenant: string, actor: (Object|undefined), operationId: (string|undefined), requestId: (string|undefined)}} options
-     * @returns {Promise<Object>} One outcome: `{ok, capacity, ms}`,
-     *   `{error, capacity?, ms?}` or `{unknown: true, reason}`.
+     * @returns {Promise<Object>} One outcome: `{ok, capacity, ms, placement}`,
+     *   `{error, capacity?, ms?, placement?}` or `{unknown: true, reason}`.
+     *   `placement` is the executor's `{colo, region}`.
      */
     async call(procedure, args, { tenant, actor, operationId, requestId } = {}) {
       const entry = prepare({ id: "c0", procedure, args, tenant, actor }, 0);

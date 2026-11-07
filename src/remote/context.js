@@ -202,7 +202,8 @@ function capped(promise, capMs, logger) {
  * @param {Object} [options.adminModels] - Admin model classes; kept only for
  *   scope "admin" or "both", where they are required.
  * @param {string} [options.adminPartition] - Tenant the admin models are
- *   bound to. Omit when the admin models need no tenant.
+ *   bound to; required with adminModels. Unbound, they would run in the
+ *   call's tenant and write admin rows into the app's partition.
  * @param {string} [options.requestId]
  * @param {string} [options.operationId] - The envelope's replay unit.
  * @param {Object} [options.config] - Plain settings; deep-copied and frozen.
@@ -252,6 +253,12 @@ function createContext(options) {
       `createContext: scope "${scope}" needs adminModels from the context resolver`,
     );
   }
+  if (wantsAdmin && !adminPartition) {
+    throw new TypeError(
+      `createContext: scope "${scope}" needs an adminPartition to bind adminModels to; ` +
+        "unbound, they would write in the call's tenant",
+    );
+  }
   const badConfig = findNonJson(config, "config");
   if (badConfig || !isPlainObject(config)) {
     throw new TypeError(
@@ -278,9 +285,7 @@ function createContext(options) {
     config: deepFreeze(jsonClone(config)),
   };
   if (wantsAdmin) {
-    ctx.adminModels = adminPartition
-      ? bindModelsToTenant(adminModels, adminPartition)
-      : adminModels;
+    ctx.adminModels = bindModelsToTenant(adminModels, adminPartition);
   }
   return Object.freeze(ctx);
 }

@@ -109,7 +109,7 @@ export interface ResolvedContext<Models = any, AdminModels = any> {
   models: Models;
   /** Required for scope "admin" | "both"; dropped for scope "app". */
   adminModels?: AdminModels;
-  /** Tenant adminModels are bound to. Omit if they need no tenant. */
+  /** Tenant adminModels are bound to. Required for admin and both scopes: a call without it is refused with ScopeError. */
   adminPartition?: string;
   config?: { [key: string]: JsonValue };
 }
@@ -145,8 +145,75 @@ export interface ProcedureSpec<Args, Result, Models, AdminModels> {
   run(ctx: ProcedureContext<Models, AdminModels>, args: Args): Promise<Result>;
 }
 
+/** A model instance as the codec sees it: anything with save(). It crosses as an EncodedRow. */
+export interface RowLike {
+  save(...args: any[]): unknown;
+}
+
+/** Values the codec refuses wherever they appear in a result. */
+export type NotJson =
+  | Date
+  | Map<any, any>
+  | Set<any>
+  | Function
+  | bigint
+  | symbol
+  | RegExp
+  | ArrayBuffer
+  | ArrayBufferView
+  | Promise<any>;
+
+type IsAny<T> = 0 extends 1 & T ? true : false;
+
+/**
+ * What a value becomes on the wire: model instances (RowLike) become
+ * EncodedRow, JSON stays as it is, and anything in NotJson becomes never.
+ */
+export type Wire<T> =
+  IsAny<T> extends true
+    ? any
+    : unknown extends T
+      ? unknown
+      : T extends JsonValue | undefined
+        ? T
+        : T extends NotJson
+          ? never
+          : T extends RowLike
+            ? EncodedRow
+            : T extends readonly (infer U)[]
+              ? Wire<U>[]
+              : T extends object
+                ? { [K in keyof T]: Wire<T[K]> }
+                : never;
+
+/** What a caller receives as `ok`: a result of undefined (or none) arrives as null. */
+export type WireResult<T> = Wire<Exclude<T, undefined | void>> | (undefined extends T ? null : never);
+
+/** true if a NotJson value can appear anywhere in T. */
+type HasNotJson<T> =
+  IsAny<T> extends true
+    ? false
+    : unknown extends T
+      ? false
+      : T extends JsonValue | undefined | void
+        ? false
+        : T extends NotJson
+          ? true
+          : T extends RowLike
+            ? false
+            : T extends readonly (infer U)[]
+              ? HasNotJson<U>
+              : T extends object
+                ? HasNotJson<T[keyof T]>
+                : true;
+
+/** Makes defineProcedure a type error when run's result can hold a value that isn't JSON. */
+export type ResultCheck<Result> = true extends HasNotJson<Result>
+  ? { "run's result is not JSON: return epoch ms, not a Date, and plain objects and arrays, not a Map, Set or function": never }
+  : unknown;
+
 export function defineProcedure<Args = any, Result = any, Models = any, AdminModels = any>(
-  spec: ProcedureSpec<Args, Result, Models, AdminModels>,
+  spec: ProcedureSpec<Args, Result, Models, AdminModels> & ResultCheck<Result>,
 ): ProcedureDescriptor<Args, Result>;
 
 export interface ManifestEntry {
@@ -177,19 +244,32 @@ export interface RemoteError {
   /** An AWS error, with its HTTP status. */
   infrastructure?: true;
   httpStatusCode?: number;
-  /** ResponseTooLarge: the procedure ran, its result was dropped. */
+  /**
+   * The procedure ran to completion and its writes, if any, committed; the
+   * result was then lost (ResponseTooLarge, or a CodecError from encoding it).
+   */
   executed?: true;
+}
+
+/** Where the executor ran: the Cloudflare colo (null in process) and its configured region. */
+export interface Placement {
+  colo: string | null;
+  region: string | null;
 }
 
 export interface OkOutcome<T> {
   ok: T;
   capacity: Capacity;
   ms: number;
+  /** Absent only if the executor sent none. */
+  placement?: Placement;
 }
 export interface ErrorOutcome {
   error: RemoteError;
   capacity?: Capacity;
   ms?: number;
+  /** Absent when no executor answered for the call (an envelope refusal). */
+  placement?: Placement;
 }
 /** The caller's transport failed after sending. Only the client produces this. */
 export interface UnknownOutcome {
@@ -318,7 +398,7 @@ export interface RemoteClient {
     procedure: ProcedureDescriptor<Args, Result>,
     args: Args,
     options: CallOptions,
-  ): Promise<Outcome<Result>>;
+  ): Promise<Outcome<WireResult<Result>>>;
   batch(
     calls: BatchCall[],
     options?: { operationId?: string; requestId?: string },

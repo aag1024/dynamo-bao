@@ -80,11 +80,18 @@ Every call settles to exactly one of three tagged outcomes.
 
 | Tag | Shape | Meaning |
 |---|---|---|
-| `ok` | `{ ok: value, capacity, ms }` | The procedure returned `value`. |
-| `error` | `{ error: { name, message, ... }, capacity?, ms? }` | The procedure threw, or the call was refused. |
+| `ok` | `{ ok: value, capacity, ms, placement }` | The procedure returned `value`. |
+| `error` | `{ error: { name, message, ... }, capacity?, ms?, placement? }` | The procedure threw, or the call was refused. |
 | `unknown` | `{ unknown: true, reason }` | The caller's transport failed after sending. Only the client produces this; the executor never does. |
 
 Test the tag with `in`: `"ok" in r`, `"unknown" in r`, otherwise `r.error`.
+
+`placement` is `{ colo, region }` from the executor that ran the call: the
+Cloudflare colo the request landed in (`null` under `inProcess`) and the
+`region` passed to `createExecutor`. It is absent on `unknown` outcomes and
+on envelope refusals (ingress, malformed envelope, budget), where no
+executor answered for the call.
+
 The error object carries:
 
 | Field | When |
@@ -93,7 +100,7 @@ The error object carries:
 | `code` | When the thrown error had a string or number `code`. |
 | `refused: true` | The procedure did not start: unknown procedure, scope mismatch, actor/tenant mismatch, context resolver failure, ingress refusal, malformed envelope, budget. Resending is safe. |
 | `infrastructure: true`, `httpStatusCode` | An AWS error (throttling, service errors). |
-| `executed: true` | `ResponseTooLarge`: the procedure ran, but its result exceeded the response budget and was dropped. |
+| `executed: true` | The procedure ran to completion and its writes, if any, committed, but its result was lost: `ResponseTooLarge` (over the response budget), or a `CodecError` from encoding the result (a `Date`, or a row under `plainReturns`). Don't resend a `needs-ledger` call that reports this. An error thrown by `run` itself never carries `executed`; it may or may not have written first. |
 
 ### Replay classes
 
@@ -196,7 +203,7 @@ actor, requestId, operationId }` and your `env`. It returns:
 |---|---|
 | `models` | Required. Becomes `ctx.models`. |
 | `adminModels` | Required for scope `admin` and `both`; dropped for `app`. |
-| `adminPartition` | The tenant `adminModels` are bound to. Every operation on them, including `save()` on rows they return and related loads, runs in that tenant while `ctx.models` stays in the call tenant. Omit it if your admin models need no tenant. |
+| `adminPartition` | Required with `adminModels`. The tenant `adminModels` are bound to: every operation on them, including `save()` on rows they return and related loads, runs in that tenant while `ctx.models` stays in the call tenant. An `admin` or `both` call whose resolver returns no `adminPartition` is refused with `ScopeError`, because unbound admin models would run in the call's tenant and write admin rows into the app's partition. |
 | `config` | Plain JSON settings; deep-copied and frozen into `ctx.config`. A binding or any other non-JSON value is refused. |
 
 The `ContextResolver` type checks a resolver without a cast:
@@ -218,8 +225,8 @@ has its largest results replaced by `ResponseTooLarge` errors (marked
 `executed: true`) until it fits.
 
 `placement` in every response echoes the colo the request ran in
-(`request.cf.colo`) and the `region` you configured, so callers can verify
-placement.
+(`request.cf.colo`) and the `region` you configured. The client copies it
+onto each outcome, so a caller can check where a call ran (`r.placement.colo`).
 
 Deployment settings (`wrangler.toml`, placement, binding names, the secret)
 belong to the application. The example shows one way to do it.
@@ -287,6 +294,18 @@ the path of the first one (`$.rows[2].resetAt: a Date is not JSON; send
 epoch milliseconds`). A `Date` in a result is always an error, because
 `JSON.stringify` would turn it into a string silently and a caller that
 calls `.getTime()` on it would break.
+
+In TypeScript, a caller sees `ok` as it arrives, not as `run` returned it.
+`call` resolves to `Outcome<WireResult<Result>>`: a model instance (anything
+with `save()`) in the result is typed as an `EncodedRow`, and a result of
+`undefined` as `null`. `defineProcedure` is a type error when its result can
+hold a `Date`, `Map`, `Set`, function, bigint, binary buffer or promise, so the
+plain-view rule is enforced where the procedure is written:
+
+```ts
+// error: run's result is not JSON: return epoch ms, not a Date, ...
+defineProcedure({ ..., async run() { return { resetAt: new Date() }; } });
+```
 
 By default the executor also encodes model instances found in a result.
 With `createExecutor({ plainReturns: true })` a model instance in a result

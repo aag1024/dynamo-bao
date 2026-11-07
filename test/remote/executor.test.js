@@ -234,7 +234,7 @@ function resolver(call, env) {
   return {
     models: { ExThing },
     adminModels: call.scope === "app" ? undefined : env?.noAdmin ? undefined : { ExThing },
-    adminPartition,
+    adminPartition: env?.noPartition ? undefined : adminPartition,
     config: { FLAG: "on" },
   };
 }
@@ -824,5 +824,37 @@ describe("call ids and byte budgets", () => {
     const r = await send(makeExecutor({ budget: { maxResponseBytes: limit } }), envelope(calls));
     expect(r.body.calls.a.error).toMatchObject({ name: "ResponseTooLarge", executed: true });
     expect(Buffer.byteLength(JSON.stringify(r.body))).toBeLessThanOrEqual(limit);
+  });
+});
+
+describe("consumer review of #19", () => {
+  test("an encode failure after run is marked executed, not refused", async () => {
+    const r = await send(makeExecutor(), envelope([{ id: "a", proc: "test.returnsDate@1", tenant: appA }]));
+    expect(r.body.calls.a.error).toMatchObject({ name: "CodecError", executed: true });
+    expect(r.body.calls.a.error.refused).toBeUndefined();
+  });
+
+  test("a plainReturns refusal of a row happens after run, so it is executed too", async () => {
+    const r = await send(
+      makeExecutor({ plainReturns: true }),
+      envelope([{ id: "a", proc: "test.returnsRow@1", tenant: appA, args: {} }]),
+    );
+    expect(r.body.calls.a.error).toMatchObject({ name: "CodecError", executed: true });
+  });
+
+  test("an error thrown by run itself carries no executed flag (it may not have written)", async () => {
+    const r = await send(makeExecutor(), envelope([{ id: "a", proc: "test.fail@1", tenant: appA, args: {} }]));
+    expect(r.body.calls.a.error.name).toBe("Error");
+    expect(r.body.calls.a.error.executed).toBeUndefined();
+  });
+
+  test("an admin call whose resolver gave adminModels but no adminPartition is refused", async () => {
+    const r = await send(
+      makeExecutor(),
+      envelope([{ id: "a", proc: "admin.write@1", tenant: appA, args: { name: "nowhere" } }]),
+      { env: { ...ENV, noPartition: true } },
+    );
+    expect(r.body.calls.a.error).toMatchObject({ name: "ScopeError", refused: true });
+    expect(r.body.calls.a.error.message).toMatch(/adminPartition/);
   });
 });

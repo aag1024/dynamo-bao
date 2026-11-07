@@ -39,6 +39,9 @@ class EnvelopeError extends Error {
 // than as a property so a procedure can't mark its own error "refused" and
 // tell the caller a resend is safe after it wrote.
 const REFUSALS = new WeakSet();
+// Errors raised after run returned (encoding its result): its writes, if
+// any, have committed, so the caller must not treat the call as not done.
+const EXECUTED = new WeakSet();
 
 /** An executor refusal: the procedure did not start, so a resend is safe. */
 function refusal(name, message) {
@@ -93,6 +96,7 @@ function encodeError(error) {
     }
   }
   if (REFUSALS.has(error)) out.refused = true;
+  if (EXECUTED.has(error)) out.executed = true;
   return out;
 }
 
@@ -258,6 +262,13 @@ function createExecutor(options = {}) {
             `${descriptor.id} is scope "${descriptor.scope}" but the context resolver returned no adminModels`,
           );
         }
+        if (descriptor.scope !== "app" && !resolved.adminPartition) {
+          throw refusal(
+            "ScopeError",
+            `${descriptor.id} is scope "${descriptor.scope}" but the context resolver returned no adminPartition; ` +
+              "unbound admin models would write in the call's tenant",
+          );
+        }
         ctx = createContext({
           tenant: call.tenant,
           actor,
@@ -277,7 +288,12 @@ function createExecutor(options = {}) {
         throw asRefusal(error);
       }
       const result = await descriptor.run(ctx, call.args === undefined ? null : call.args);
-      return encodeValue(result, { models: plainReturns ? "refuse" : "encode" });
+      try {
+        return encodeValue(result, { models: plainReturns ? "refuse" : "encode" });
+      } catch (error) {
+        EXECUTED.add(error); // encodeValue throws only CodecError objects
+        throw error;
+      }
     });
     const ms = Date.now() - started;
     return "error" in settled

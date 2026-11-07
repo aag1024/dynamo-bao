@@ -189,7 +189,7 @@ describe("TypeScript contract", () => {
       out = `${e.stdout}`;
     }
     const errorLines = new Set([...out.matchAll(/consumer\.ts\((\d+),/g)].map((m) => m[1]));
-    expect(marked).toBe(7);
+    expect(marked).toBe(10);
     expect(errorLines.size).toBe(marked);
   }, 60_000);
 });

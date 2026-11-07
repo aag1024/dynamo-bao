@@ -117,7 +117,7 @@ describe("round trip through the executor in process", () => {
   test("call returns an ok outcome with capacity and duration", async () => {
     const data = remote(transport(), { actor: actorFor(appA) });
     const r = await data.call(create, { name: "via client" }, { tenant: appA });
-    expect(Object.keys(r).sort()).toEqual(["capacity", "ms", "ok"]);
+    expect(Object.keys(r).sort()).toEqual(["capacity", "ms", "ok", "placement"]);
     expect(r.ok.thingId).toEqual(expect.any(String));
     expect(r.capacity.write).toBeGreaterThan(0);
 
@@ -401,5 +401,65 @@ describe("call ids", () => {
       unknown: true,
       reason: "the response has no outcome for this call",
     });
+  });
+});
+
+describe("placement", () => {
+  /** A transport that gives the executor a Cloudflare request object, as a service binding does. */
+  const fromColo = (colo) => ({
+    fetch(request) {
+      const req = new Request(request);
+      Object.defineProperty(req, "cf", { value: { colo } });
+      return executor.fetch(req, { SECRET });
+    },
+  });
+  const headers = { "x-data-binding": SECRET };
+
+  test("ok and error outcomes carry the executor's placement", async () => {
+    const data = remote(fromColo("SEA"), { actor: actorFor(appA), headers });
+    const ok = await data.call(echoArgs, { n: 1 }, { tenant: appA });
+    expect(ok.placement).toEqual({ colo: "SEA", region: null });
+    const failed = await data.call(boom, {}, { tenant: appA });
+    expect(failed.error.message).toBe("boom");
+    expect(failed.placement).toEqual({ colo: "SEA", region: null });
+  });
+
+  test("every outcome in a batch carries it", async () => {
+    const out = await remote(fromColo("SJC"), { actor: actorFor(appA), headers }).batch([
+      { id: "a", procedure: echoArgs, args: {}, tenant: appA },
+      { id: "b", procedure: boom, args: {}, tenant: appA },
+    ]);
+    expect(out.a.placement).toEqual({ colo: "SJC", region: null });
+    expect(out.b.placement).toEqual({ colo: "SJC", region: null });
+  });
+
+  test("a response without placement gives outcomes without it", async () => {
+    const bare = {
+      async fetch(request) {
+        const json = await (await executor.fetch(request, { SECRET })).json();
+        delete json.placement;
+        return Response.json(json);
+      },
+    };
+    const r = await remote(bare, { actor: actorFor(appA), headers }).call(echoArgs, {}, { tenant: appA });
+    expect(r.ok).toBeDefined();
+    expect("placement" in r).toBe(false);
+  });
+
+  test("in process there is no colo", async () => {
+    const r = await remote(transport(), { actor: actorFor(appA) }).call(echoArgs, {}, { tenant: appA });
+    expect(r.placement).toEqual({ colo: null, region: null });
+  });
+
+  test("unknown and envelope-refusal outcomes have none: no executor answered for the call", async () => {
+    const lost = await remote({ fetch: () => Promise.reject(new Error("gone")) }, { actor: actorFor(appA) }).call(
+      echoArgs, {}, { tenant: appA },
+    );
+    expect("placement" in lost).toBe(false);
+    const refused = await remote(inProcess(executor, { env: { SECRET } }), { actor: actorFor(appA) }).call(
+      echoArgs, {}, { tenant: appA },
+    );
+    expect(refused.error.name).toBe("IngressRefused");
+    expect("placement" in refused).toBe(false);
   });
 });

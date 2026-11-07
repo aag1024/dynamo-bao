@@ -134,8 +134,13 @@ describe("createContext: fields", () => {
   });
 
   test.each(["admin", "both"])("adminModels is present for scope %s", (scope) => {
-    const ctx = makeCtx({ scope, adminModels: { CtxThing } });
+    const ctx = makeCtx({ scope, adminModels: { CtxThing }, adminPartition: "admin_9" });
     expect(ctx.adminModels.CtxThing.name).toBe("CtxThing");
+  });
+
+  test.each(["admin", "both"])("scope %s without an adminPartition is refused", (scope) => {
+    // Unbound admin models would run in the call's tenant and write admin rows there.
+    expect(() => makeCtx({ scope, adminModels: { CtxThing } })).toThrow(/adminPartition/);
   });
 
   test("scope admin without adminModels is refused", () => {

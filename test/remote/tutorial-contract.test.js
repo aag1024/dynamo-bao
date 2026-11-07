@@ -45,7 +45,7 @@ test("ProcedureContext in the tutorial has exactly the shipped members", () => {
 test("the runtime context has exactly those members (adminModels only for admin scopes)", () => {
   const actor = { kind: "system", appId: "a", systemAuthority: false, preAuthenticated: false };
   const app = Object.keys(createContext({ tenant: "a", actor, models: {} })).sort();
-  const admin = Object.keys(createContext({ tenant: "a", actor, models: {}, scope: "both", adminModels: {} })).sort();
+  const admin = Object.keys(createContext({ tenant: "a", actor, models: {}, scope: "both", adminModels: {}, adminPartition: "adm" })).sort();
   const frozen = members(frozenSection(), "ProcedureContext");
   expect(admin).toEqual(frozen);
   expect(app).toEqual(frozen.filter((m) => m !== "adminModels"));

@@ -24,6 +24,8 @@ import {
   type EncodedRow,
   type ManifestEntry,
   type Transport,
+  type Placement,
+  type RemoteClient,
 } from "dynamo-bao/remote";
 
 // The consumer's own hand-written model types (it does not get them from us).
@@ -156,6 +158,10 @@ export async function caller(env: Env): Promise<number> {
   if ("ok" in r) {
     const reset: number = r.ok.resetAt;
     const units: number = r.capacity.read + r.capacity.write;
+    const colo: string | null | undefined = r.placement?.colo;
+    const where: Placement | undefined = r.placement;
+    void colo;
+    void where;
     return reset + units;
   }
   if ("unknown" in r) {
@@ -187,3 +193,63 @@ export const ctx: ProcedureContext<AppModels> = createContext({
   models: {} as AppModels,
   now: () => 0,
 });
+
+// The caller sees what crosses the wire, not what run returned.
+interface UserRow {
+  name: string;
+  save(): Promise<unknown>;
+}
+declare function loadUser(): Promise<UserRow>;
+export const getUser = defineProcedure({
+  name: "user.get",
+  version: 1,
+  scope: "app",
+  replay: "idempotent",
+  async run(_ctx: ProcedureContext<AppModels>, _args: { id: string }) {
+    return { user: await loadUser(), at: 1, tags: ["a"], note: undefined as string | undefined };
+  },
+});
+export const touch = defineProcedure({
+  name: "user.touch",
+  version: 1,
+  scope: "app",
+  replay: "idempotent",
+  async run() {},
+});
+export const listUsers = defineProcedure({
+  name: "user.list",
+  version: 1,
+  scope: "app",
+  replay: "idempotent",
+  async run() {
+    return { first: encodeValue(await loadUser()), all: [await loadUser()] };
+  },
+});
+export async function wireCaller(data: RemoteClient): Promise<void> {
+  const l = await data.call(listUsers, null, { tenant: "a" });
+  if ("ok" in l) {
+    const rows: EncodedRow[] = l.ok.all;
+    const first = l.ok.first;
+    void [rows, first];
+  }
+  const r = await data.call(getUser, { id: "u" }, { tenant: "a" });
+  if ("ok" in r) {
+    const row: EncodedRow = r.ok.user;
+    const at: number = r.ok.at;
+    const tags: string[] = r.ok.tags;
+    const note: string | undefined = r.ok.note;
+    void [row, at, tags, note];
+    // @ts-expect-error a row arrives as { $model, data }, not the instance
+    const name: string = r.ok.user.name;
+    void name;
+  }
+  const t = await data.call(touch, null, { tenant: "a" });
+  if ("ok" in t) {
+    const nothing: null = t.ok;
+    void nothing;
+  }
+}
+// @ts-expect-error a Date does not cross the wire
+defineProcedure({ name: "x", version: 1, scope: "app", replay: "idempotent", async run() { return { resetAt: new Date() }; } });
+// @ts-expect-error nor does a Map, even nested in an array
+defineProcedure({ name: "x", version: 1, scope: "app", replay: "idempotent", async run() { return { rows: [new Map<string, number>()] }; } });

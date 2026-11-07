@@ -36,7 +36,8 @@ instances `fromRemote` created) and one new exception class. The root
     the application's obligation: the registry serves `@1` beside `@2` while
     both descriptors are registered.
   - `createContext`, `fresh`, `bindModelsToTenant`: the procedure context
-    (models, admin models bound to the resolver's admin partition, tenant as
+    (models, admin models bound to the resolver's admin partition, which is
+    required for `admin` and `both` scopes, tenant as
     a value, actor passed through, request and operation ids, a logger bound
     to request id and tenant, `now()`, `fresh` with capacity merge and
     outer-cache priming, `waitUntil` with a 30 s cap, frozen config).
@@ -49,11 +50,14 @@ instances `fromRemote` created) and one new exception class. The root
     procedure and scope refusal, the actor check (the actor's `appId` must
     equal the call tenant; no other actor field is read), concurrent and
     isolated calls, tagged outcomes with capacity and duration, placement
-    echo, budget and ingress refusal, `drain()`.
+    echo, budget and ingress refusal, `drain()`. An error raised after `run`
+    returned (encoding its result, or `ResponseTooLarge`) carries
+    `executed: true`; an executor refusal carries `refused: true`.
   - `remote(transport, { actor, retries, headers })` with `call` and
     `batch`, and `inProcess(executor, { env, headers, ctx })`: `unknown` on
     transport failure, no automatic resend of `needs-ledger` calls, reported
-    capacity added to the caller's batch context.
+    capacity added to the caller's batch context, and the executor's
+    `placement` (`{ colo, region }`) on each `ok` and `error` outcome.
   - `DetachedInstanceError` (also in `exceptions`).
 - **`Model.fromRemote(row)`** hydrates a detached, read-only instance from an
   encoded row, and **`instance.isDetached()`** reports it. On a detached
@@ -61,7 +65,10 @@ instances `fromRemote` created) and one new exception class. The root
   `getOrLoadRelatedField` throw `DetachedInstanceError`.
 - **TypeScript declarations** for the entry point in `src/remote/index.d.ts`
   (`ProcedureContext`, `ContextResolver`, `Actor`, the descriptor, outcome
-  and replay types, and every export), resolvable with `moduleResolution`
+  and replay types, and every export). A caller's `ok` is typed as it
+  arrives (`WireResult<Result>`: model instances as `EncodedRow`), and
+  `defineProcedure` is a type error when its result can hold a `Date`,
+  `Map`, `Set`, function or other non-JSON value. Resolvable with `moduleResolution`
   `node`, `node16` and `bundler`. The package `exports` map gains
   `./remote`, and `typesVersions` maps it for `moduleResolution: node`.
 - **`examples/cloudflare-remote-executor/`**: a data worker with the

@@ -1,0 +1,30 @@
+# A data worker: dynamo-bao/remote mounted on one route of a Worker that runs
+# next to DynamoDB. Callers far away (Durable Objects near users, Workflows)
+# reach it through the DATA service binding and make one cross-region trip per
+# logical operation.
+name = "dynamo-bao-remote-executor-example"
+main = "src/index.js"
+compatibility_date = "2025-10-01"
+compatibility_flags = ["nodejs_compat"]
+
+# The placement line: run this Worker in the AWS region that holds the table,
+# not near the caller. Placement ignores RPC, so callers use fetch() through
+# the service binding below.
+[placement]
+region = "aws:us-west-2"
+
+# The self-binding. In the single-bundle layout the executor is one more route
+# in the same Worker, and callers in this Worker reach it through this binding.
+# In a two-bundle layout, point `service` at the data worker's name instead.
+[[services]]
+binding = "DATA"
+service = "dynamo-bao-remote-executor-example"
+
+[vars]
+AWS_REGION = "us-west-2"
+TABLE_NAME = "dynamo-bao-example"
+
+# Secrets (never in this file):
+#   wrangler secret put DATA_BINDING_SECRET    # the ingress secret
+#   wrangler secret put AWS_ACCESS_KEY_ID
+#   wrangler secret put AWS_SECRET_ACCESS_KEY

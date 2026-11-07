@@ -24,7 +24,8 @@
     "test:debug": "LOG_LEVEL=DEBUG jest",
     "create-table": "node bin/dynamo-bao-create-table.js",
     "watch": "node bin/watch.js",
-    "docs": "jsdoc -c jsdoc.json --verbose"
+    "docs": "jsdoc -c jsdoc.json --verbose",
+    "test:workerd": "npm --prefix examples/cloudflare-remote-executor install --no-audit --no-fund && npm --prefix examples/cloudflare-remote-executor test"
   },
   "files": [
     "bin/",

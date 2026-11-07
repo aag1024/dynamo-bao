@@ -1,0 +1,20 @@
+{
+  "name": "cloudflare-remote-executor-example",
+  "private": true,
+  "description": "dynamo-bao/remote mounted in a Cloudflare Worker placed next to DynamoDB",
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "build": "wrangler deploy --dry-run --outdir dist",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "dependencies": {
+    "dynamo-bao": "file:../.."
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "0.23.0",
+    "vitest": "4.1.11",
+    "wrangler": "4.130.0"
+  }
+}

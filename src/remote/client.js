@@ -84,17 +84,17 @@ function remote(transport, options = {}) {
         const error = { ...result.envelopeError, refused: true };
         return Object.fromEntries(entries.map((e) => [e.id, { error }]));
       }
-      const out = {};
-      for (const e of entries) {
-        const outcome = result.calls[e.id];
-        if (!outcome || !("ok" in outcome || "error" in outcome)) {
-          out[e.id] = { unknown: true, reason: "the response has no outcome for this call" };
-          continue;
-        }
-        addCapacity(outcome.capacity);
-        out[e.id] = outcome;
-      }
-      return out;
+      // fromEntries defines own properties, so an id such as "__proto__" keeps its outcome
+      return Object.fromEntries(
+        entries.map((e) => {
+          const outcome = Object.hasOwn(result.calls, e.id) ? result.calls[e.id] : undefined;
+          if (!outcome || !("ok" in outcome || "error" in outcome)) {
+            return [e.id, { unknown: true, reason: "the response has no outcome for this call" }];
+          }
+          addCapacity(outcome.capacity);
+          return [e.id, outcome];
+        }),
+      );
     }
   }
 

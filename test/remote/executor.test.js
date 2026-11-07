@@ -794,3 +794,35 @@ describe("waitUntil", () => {
     expect(deferredDone).toBe(true);
   });
 });
+
+describe("call ids and byte budgets", () => {
+  test("a call id of __proto__ keeps its outcome", async () => {
+    const r = await send(
+      makeExecutor(),
+      envelope([{ id: "__proto__", proc: "test.echo@1", tenant: appA, args: { n: 1 } }]),
+    );
+    expect(r.status).toBe(200);
+    expect(Object.keys(r.body.calls)).toEqual(["__proto__"]);
+    expect(Object.getOwnPropertyDescriptor(r.body.calls, "__proto__").value.ok.args).toEqual({ n: 1 });
+  });
+
+  test("maxRequestBytes counts UTF-8 bytes, not characters", async () => {
+    const body = envelope([{ id: "a", proc: "test.echo@1", tenant: appA, args: "é".repeat(300) }]);
+    const text = JSON.stringify(body);
+    const limit = text.length + 100; // over the character count, under the byte count
+    expect(Buffer.byteLength(text)).toBeGreaterThan(limit);
+    const r = await send(makeExecutor({ budget: { maxRequestBytes: limit } }), body);
+    expect(r.status).toBe(413);
+    expect(r.body.error.message).toContain(`the request is ${Buffer.byteLength(text)} bytes`);
+  });
+
+  test("maxResponseBytes counts UTF-8 bytes, not characters", async () => {
+    const calls = [{ id: "a", proc: "test.echo@1", tenant: appA, args: "é".repeat(1_000) }];
+    const full = JSON.stringify((await send(makeExecutor(), envelope(calls))).body);
+    const limit = full.length + 100;
+    expect(Buffer.byteLength(full)).toBeGreaterThan(limit);
+    const r = await send(makeExecutor({ budget: { maxResponseBytes: limit } }), envelope(calls));
+    expect(r.body.calls.a.error).toMatchObject({ name: "ResponseTooLarge", executed: true });
+    expect(Buffer.byteLength(JSON.stringify(r.body))).toBeLessThanOrEqual(limit);
+  });
+});

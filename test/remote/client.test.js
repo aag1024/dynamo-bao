@@ -381,3 +381,25 @@ describe("inProcess", () => {
     expect(() => inProcess({})).toThrow(/executor/);
   });
 });
+
+describe("call ids", () => {
+  test("a batch id of __proto__ keeps its outcome", async () => {
+    const out = await remote(transport(), { actor: actorFor(appA) }).batch([
+      { id: "__proto__", procedure: echoArgs, args: { n: 1 }, tenant: appA },
+    ]);
+    expect(Object.getPrototypeOf(out)).toBe(Object.prototype);
+    expect(Object.keys(out)).toEqual(["__proto__"]);
+    expect(Object.getOwnPropertyDescriptor(out, "__proto__").value.ok.args).toEqual({ n: 1 });
+  });
+
+  test("a response without the __proto__ outcome reports it unknown", async () => {
+    const t = scripted(transport(), ["drop-call"]);
+    const out = await remote(t, { actor: actorFor(appA) }).batch([
+      { id: "__proto__", procedure: echoArgs, args: {}, tenant: appA },
+    ]);
+    expect(Object.getOwnPropertyDescriptor(out, "__proto__").value).toEqual({
+      unknown: true,
+      reason: "the response has no outcome for this call",
+    });
+  });
+});

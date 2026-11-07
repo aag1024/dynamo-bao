@@ -23,6 +23,9 @@ const DEFAULT_BUDGET = Object.freeze({
   maxResponseBytes: 1_000_000,
 });
 const TENANT = /^[^\]#]+$/;
+const utf8 = new TextEncoder();
+/** Budgets are in bytes on the wire, not UTF-16 code units. */
+const byteLength = (text) => utf8.encode(text).length;
 
 class EnvelopeError extends Error {
   constructor(name, message, status) {
@@ -284,9 +287,9 @@ function createExecutor(options = {}) {
 
   function fitResponse(body) {
     let text = JSON.stringify(body);
-    if (text.length <= budget.maxResponseBytes) return text;
+    if (byteLength(text) <= budget.maxResponseBytes) return text;
     const sizes = Object.entries(body.calls)
-      .map(([id, outcome]) => [id, JSON.stringify(outcome).length])
+      .map(([id, outcome]) => [id, byteLength(JSON.stringify(outcome))])
       .sort((a, b) => b[1] - a[1]);
     for (const [id, bytes] of sizes) {
       const { capacity, ms } = body.calls[id];
@@ -300,7 +303,7 @@ function createExecutor(options = {}) {
         ms,
       };
       text = JSON.stringify(body);
-      if (text.length <= budget.maxResponseBytes) break;
+      if (byteLength(text) <= budget.maxResponseBytes) break;
     }
     return text;
   }
@@ -328,10 +331,11 @@ function createExecutor(options = {}) {
       } catch {
         throw new EnvelopeError("EnvelopeError", "the request body could not be read", 400);
       }
-      if (text.length > budget.maxRequestBytes) {
+      const bytes = byteLength(text);
+      if (bytes > budget.maxRequestBytes) {
         throw new EnvelopeError(
           "BudgetExceeded",
-          `the request is ${text.length} bytes; the budget allows ${budget.maxRequestBytes}`,
+          `the request is ${bytes} bytes; the budget allows ${budget.maxRequestBytes}`,
           413,
         );
       }
@@ -357,11 +361,9 @@ function createExecutor(options = {}) {
     const body = {
       v: PROTOCOL_VERSION,
       placement: { colo: request.cf?.colo ?? null, region },
-      calls: {},
+      // fromEntries defines own properties, so an id such as "__proto__" keeps its outcome
+      calls: Object.fromEntries(envelope.calls.map((call, i) => [call.id, outcomes[i]])),
     };
-    envelope.calls.forEach((call, i) => {
-      body.calls[call.id] = outcomes[i];
-    });
     return new Response(fitResponse(body), {
       status: 200,
       headers: { "content-type": "application/json; charset=utf-8" },

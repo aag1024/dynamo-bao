@@ -121,6 +121,9 @@ const createNote = defineProcedure({
   replay: "conditional",
   args: { type: "object", required: ["noteId", "text"] }, // JSON, published by manifest()
   async run(ctx, { noteId, text }) {
+    // args is published, not enforced. A conditional create needs the caller's
+    // id: an auto-assigned one would differ on a resend and write a second row.
+    if (typeof noteId !== "string" || noteId === "") throw new TypeError("noteId is required");
     try {
       const note = await ctx.models.Note.create({ noteId, text });
       return { created: true, note: encodeValue(note) };
@@ -209,7 +212,8 @@ worker has no public route, and `() => true` is acceptable. A refused
 request gets `403` before its body is read.
 
 `budget` bounds one envelope: more than `maxCalls` calls or a body over
-`maxRequestBytes` is refused with `413`. A response over `maxResponseBytes`
+`maxRequestBytes` is refused with `413`. Both byte limits count UTF-8 bytes,
+not string length. A response over `maxResponseBytes`
 has its largest results replaced by `ResponseTooLarge` errors (marked
 `executed: true`) until it fits.
 

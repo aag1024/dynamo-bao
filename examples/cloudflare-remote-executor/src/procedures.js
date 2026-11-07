@@ -18,6 +18,11 @@ export const createNote = defineProcedure({
   replay: "conditional",
   args: { type: "object", required: ["noteId", "text"] },
   async run(ctx, { noteId, text, tags = [] }) {
+    // Without a caller-chosen id the model would assign a fresh one on every
+    // attempt, and a resend would create a second note instead of finding the first.
+    if (typeof noteId !== "string" || noteId === "") {
+      throw new TypeError("note.create needs a noteId chosen by the caller");
+    }
     try {
       const note = await ctx.models.Note.create({ noteId, text, tags: new Set(tags) });
       ctx.logger.info("note created", { noteId });

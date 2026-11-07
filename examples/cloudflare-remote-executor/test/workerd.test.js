@@ -144,6 +144,13 @@ describe("inProcess(executor) under workerd, no DynamoDB", () => {
     expect(r.error).toMatchObject({ name: "IngressRefused", refused: true });
   });
 
+  test("note.create refuses a call without a noteId, so a resend can't create a second note", async () => {
+    const r = await remote(inProcess(executor, { env, headers: { [SECRET_HEADER]: SECRET } }), {
+      actor: systemActor("app-a"),
+    }).call(createNote, { text: "no id" }, { tenant: "app-a" });
+    expect(r.error).toMatchObject({ name: "TypeError", message: expect.stringMatching(/noteId/) });
+  });
+
   test("a transport failure is unknown", async () => {
     const broken = { fetch: () => Promise.reject(new Error("socket closed")) };
     const r = await remote(broken, { actor: systemActor("app-a") }).call(where, { wait: 0 }, { tenant: "app-a" });

@@ -1,0 +1,767 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    
+    <meta charset="utf-8">
+    <title>remote/procedures - DynamoBao</title>
+    
+    <meta name="description" content="DynamoDB single-table design library for JavaScript" />
+    
+    
+    
+    <script src="scripts/prettify/prettify.js"></script>
+    <script src="scripts/prettify/lang-css.js"></script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc.css">
+    <script src="scripts/nav.js" defer></script>
+    
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body>
+
+<input type="checkbox" id="nav-trigger" class="nav-trigger" />
+<label for="nav-trigger" class="navicon-button x">
+  <div class="navicon"></div>
+</label>
+
+<label for="nav-trigger" class="overlay"></label>
+
+<nav >
+    
+    <input type="text" id="nav-search" placeholder="Search" />
+    
+    
+    <h2><a href="index.html">Home</a></h2><h2><a href="https://github.com/aag1024/dynamo-bao" target="_blank" class="menu-item" >GitHub</a></h2><h2><a href="https://www.npmjs.com/package/dynamo-bao" target="_blank" class="menu-item" >npm</a></h2><h3>Tutorials</h3><ul><li><a href="tutorial-01-model-definitions.html">Model Definitions</a></li><li><a href="tutorial-02-query-and-filter.html">Querying and Filtering</a></li><li><a href="tutorial-04-changing-models.html">Modifying Models</a></li><li><a href="tutorial-05-ttl-fields.html">Time-to-live (TTL) Fields</a></li><li><a href="tutorial-06-custom-fields.html">Custom Fields</a></li><li><a href="tutorial-07-command-line-tools.html">Command Line Tools</a></li><li><a href="tutorial-08-multi-tenancy.html">Multi-Tenancy</a></li><li><a href="tutorial-09-cloudflare-workers.html">Cloudflare Workers</a></li><li><a href="tutorial-10-batch-context-configuration.html">Batch Context Configuration</a></li><li><a href="tutorial-11-remote-procedures.html">Remote Procedures</a></li></ul><h3>Namespaces</h3><ul><li><a href="BaoFields.html">BaoFields</a></li></ul><h3>Classes</h3><ul><li><a href="BaoError.html">BaoError</a></li><li><a href="BaoFields.BaoBaseField.html">BaoBaseField</a><ul class='methods'><li data-type='method' style='display: none;'><a href="BaoFields.BaoBaseField.html#.BaoBaseField#fromDy">BaoBaseField#fromDy</a></li><li data-type='method' style='display: none;'><a href="BaoFields.BaoBaseField.html#.BaoBaseField#fromGsi">BaoBaseField#fromGsi</a></li><li data-type='method' style='display: none;'><a href="BaoFields.BaoBaseField.html#.BaoBaseField#getInitialValue">BaoBaseField#getInitialValue</a></li><li data-type='method' style='display: none;'><a href="BaoFields.BaoBaseField.html#.BaoBaseField#getUpdateExpression">BaoBaseField#getUpdateExpression</a></li><li data-type='method' style='display: none;'><a href="BaoFields.BaoBaseField.html#.BaoBaseField#toDy">BaoBaseField#toDy</a></li><li data-type='method' style='display: none;'><a href="BaoFields.BaoBaseField.html#.BaoBaseField#toGsi">BaoBaseField#toGsi</a></li><li data-type='method' style='display: none;'><a href="BaoFields.BaoBaseField.html#.BaoBaseField#updateBeforeSave">BaoBaseField#updateBeforeSave</a></li><li data-type='method' style='display: none;'><a href="BaoFields.BaoBaseField.html#.BaoBaseField#validate">BaoBaseField#validate</a></li></ul></li><li><a href="BaoFields.BinaryField.html">BinaryField</a></li><li><a href="BaoFields.BooleanField.html">BooleanField</a></li><li><a href="BaoFields.CounterField.html">CounterField</a></li><li><a href="BaoFields.CreateDateField.html">CreateDateField</a></li><li><a href="BaoFields.DateTimeField.html">DateTimeField</a></li><li><a href="BaoFields.FloatField.html">FloatField</a></li><li><a href="BaoFields.IntegerField.html">IntegerField</a></li><li><a href="BaoFields.ModifiedDateField.html">ModifiedDateField</a></li><li><a href="BaoFields.RelatedField.html">RelatedField</a></li><li><a href="BaoFields.StringField.html">StringField</a></li><li><a href="BaoFields.StringSetField.html">StringSetField</a></li><li><a href="BaoFields.TtlField.html">TtlField</a></li><li><a href="BaoFields.UlidField.html">UlidField</a></li><li><a href="BaoFields.VersionField.html">VersionField</a></li><li><a href="BaoModel.html">BaoModel</a><ul class='methods'><li data-type='method' style='display: none;'><a href="BaoModel.html#clearConsumedCapacity">clearConsumedCapacity</a></li><li data-type='method' style='display: none;'><a href="BaoModel.html#clearRelatedCache">clearRelatedCache</a></li><li data-type='method' style='display: none;'><a href="BaoModel.html#exists">exists</a></li><li data-type='method' style='display: none;'><a href="BaoModel.html#getConsumedCapacity">getConsumedCapacity</a></li><li data-type='method' style='display: none;'><a href="BaoModel.html#getNumericConsumedCapacity">getNumericConsumedCapacity</a></li><li data-type='method' style='display: none;'><a href="BaoModel.html#getOrLoadRelatedField">getOrLoadRelatedField</a></li><li data-type='method' style='display: none;'><a href="BaoModel.html#getPrimaryId">getPrimaryId</a></li><li data-type='method' style='display: none;'><a href="BaoModel.html#getRelated">getRelated</a></li><li data-type='method' style='display: none;'><a href="BaoModel.html#hasChanges">hasChanges</a></li><li data-type='method' style='display: none;'><a href="BaoModel.html#isDetached">isDetached</a></li><li data-type='method' style='display: none;'><a href="BaoModel.html#isLoaded">isLoaded</a></li><li data-type='method' style='display: none;'><a href="BaoModel.html#loadRelatedData">loadRelatedData</a></li><li data-type='method' style='display: none;'><a href="BaoModel.html#save">save</a></li><li data-type='method' style='display: none;'><a href="BaoModel.html#._formatPrimaryPartition">_formatPrimaryPartition</a></li><li data-type='method' style='display: none;'><a href="BaoModel.html#._legacyDyKeysForPkSk">_legacyDyKeysForPkSk</a></li><li data-type='method' style='display: none;'><a href="BaoModel.html#._modelPrefixPartitionPk">_modelPrefixPartitionPk</a></li><li data-type='method' style='display: none;'><a href="BaoModel.html#._modelPrefixPkMode">_modelPrefixPkMode</a></li><li data-type='method' style='display: none;'><a href="BaoModel.html#.batchFind">batchFind</a></li><li data-type='method' style='display: none;'><a href="BaoModel.html#.create">create</a></li><li data-type='method' style='display: none;'><a href="BaoModel.html#.delete">delete</a></li><li data-type='method' style='display: none;'><a href="BaoModel.html#.find">find</a></li><li data-type='method' style='display: none;'><a href="BaoModel.html#.findByUniqueConstraint">findByUniqueConstraint</a></li><li data-type='method' style='display: none;'><a href="BaoModel.html#.fromRemote">fromRemote</a></li><li data-type='method' style='display: none;'><a href="BaoModel.html#.getPrimaryId">getPrimaryId</a></li><li data-type='method' style='display: none;'><a href="BaoModel.html#.getRelatedObjectsViaMap">getRelatedObjectsViaMap</a></li><li data-type='method' style='display: none;'><a href="BaoModel.html#.iterateAll">iterateAll</a></li><li data-type='method' style='display: none;'><a href="BaoModel.html#.makePrimaryId">makePrimaryId</a></li><li data-type='method' style='display: none;'><a href="BaoModel.html#.normalizeSearchTerm">normalizeSearchTerm</a></li><li data-type='method' style='display: none;'><a href="BaoModel.html#.queryByIndex">queryByIndex</a></li><li data-type='method' style='display: none;'><a href="BaoModel.html#.queryByPrimaryKey">queryByPrimaryKey</a></li><li data-type='method' style='display: none;'><a href="BaoModel.html#.relocateToCanonicalKey">relocateToCanonicalKey</a></li><li data-type='method' style='display: none;'><a href="BaoModel.html#.searchAll">searchAll</a></li><li data-type='method' style='display: none;'><a href="BaoModel.html#.searchBucket">searchBucket</a></li><li data-type='method' style='display: none;'><a href="BaoModel.html#.setTestId">setTestId</a></li><li data-type='method' style='display: none;'><a href="BaoModel.html#.tokenizeSearchQuery">tokenizeSearchQuery</a></li><li data-type='method' style='display: none;'><a href="BaoModel.html#.update">update</a></li></ul></li><li><a href="ConditionalError.html">ConditionalError</a></li><li><a href="ConfigurationError.html">ConfigurationError</a></li><li><a href="DataFormatError.html">DataFormatError</a></li><li><a href="DetachedInstanceError.html">DetachedInstanceError</a></li><li><a href="FilterExpressionBuilder.html">FilterExpressionBuilder</a><ul class='methods'><li data-type='method' style='display: none;'><a href="FilterExpressionBuilder.html#build">build</a></li></ul></li><li><a href="ItemNotFoundError.html">ItemNotFoundError</a></li><li><a href="ObjectNotFound.html">ObjectNotFound</a><ul class='methods'><li data-type='method' style='display: none;'><a href="ObjectNotFound.html#exists">exists</a></li><li data-type='method' style='display: none;'><a href="ObjectNotFound.html#getNumericConsumedCapacity">getNumericConsumedCapacity</a></li></ul></li><li><a href="QueryError.html">QueryError</a></li><li><a href="TenantContext.html">TenantContext</a><ul class='methods'><li data-type='method' style='display: none;'><a href="TenantContext.html#.addResolver">addResolver</a></li><li data-type='method' style='display: none;'><a href="TenantContext.html#.clearResolvers">clearResolvers</a></li><li data-type='method' style='display: none;'><a href="TenantContext.html#.clearTenant">clearTenant</a></li><li data-type='method' style='display: none;'><a href="TenantContext.html#.getCurrentTenant">getCurrentTenant</a></li><li data-type='method' style='display: none;'><a href="TenantContext.html#.getInstance">getInstance</a></li><li data-type='method' style='display: none;'><a href="TenantContext.html#.reset">reset</a></li><li data-type='method' style='display: none;'><a href="TenantContext.html#.runWithTenant">runWithTenant</a></li><li data-type='method' style='display: none;'><a href="TenantContext.html#.setCurrentTenant">setCurrentTenant</a></li><li data-type='method' style='display: none;'><a href="TenantContext.html#.setDefaultTenant">setDefaultTenant</a></li><li data-type='method' style='display: none;'><a href="TenantContext.html#.validateTenantRequired">validateTenantRequired</a></li><li data-type='method' style='display: none;'><a href="TenantContext.html#.withTenant">withTenant</a></li></ul></li><li><a href="ValidationError.html">ValidationError</a></li><li><a href="module-remote_procedures-ProcedureRegistry.html">ProcedureRegistry</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-remote_procedures-ProcedureRegistry.html#get">get</a></li><li data-type='method' style='display: none;'><a href="module-remote_procedures-ProcedureRegistry.html#latest">latest</a></li><li data-type='method' style='display: none;'><a href="module-remote_procedures-ProcedureRegistry.html#manifest">manifest</a></li><li data-type='method' style='display: none;'><a href="module-remote_procedures-ProcedureRegistry.html#versions">versions</a></li></ul></li></ul><h3>Global</h3><ul><li><a href="global.html#_accumulateCapacityToContext">_accumulateCapacityToContext</a></li><li><a href="global.html#_withExtraCapacityUnits">_withExtraCapacityUnits</a></li><li><a href="global.html#getBatchContextCapacity">getBatchContextCapacity</a></li><li><a href="global.html#runWithBatchContext">runWithBatchContext</a></li></ul>
+    
+</nav>
+
+<div id="main">
+    
+    <h1 class="page-title">remote/procedures</h1>
+    
+
+    
+
+
+
+
+<section>
+
+<header>
+    
+        
+            
+        
+    
+</header>
+
+<article>
+    
+        <div class="container-overview">
+        
+            
+                <div class="description usertext"><p>Named, versioned procedures and the registry the executor serves them from.</p></div>
+            
+
+            
+                
+
+
+
+
+<dl class="details">
+    
+    <dt class="tag-description">Description:</dt>
+    <dd class="tag-description"><ul class="dummy"><li><p>Named, versioned procedures and the registry the executor serves them from.</p></li></ul></dd>
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="remote_procedures.js.html">remote/procedures.js</a>, <a href="remote_procedures.js.html#line1">line 1</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            
+        
+        </div>
+    
+
+    
+
+    
+
+    
+        <h3 class="subsection-title">Classes</h3>
+
+        <dl>
+            <dt><a href="module-remote_procedures-ProcedureRegistry.html">ProcedureRegistry</a></dt>
+            <dd></dd>
+        </dl>
+    
+    
+    
+
+     
+
+    
+
+    
+        <h3 class="subsection-title">Members</h3>
+
+        
+            
+<h4 class="name" id="~REPLAY_CLASSES"><span class="type-signature type-signature-inner, constant">(inner, constant) </span>REPLAY_CLASSES<span class="type-signature"></span></h4>
+
+
+
+
+
+<dl class="details">
+    
+    <dt class="tag-description">Description:</dt>
+    <dd class="tag-description"><ul class="dummy"><li><p>What a resend after an <code>unknown</code> outcome does. Frozen vocabulary: see
+tutorials/11-remote-procedures.md.</p>
+<ul>
+<li><code>idempotent</code>: no writes, or writes whose repeat has no further effect.</li>
+<li><code>conditional</code>: every write is a guarded state transition, so a repeat
+fails its condition and the procedure reports that.</li>
+<li><code>needs-ledger</code>: an unguarded write or a counter; the procedure keeps its
+own marker keyed by <code>ctx.operationId</code>. The client never resends it.</li>
+</ul></li></ul></dd>
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="remote_procedures.js.html">remote/procedures.js</a>, <a href="remote_procedures.js.html#line16">line 16</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+<div class="description usertext">
+    <p>What a resend after an <code>unknown</code> outcome does. Frozen vocabulary: see
+tutorials/11-remote-procedures.md.</p>
+<ul>
+<li><code>idempotent</code>: no writes, or writes whose repeat has no further effect.</li>
+<li><code>conditional</code>: every write is a guarded state transition, so a repeat
+fails its condition and the procedure reports that.</li>
+<li><code>needs-ledger</code>: an unguarded write or a counter; the procedure keeps its
+own marker keyed by <code>ctx.operationId</code>. The client never resends it.</li>
+</ul>
+</div>
+
+
+
+
+
+
+
+
+        
+            
+<h4 class="name" id="~SCOPES"><span class="type-signature type-signature-inner, constant">(inner, constant) </span>SCOPES<span class="type-signature"></span></h4>
+
+
+
+
+
+<dl class="details">
+    
+    <dt class="tag-description">Description:</dt>
+    <dd class="tag-description"><ul class="dummy"><li><p>Which model sets a procedure receives. <code>app</code>: <code>ctx.models</code> only. <code>admin</code> and
+<code>both</code>: also <code>ctx.adminModels</code>, bound to the admin partition the context
+resolver names.</p></li></ul></dd>
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="remote_procedures.js.html">remote/procedures.js</a>, <a href="remote_procedures.js.html#line23">line 23</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+<div class="description usertext">
+    <p>Which model sets a procedure receives. <code>app</code>: <code>ctx.models</code> only. <code>admin</code> and
+<code>both</code>: also <code>ctx.adminModels</code>, bound to the admin partition the context
+resolver names.</p>
+</div>
+
+
+
+
+
+
+
+
+        
+    
+
+    
+        <h3 class="subsection-title">Methods</h3>
+
+        
+            
+
+    
+
+    <h4 class="name" id="~defineProcedure"><span class="type-signature type-signature-inner">(inner) </span>defineProcedure<span class="signature">(spec)</span><span class="type-signature"> &rarr; {Readonly.&lt;Object>}</span></h4>
+
+    
+
+
+
+
+<dl class="details">
+    
+    <dt class="tag-description">Description:</dt>
+    <dd class="tag-description"><ul class="dummy"><li><p>Define a procedure. The returned descriptor is what the registry serves and
+what a caller passes to <code>remote(...).call</code>.</p></li></ul></dd>
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="remote_procedures.js.html">remote/procedures.js</a>, <a href="remote_procedures.js.html#line45">line 45</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+    <h5 class="h5-parameters">Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>spec</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Object</span>
+
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">
+                <h6>Properties</h6>
+                
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+        <th>Attributes</th>
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>name</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+
+                
+
+                
+                </td>
+            
+
+            
+
+            <td class="description last"><p>Dotted name, e.g. &quot;rateLimit.reserve&quot;. No &quot;@&quot;.</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>version</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">number</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+
+                
+
+                
+                </td>
+            
+
+            
+
+            <td class="description last"><p>Positive integer. Bump it when args or the
+result shape change; keep the previous descriptor registered for one
+deploy so callers built against it keep working.</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>scope</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">"app"</span>
+|
+
+<span class="param-type">"admin"</span>
+|
+
+<span class="param-type">"both"</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+
+                
+
+                
+                </td>
+            
+
+            
+
+            <td class="description last"></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>replay</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">"idempotent"</span>
+|
+
+<span class="param-type">"conditional"</span>
+|
+
+<span class="param-type">"needs-ledger"</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+
+                
+
+                
+                </td>
+            
+
+            
+
+            <td class="description last"></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>args</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Object</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+
+            <td class="description last"><p>JSON description of the arguments (for
+example a JSON Schema). Not interpreted; published by <code>manifest()</code>.</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>run</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">function</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+
+                
+
+                
+                </td>
+            
+
+            
+
+            <td class="description last"></td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+            </td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5 class="h5-returns">Returns:</h5>
+
+        
+<div class="param-desc">
+    <p>The descriptor.</p>
+</div>
+
+
+
+<dl class="param-type">
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">Readonly.&lt;Object></span>
+
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+        
+    
+
+    
+
+    
+</article>
+
+</section>
+
+
+
+
+    
+    
+</div>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 4.0.5</a> using the <a href="https://github.com/clenemt/docdash">docdash</a> theme.
+</footer>
+
+<script>prettyPrint();</script>
+<script src="scripts/polyfill.js"></script>
+<script src="scripts/linenumber.js"></script>
+
+<script src="scripts/search.js" defer></script>
+
+
+<script src="scripts/collapse.js" defer></script>
+
+
+    <link type="text/css" rel="stylesheet" href="dynamo-bao.css">
+    
+</body>
+</html>

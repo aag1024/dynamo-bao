@@ -190,6 +190,35 @@ export default {
 
 For production Cloudflare Workers deployments, always use `runWithBatchContext` to get both safety and optimal performance.
 
+### Remote Procedures (`dynamo-bao/remote`)
+
+When code runs far from the table (Durable Objects near users, Workflows), each DynamoDB call pays a cross-region round trip. `dynamo-bao/remote` lets you register named, versioned procedures on a Worker placed next to DynamoDB and call them in one trip:
+
+```javascript
+const { defineProcedure, ProcedureRegistry, createExecutor, remote } = require("dynamo-bao/remote");
+
+const getUser = defineProcedure({
+  name: "user.get", version: 1, scope: "app", replay: "idempotent",
+  async run(ctx, { userId }) {
+    const user = await ctx.models.User.find(userId);
+    return user.exists() ? { name: user.name } : null;
+  },
+});
+
+// Data worker, next to DynamoDB:
+const executor = createExecutor({
+  procedures: new ProcedureRegistry([getUser]),
+  context: (call, env) => ({ models: getModels(env) }),
+  ingress: (request, env) => request.headers.get("x-data-binding") === env.DATA_BINDING_SECRET,
+});
+
+// Caller, anywhere:
+const r = await remote(env.DATA, { actor, headers }).call(getUser, { userId }, { tenant: appId });
+if ("ok" in r) console.log(r.ok.name);
+```
+
+See [tutorial 11](tutorials/11-remote-procedures.md) for the contract (context, actor, outcomes, replay classes) and [`examples/cloudflare-remote-executor/`](examples/cloudflare-remote-executor/) for a complete Worker. TypeScript declarations ship with the entry point.
+
 ### Batch Context Configuration
 
 DynamoBao provides flexible batch context behavior that can be configured based on your application's needs:

@@ -1,7 +1,9 @@
 # Remote procedure executor: one cross-region trip per logical operation
 
 Status: proposal (2026-10-27, revised the same day after an independent
-review and a scope decision). Nothing here is implemented.
+review and a scope decision). Phase A, the library (`dynamo-bao/remote`),
+is implemented for 0.10.0 per issue #18; its frozen contract is
+`tutorials/11-remote-procedures.md`. Phases B and C are not started.
 
 ## Summary
 
@@ -305,6 +307,15 @@ with binary, date, and set fields made JSON-safe; everything else must be
 plain JSON. A procedure returns DTOs shaped for its caller; model instances
 are for the cases that want to hydrate.
 
+As implemented in 0.10.0, three details beyond the envelope above: a call
+may carry its own `actor`, which overrides the envelope's (an envelope with
+calls in two tenants needs one actor per tenant, since each actor's `appId`
+must equal its call's tenant); a call carries its descriptor's `scope`, and
+a mismatch with the registry is refused, which catches skew between bundles;
+and an error the executor raised before the procedure started (unknown
+procedure, scope or actor mismatch, resolver failure, ingress, envelope,
+budget) carries `refused: true`, so a caller knows a resend is safe.
+
 ### Multiple calls per envelope
 
 Calls in one envelope run concurrently and are isolated at the level of
@@ -332,7 +343,7 @@ through the procedure's declared replay class:
 
 | Class | Meaning | Safe to resend? |
 |---|---|---|
-| `read-only` | No writes | Yes |
+| `idempotent` | No writes, or writes whose repeat has no further effect | Yes |
 | `conditional` | Every write is a guarded state transition (`attribute_not_exists` create, update guarded on the previous value, conditional delete) | Yes; the second attempt fails its condition and the procedure reports that |
 | `needs-ledger` | Contains an unguarded write or a counter | No; the procedure must persist its own marker keyed by `operationId`, or carry a `ClientRequestToken` and build its request deterministically |
 
@@ -404,10 +415,11 @@ Properties:
 interface ProcedureContext {
   models: AppModels;            // the call tenant's dynamo-bao models, batching on
   adminModels?: AdminModels;    // only when the registry entry declares scope "admin" | "both",
-                                // built for the admin partition the envelope names
+                                // bound to the admin partition the context resolver names
   tenant: string;               // read-only; also a value, since rows store appId
   actor: Actor;                 // the envelope's actor, for code that read ambient authority
   requestId: string;
+  operationId: string;          // the envelope's replay unit; key a needs-ledger marker by it
   logger: Logger;               // info/warn/debug/error(message, detail?), bound to requestId + tenant
   now(): number;                // the call's clock; tests pin it, four of the five services stamp it
   fresh<T>(fn: () => Promise<T>): Promise<T>;   // nested batch context; see below
@@ -581,10 +593,10 @@ builds its model sets or what an actor is.
 // src/remote-executor.ts
 export const executor = createExecutor({
   procedures,
-  context: (call, env) => ({
-    models: call.tenant.admin ? getAdminModels(env) : getAppModels(env),
+  context: (call, env) => ({                     // typed: ContextResolver<Env, AppModels, AdminModels>
+    models: getAppModels(env),
     adminModels: call.scope !== "app" ? getAdminModels(env) : undefined,
-    actor: call.actor,
+    adminPartition: call.actor.adminPartition ?? env.GLOBAL_ADMIN_APP_ID, // adminModels run in this tenant
     config: readOnlyConfig(env),
   }),
   ingress: (request, env) => request.headers.get("x-data-binding") === env.DATA_BINDING_SECRET,

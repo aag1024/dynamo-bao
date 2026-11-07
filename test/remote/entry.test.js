@@ -107,10 +107,8 @@ describe("dynamo-bao/remote entry point", () => {
 
 describe("release notes (issue #18 items 1, 2 and 6)", () => {
   const changelog = fs.readFileSync(path.join(ROOT, "CHANGELOG.md"), "utf8");
-  const unreleased = changelog.slice(
-    changelog.indexOf("## [Unreleased]"),
-    changelog.indexOf("\n## [", changelog.indexOf("## [Unreleased]") + 1),
-  );
+  const heading = changelog.indexOf("## [0.10.0] - ");
+  const unreleased = heading < 0 ? "" : changelog.slice(heading, changelog.indexOf("\n## [", heading + 1));
 
   test("name the dynamo-bao/remote entry point and every export", () => {
     expect(unreleased).toMatch(/`dynamo-bao\/remote`/);

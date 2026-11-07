@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    
+    <meta charset="utf-8">
+    <title>Tutorial: Remote Procedures - DynamoBao</title>
+    
+    <meta name="description" content="DynamoDB single-table design library for JavaScript" />
+    
+    
+    
+    <script src="scripts/prettify/prettify.js"></script>
+    <script src="scripts/prettify/lang-css.js"></script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc.css">
+    <script src="scripts/nav.js" defer></script>
+    
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body>
+
+<input type="checkbox" id="nav-trigger" class="nav-trigger" />
+<label for="nav-trigger" class="navicon-button x">
+  <div class="navicon"></div>
+</label>
+
+<label for="nav-trigger" class="overlay"></label>
+
+<nav >
+    
+    <input type="text" id="nav-search" placeholder="Search" />
+    
+    
+    <h2><a href="index.html">Home</a></h2><h2><a href="https://github.com/aag1024/dynamo-bao" target="_blank" class="menu-item" >GitHub</a></h2><h2><a href="https://www.npmjs.com/package/dynamo-bao" target="_blank" class="menu-item" >npm</a></h2><h3>Tutorials</h3><ul><li><a href="tutorial-01-model-definitions.html">Model Definitions</a></li><li><a href="tutorial-02-query-and-filter.html">Querying and Filtering</a></li><li><a href="tutorial-04-changing-models.html">Modifying Models</a></li><li><a href="tutorial-05-ttl-fields.html">Time-to-live (TTL) Fields</a></li><li><a href="tutorial-06-custom-fields.html">Custom Fields</a></li><li><a href="tutorial-07-command-line-tools.html">Command Line Tools</a></li><li><a href="tutorial-08-multi-tenancy.html">Multi-Tenancy</a></li><li><a href="tutorial-09-cloudflare-workers.html">Cloudflare Workers</a></li><li><a href="tutorial-10-batch-context-configuration.html">Batch Context Configuration</a></li><li><a href="tutorial-11-remote-procedures.html">Remote Procedures</a></li></ul><h3>Namespaces</h3><ul><li><a href="BaoFields.html">BaoFields</a></li></ul><h3>Classes</h3><ul><li><a href="BaoError.html">BaoError</a></li><li><a href="BaoFields.BaoBaseField.html">BaoBaseField</a><ul class='methods'><li data-type='method' style='display: none;'><a href="BaoFields.BaoBaseField.html#.BaoBaseField#fromDy">BaoBaseField#fromDy</a></li><li data-type='method' style='display: none;'><a href="BaoFields.BaoBaseField.html#.BaoBaseField#fromGsi">BaoBaseField#fromGsi</a></li><li data-type='method' style='display: none;'><a href="BaoFields.BaoBaseField.html#.BaoBaseField#getInitialValue">BaoBaseField#getInitialValue</a></li><li data-type='method' style='display: none;'><a href="BaoFields.BaoBaseField.html#.BaoBaseField#getUpdateExpression">BaoBaseField#getUpdateExpression</a></li><li data-type='method' style='display: none;'><a href="BaoFields.BaoBaseField.html#.BaoBaseField#toDy">BaoBaseField#toDy</a></li><li data-type='method' style='display: none;'><a href="BaoFields.BaoBaseField.html#.BaoBaseField#toGsi">BaoBaseField#toGsi</a></li><li data-type='method' style='display: none;'><a href="BaoFields.BaoBaseField.html#.BaoBaseField#updateBeforeSave">BaoBaseField#updateBeforeSave</a></li><li data-type='method' style='display: none;'><a href="BaoFields.BaoBaseField.html#.BaoBaseField#validate">BaoBaseField#validate</a></li></ul></li><li><a href="BaoFields.BinaryField.html">BinaryField</a></li><li><a href="BaoFields.BooleanField.html">BooleanField</a></li><li><a href="BaoFields.CounterField.html">CounterField</a></li><li><a href="BaoFields.CreateDateField.html">CreateDateField</a></li><li><a href="BaoFields.DateTimeField.html">DateTimeField</a></li><li><a href="BaoFields.FloatField.html">FloatField</a></li><li><a href="BaoFields.IntegerField.html">IntegerField</a></li><li><a href="BaoFields.ModifiedDateField.html">ModifiedDateField</a></li><li><a href="BaoFields.RelatedField.html">RelatedField</a></li><li><a href="BaoFields.StringField.html">StringField</a></li><li><a href="BaoFields.StringSetField.html">StringSetField</a></li><li><a href="BaoFields.TtlField.html">TtlField</a></li><li><a href="BaoFields.UlidField.html">UlidField</a></li><li><a href="BaoFields.VersionField.html">VersionField</a></li><li><a href="BaoModel.html">BaoModel</a><ul class='methods'><li data-type='method' style='display: none;'><a href="BaoModel.html#clearConsumedCapacity">clearConsumedCapacity</a></li><li data-type='method' style='display: none;'><a href="BaoModel.html#clearRelatedCache">clearRelatedCache</a></li><li data-type='method' style='display: none;'><a href="BaoModel.html#exists">exists</a></li><li data-type='method' style='display: none;'><a href="BaoModel.html#getConsumedCapacity">getConsumedCapacity</a></li><li data-type='method' style='display: none;'><a href="BaoModel.html#getNumericConsumedCapacity">getNumericConsumedCapacity</a></li><li data-type='method' style='display: none;'><a href="BaoModel.html#getOrLoadRelatedField">getOrLoadRelatedField</a></li><li data-type='method' style='display: none;'><a href="BaoModel.html#getPrimaryId">getPrimaryId</a></li><li data-type='method' style='display: none;'><a href="BaoModel.html#getRelated">getRelated</a></li><li data-type='method' style='display: none;'><a href="BaoModel.html#hasChanges">hasChanges</a></li><li data-type='method' style='display: none;'><a href="BaoModel.html#isDetached">isDetached</a></li><li data-type='method' style='display: none;'><a href="BaoModel.html#isLoaded">isLoaded</a></li><li data-type='method' style='display: none;'><a href="BaoModel.html#loadRelatedData">loadRelatedData</a></li><li data-type='method' style='display: none;'><a href="BaoModel.html#save">save</a></li><li data-type='method' style='display: none;'><a href="BaoModel.html#._formatPrimaryPartition">_formatPrimaryPartition</a></li><li data-type='method' style='display: none;'><a href="BaoModel.html#._legacyDyKeysForPkSk">_legacyDyKeysForPkSk</a></li><li data-type='method' style='display: none;'><a href="BaoModel.html#._modelPrefixPartitionPk">_modelPrefixPartitionPk</a></li><li data-type='method' style='display: none;'><a href="BaoModel.html#._modelPrefixPkMode">_modelPrefixPkMode</a></li><li data-type='method' style='display: none;'><a href="BaoModel.html#.batchFind">batchFind</a></li><li data-type='method' style='display: none;'><a href="BaoModel.html#.create">create</a></li><li data-type='method' style='display: none;'><a href="BaoModel.html#.delete">delete</a></li><li data-type='method' style='display: none;'><a href="BaoModel.html#.find">find</a></li><li data-type='method' style='display: none;'><a href="BaoModel.html#.findByUniqueConstraint">findByUniqueConstraint</a></li><li data-type='method' style='display: none;'><a href="BaoModel.html#.fromRemote">fromRemote</a></li><li data-type='method' style='display: none;'><a href="BaoModel.html#.getPrimaryId">getPrimaryId</a></li><li data-type='method' style='display: none;'><a href="BaoModel.html#.getRelatedObjectsViaMap">getRelatedObjectsViaMap</a></li><li data-type='method' style='display: none;'><a href="BaoModel.html#.iterateAll">iterateAll</a></li><li data-type='method' style='display: none;'><a href="BaoModel.html#.makePrimaryId">makePrimaryId</a></li><li data-type='method' style='display: none;'><a href="BaoModel.html#.normalizeSearchTerm">normalizeSearchTerm</a></li><li data-type='method' style='display: none;'><a href="BaoModel.html#.queryByIndex">queryByIndex</a></li><li data-type='method' style='display: none;'><a href="BaoModel.html#.queryByPrimaryKey">queryByPrimaryKey</a></li><li data-type='method' style='display: none;'><a href="BaoModel.html#.relocateToCanonicalKey">relocateToCanonicalKey</a></li><li data-type='method' style='display: none;'><a href="BaoModel.html#.searchAll">searchAll</a></li><li data-type='method' style='display: none;'><a href="BaoModel.html#.searchBucket">searchBucket</a></li><li data-type='method' style='display: none;'><a href="BaoModel.html#.setTestId">setTestId</a></li><li data-type='method' style='display: none;'><a href="BaoModel.html#.tokenizeSearchQuery">tokenizeSearchQuery</a></li><li data-type='method' style='display: none;'><a href="BaoModel.html#.update">update</a></li></ul></li><li><a href="ConditionalError.html">ConditionalError</a></li><li><a href="ConfigurationError.html">ConfigurationError</a></li><li><a href="DataFormatError.html">DataFormatError</a></li><li><a href="DetachedInstanceError.html">DetachedInstanceError</a></li><li><a href="FilterExpressionBuilder.html">FilterExpressionBuilder</a><ul class='methods'><li data-type='method' style='display: none;'><a href="FilterExpressionBuilder.html#build">build</a></li></ul></li><li><a href="ItemNotFoundError.html">ItemNotFoundError</a></li><li><a href="ObjectNotFound.html">ObjectNotFound</a><ul class='methods'><li data-type='method' style='display: none;'><a href="ObjectNotFound.html#exists">exists</a></li><li data-type='method' style='display: none;'><a href="ObjectNotFound.html#getNumericConsumedCapacity">getNumericConsumedCapacity</a></li></ul></li><li><a href="QueryError.html">QueryError</a></li><li><a href="TenantContext.html">TenantContext</a><ul class='methods'><li data-type='method' style='display: none;'><a href="TenantContext.html#.addResolver">addResolver</a></li><li data-type='method' style='display: none;'><a href="TenantContext.html#.clearResolvers">clearResolvers</a></li><li data-type='method' style='display: none;'><a href="TenantContext.html#.clearTenant">clearTenant</a></li><li data-type='method' style='display: none;'><a href="TenantContext.html#.getCurrentTenant">getCurrentTenant</a></li><li data-type='method' style='display: none;'><a href="TenantContext.html#.getInstance">getInstance</a></li><li data-type='method' style='display: none;'><a href="TenantContext.html#.reset">reset</a></li><li data-type='method' style='display: none;'><a href="TenantContext.html#.runWithTenant">runWithTenant</a></li><li data-type='method' style='display: none;'><a href="TenantContext.html#.setCurrentTenant">setCurrentTenant</a></li><li data-type='method' style='display: none;'><a href="TenantContext.html#.setDefaultTenant">setDefaultTenant</a></li><li data-type='method' style='display: none;'><a href="TenantContext.html#.validateTenantRequired">validateTenantRequired</a></li><li data-type='method' style='display: none;'><a href="TenantContext.html#.withTenant">withTenant</a></li></ul></li><li><a href="ValidationError.html">ValidationError</a></li><li><a href="module-remote_procedures-ProcedureRegistry.html">ProcedureRegistry</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-remote_procedures-ProcedureRegistry.html#get">get</a></li><li data-type='method' style='display: none;'><a href="module-remote_procedures-ProcedureRegistry.html#latest">latest</a></li><li data-type='method' style='display: none;'><a href="module-remote_procedures-ProcedureRegistry.html#manifest">manifest</a></li><li data-type='method' style='display: none;'><a href="module-remote_procedures-ProcedureRegistry.html#versions">versions</a></li></ul></li></ul><h3>Global</h3><ul><li><a href="global.html#_accumulateCapacityToContext">_accumulateCapacityToContext</a></li><li><a href="global.html#_withExtraCapacityUnits">_withExtraCapacityUnits</a></li><li><a href="global.html#getBatchContextCapacity">getBatchContextCapacity</a></li><li><a href="global.html#runWithBatchContext">runWithBatchContext</a></li></ul>
+    
+</nav>
+
+<div id="main">
+    
+    <h1 class="page-title">Tutorial: Remote Procedures</h1>
+    
+
+    <section>
+
+<header>
+    
+
+    <h2>Remote Procedures</h2>
+</header>
+
+<article>
+    <h1 id="remote-procedures">Remote Procedures</h1>
+<p><code>dynamo-bao/remote</code> lets code that runs far from DynamoDB make one
+cross-region trip per logical operation. You register named, versioned
+procedures on a Worker placed next to the table (the data worker). Callers
+anywhere else, such as Durable Objects near their users or Workflows, send
+the procedure's name, version and JSON arguments, and get a tagged outcome
+back. Nothing executable crosses the wire.</p>
+<pre class="prettyprint source lang-text"><code>caller (near the user) ──one fetch──▶ data worker (next to DynamoDB) ──▶ DynamoDB
+                                       registry lookup, tenant, batch context,
+                                       N DynamoDB calls at the local latency
+</code></pre>
+<p>A complete Worker is in <code>examples/cloudflare-remote-executor/</code>. The design and
+its measurements are in <code>design-docs/remote-procedure-executor.md</code>.</p>
+<h2 id="the-frozen-contract">The frozen contract</h2>
+<p>The shapes in this section are frozen. Procedures, context resolvers and
+callers are written against them, and consumers cite this section in their
+own specifications. A change to any of them is a breaking change to
+<code>dynamo-bao/remote</code> and is announced as such; it is never made silently.
+<code>src/remote/index.d.ts</code> ships these types, and a test in this repository
+fails if this section and the declarations disagree.</p>
+<h3 id="procedurecontext">ProcedureContext</h3>
+<p>What a procedure's <code>run(ctx, args)</code> receives.</p>
+<pre class="prettyprint source lang-ts"><code>interface ProcedureContext {
+  models: AppModels;            // the call tenant's models, batching on
+  adminModels?: AdminModels;    // only for scope &quot;admin&quot; | &quot;both&quot;, for the resolver's admin partition
+  tenant: string;               // read-only; also a value, since rows store appId
+  actor: Actor;                 // the envelope's actor; the only ambient authority inside the executor
+  requestId: string;
+  operationId: string;          // the envelope's replay unit; key a needs-ledger marker by it
+  logger: Logger;               // debug/info/warn/error(message, detail?), bound to requestId and tenant
+  now(): number;                // the call's clock, epoch milliseconds
+  fresh&lt;T>(fn: () => Promise&lt;T>): Promise&lt;T>;   // nested batch context for re-read after a lost conditional write
+  waitUntil(p: Promise&lt;unknown>): void;         // deferred work next to DynamoDB, 30 s cap, really awaited
+  config: ReadonlyEnvConfig;    // flags and settings, deep-frozen, no bindings
+}
+</code></pre>
+<p>The context is frozen. <code>ctx.models</code> is whatever the context resolver
+returned. The executor has already entered the call's tenant and opened a
+batch context, so finds in one tick coalesce into one <code>BatchGetItem</code> and the
+loader cache dedupes repeated reads.</p>
+<p><code>operationId</code> is the one field added to the shape the consumer first wrote
+down (issue #18). A <code>needs-ledger</code> procedure needs it to key its marker.</p>
+<h3 id="actor">Actor</h3>
+<p>Who is calling, as the caller determined it.</p>
+<pre class="prettyprint source lang-ts"><code>interface Actor {
+  kind: &quot;user&quot; | &quot;system&quot; | &quot;admin&quot;;
+  userId?: string;              // attribution; ids a procedure acts on are args
+  appId: string;                // must equal the call's tenant or the executor refuses
+  systemAuthority: boolean;     // what the caller's own authority check answered for appId
+  preAuthenticated: boolean;    // &quot;a person started this&quot;
+  adminPartition?: string;      // the admin partition the caller resolved, for scope &quot;admin&quot;
+}
+</code></pre>
+<p>The library reads only <code>appId</code>, to check that it equals the call's tenant.
+<code>kind</code>, <code>userId</code>, <code>systemAuthority</code>, <code>preAuthenticated</code> and <code>adminPartition</code>
+pass through to <code>ctx.actor</code> and to the context resolver untouched; the
+executor never branches on them. Code moved behind a procedure reads
+<code>ctx.actor</code>, never a module global.</p>
+<h3 id="outcomes">Outcomes</h3>
+<p>Every call settles to exactly one of three tagged outcomes.</p>
+<table>
+<thead>
+<tr>
+<th>Tag</th>
+<th>Shape</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ok</code></td>
+<td><code>{ ok: value, capacity, ms, placement }</code></td>
+<td>The procedure returned <code>value</code>.</td>
+</tr>
+<tr>
+<td><code>error</code></td>
+<td><code>{ error: { name, message, ... }, capacity?, ms?, placement? }</code></td>
+<td>The procedure threw, or the call was refused.</td>
+</tr>
+<tr>
+<td><code>unknown</code></td>
+<td><code>{ unknown: true, reason }</code></td>
+<td>The caller's transport failed after sending. Only the client produces this; the executor never does.</td>
+</tr>
+</tbody>
+</table>
+<p>Test the tag with <code>in</code>: <code>&quot;ok&quot; in r</code>, <code>&quot;unknown&quot; in r</code>, otherwise <code>r.error</code>.</p>
+<p><code>placement</code> is <code>{ colo, region }</code> from the executor that ran the call: the
+Cloudflare colo the request landed in (<code>null</code> under <code>inProcess</code>) and the
+<code>region</code> passed to <code>createExecutor</code>. It is absent on <code>unknown</code> outcomes and
+on envelope refusals (ingress, malformed envelope, budget), where no
+executor answered for the call.</p>
+<p>The error object carries:</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>When</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>name</code>, <code>message</code></td>
+<td>Always. Application errors keep their names (<code>ConditionalError</code>, <code>ItemNotFoundError</code>, <code>ValidationError</code>, your own). Stacks never cross.</td>
+</tr>
+<tr>
+<td><code>code</code></td>
+<td>When the thrown error had a string or number <code>code</code>.</td>
+</tr>
+<tr>
+<td><code>refused: true</code></td>
+<td>The procedure did not start: unknown procedure, scope mismatch, actor/tenant mismatch, context resolver failure, ingress refusal, malformed envelope, budget. Resending is safe.</td>
+</tr>
+<tr>
+<td><code>infrastructure: true</code>, <code>httpStatusCode</code></td>
+<td>An AWS error (throttling, service errors).</td>
+</tr>
+<tr>
+<td><code>executed: true</code></td>
+<td>The procedure ran to completion and its writes, if any, committed, but its result was lost: <code>ResponseTooLarge</code> (over the response budget), or a <code>CodecError</code> from encoding the result (a <code>Date</code>, or a row under <code>plainReturns</code>). Don't resend a <code>needs-ledger</code> call that reports this. An error thrown by <code>run</code> itself never carries <code>executed</code>; it may or may not have written first.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="replay-classes">Replay classes</h3>
+<p>Every procedure declares what a resend after <code>unknown</code> does. The registry
+refuses a procedure without one.</p>
+<table>
+<thead>
+<tr>
+<th>Class</th>
+<th>Meaning</th>
+<th>The client resends it automatically?</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>idempotent</code></td>
+<td>No writes, or writes whose repeat has no further effect.</td>
+<td>Yes, if you set <code>retries</code>.</td>
+</tr>
+<tr>
+<td><code>conditional</code></td>
+<td>Every write is a guarded state transition (<code>create</code> that fails if the row exists, update guarded on the previous value, conditional delete). A second attempt fails its condition and the procedure reports that.</td>
+<td>Yes, if you set <code>retries</code>.</td>
+</tr>
+<tr>
+<td><code>needs-ledger</code></td>
+<td>An unguarded write or a counter. The procedure must persist its own marker keyed by <code>ctx.operationId</code>.</td>
+<td>Never. The caller gets <code>unknown</code> and decides.</td>
+</tr>
+</tbody>
+</table>
+<p>A resend reuses the envelope's <code>operationId</code>.</p>
+<h2 id="defining-procedures">Defining procedures</h2>
+<pre class="prettyprint source lang-js"><code>const { defineProcedure, ProcedureRegistry, encodeValue } = require(&quot;dynamo-bao/remote&quot;);
+const { exceptions: { ConditionalError } } = require(&quot;dynamo-bao&quot;);
+
+const createNote = defineProcedure({
+  name: &quot;note.create&quot;,
+  version: 1,
+  scope: &quot;app&quot;,              // &quot;app&quot; | &quot;admin&quot; | &quot;both&quot;
+  replay: &quot;conditional&quot;,
+  args: { type: &quot;object&quot;, required: [&quot;noteId&quot;, &quot;text&quot;] }, // JSON, published by manifest()
+  async run(ctx, { noteId, text }) {
+    // args is published, not enforced. A conditional create needs the caller's
+    // id: an auto-assigned one would differ on a resend and write a second row.
+    if (typeof noteId !== &quot;string&quot; || noteId === &quot;&quot;) throw new TypeError(&quot;noteId is required&quot;);
+    try {
+      const note = await ctx.models.Note.create({ noteId, text });
+      return { created: true, note: encodeValue(note) };
+    } catch (e) {
+      if (!(e instanceof ConditionalError)) throw e;
+      const existing = await ctx.fresh(() => ctx.models.Note.find(noteId));
+      return { created: false, note: encodeValue(existing) };
+    }
+  },
+});
+
+const procedures = new ProcedureRegistry([createNote /* , ... */]);
+</code></pre>
+<p><code>defineProcedure</code> checks the name (letters, digits, <code>.</code>, <code>_</code>, <code>-</code>; no <code>@</code>),
+the version (a positive integer), the scope, the replay class and that
+<code>args</code> is JSON, and refuses unknown keys so a typo can't go unnoticed. The
+descriptor it returns is frozen and is addressed as <code>name@version</code>.</p>
+<h3 id="versions-and-the-previous-version-obligation">Versions and the previous-version obligation</h3>
+<p>Bump the version when the arguments or the result shape change. After a
+split into two bundles, long-lived Durable Objects and replayed Workflows
+can call a newer data worker than the one they were built against, so the
+data worker must keep serving the previous version for one deploy of the
+callers.</p>
+<p>That is the application's obligation, not the library's. The registry
+serves <code>note.create@1</code> beside <code>note.create@2</code> only while both descriptors
+are passed to it. Keep the previous descriptor registered for one caller
+deploy, then drop it. The registry refuses a version gap (<code>@1</code> and <code>@3</code>
+without <code>@2</code>), so a dropped middle version can't go unnoticed.</p>
+<p><code>registry.manifest()</code> lists every registered procedure as plain JSON
+(<code>id</code>, <code>name</code>, <code>version</code>, <code>scope</code>, <code>replay</code>, <code>args</code>), sorted, for a build
+step that publishes argument schemas from the data bundle to the callers'
+bundle.</p>
+<h2 id="the-context-resolver-and-the-mount">The context resolver and the mount</h2>
+<p>The library does not know how your application builds its models or what
+its admin partition is. You tell it with a context resolver, and you mount
+the executor on one route.</p>
+<pre class="prettyprint source lang-js"><code>const { createExecutor } = require(&quot;dynamo-bao/remote&quot;);
+
+const executor = createExecutor({
+  procedures,
+  context: (call, env) => ({
+    models: getAppModels(env),
+    adminModels: call.scope !== &quot;app&quot; ? getAdminModels(env) : undefined,
+    adminPartition: call.actor.adminPartition ?? env.GLOBAL_ADMIN_APP_ID,
+    config: { DB_PERF_CACHE_ENABLED: env.DB_PERF_CACHE_ENABLED ?? &quot;false&quot; },
+  }),
+  ingress: (request, env) => request.headers.get(&quot;x-data-binding&quot;) === env.DATA_BINDING_SECRET,
+  budget: { maxCalls: 8, maxRequestBytes: 1_000_000, maxResponseBytes: 1_000_000 },
+  region: &quot;aws:us-west-2&quot;,
+});
+
+// In the Worker's fetch handler:
+if (url.pathname === &quot;/_data/call&quot;) return executor.fetch(request, env, ctx);
+</code></pre>
+<p>The resolver runs once per call, inside the call's tenant and batch
+context, and receives <code>{ id, proc, name, version, tenant, scope, replay, actor, requestId, operationId }</code> and your <code>env</code>. It returns:</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>models</code></td>
+<td>Required. Becomes <code>ctx.models</code>.</td>
+</tr>
+<tr>
+<td><code>adminModels</code></td>
+<td>Required for scope <code>admin</code> and <code>both</code>; dropped for <code>app</code>.</td>
+</tr>
+<tr>
+<td><code>adminPartition</code></td>
+<td>Required with <code>adminModels</code>. The tenant <code>adminModels</code> are bound to: every operation on them, including <code>save()</code> on rows they return and related loads, runs in that tenant while <code>ctx.models</code> stays in the call tenant. An <code>admin</code> or <code>both</code> call whose resolver returns no <code>adminPartition</code> is refused with <code>ScopeError</code>, because unbound admin models would run in the call's tenant and write admin rows into the app's partition.</td>
+</tr>
+<tr>
+<td><code>config</code></td>
+<td>Plain JSON settings; deep-copied and frozen into <code>ctx.config</code>. A binding or any other non-JSON value is refused.</td>
+</tr>
+</tbody>
+</table>
+<p>The <code>ContextResolver</code> type checks a resolver without a cast:</p>
+<pre class="prettyprint source lang-ts"><code>import type { ContextResolver } from &quot;dynamo-bao/remote&quot;;
+export const resolve: ContextResolver&lt;Env, AppModels, AdminModels> = (call, env) => ({ ... });
+</code></pre>
+<p><code>ingress</code> is required. In a single-bundle layout the route is reachable from
+the internet, so check a binding secret; in a two-bundle layout the data
+worker has no public route, and <code>() =&gt; true</code> is acceptable. A refused
+request gets <code>403</code> before its body is read.</p>
+<p><code>budget</code> bounds one envelope: more than <code>maxCalls</code> calls or a body over
+<code>maxRequestBytes</code> is refused with <code>413</code>. Both byte limits count UTF-8 bytes,
+not string length. A response over <code>maxResponseBytes</code>
+has its largest results replaced by <code>ResponseTooLarge</code> errors (marked
+<code>executed: true</code>) until it fits.</p>
+<p><code>placement</code> in every response echoes the colo the request ran in
+(<code>request.cf.colo</code>) and the <code>region</code> you configured. The client copies it
+onto each outcome, so a caller can check where a call ran (<code>r.placement.colo</code>).</p>
+<p>Deployment settings (<code>wrangler.toml</code>, placement, binding names, the secret)
+belong to the application. The example shows one way to do it.</p>
+<h2 id="calling-procedures">Calling procedures</h2>
+<pre class="prettyprint source lang-js"><code>const { remote } = require(&quot;dynamo-bao/remote&quot;);
+const { createNote } = require(&quot;./procedures&quot;);   // descriptors only
+
+const data = remote(env.DATA, {
+  actor: { kind: &quot;system&quot;, appId, systemAuthority: true, preAuthenticated: false },
+  headers: { &quot;x-data-binding&quot;: env.DATA_BINDING_SECRET },
+  retries: 1,
+});
+
+const r = await data.call(createNote, { noteId, text }, { tenant: appId });
+if (&quot;ok&quot; in r) {
+  const note = Note.fromRemote(r.ok.note);
+} else if (&quot;unknown&quot; in r) {
+  // decide by the procedure's replay class
+} else {
+  // r.error.name, r.error.refused, ...
+}
+</code></pre>
+<ul>
+<li><code>remote(transport, options)</code> takes a service binding or anything with
+<code>fetch(request)</code>. Options: a default <code>actor</code>, <code>retries</code> (default 0),
+<code>headers</code>, <code>url</code>.</li>
+<li><code>call(descriptor, args, { tenant, actor?, operationId?, requestId? })</code>
+posts one envelope. <code>actor</code> overrides the default for that call.</li>
+<li><code>batch([{ id?, procedure, args, tenant, actor? }, ...])</code> sends several
+calls in one envelope and resolves to outcomes by id. The calls run
+concurrently on the executor, each with its own tenant, batch context and
+capacity, and a throw in one does not affect another. They share one
+invocation's CPU, memory and response.</li>
+<li>The capacity each call reports is added to the caller's batch-context
+accumulator, so <code>getBatchContextCapacity()</code> on the caller includes remote
+work.</li>
+<li>Arguments go through the codec: model instances become <code>{ $model, data }</code>,
+and a <code>Date</code> or other non-JSON value throws <code>CodecError</code> before anything
+is sent.</li>
+</ul>
+<h2 id="values-on-the-wire">Values on the wire</h2>
+<p>Everything that crosses is plain JSON. Procedures return plain views shaped
+for their caller: dates as epoch milliseconds, rows as <code>encodeValue(row)</code>.</p>
+<p><code>encodeValue(value)</code> encodes a model row as <code>{ $model: &quot;&lt;Model&gt;&quot;, data }</code>
+holding only its declared fields:</p>
+<table>
+<thead>
+<tr>
+<th>Field type</th>
+<th>On the wire</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>DateTimeField</code>, <code>CreateDateField</code>, <code>ModifiedDateField</code></td>
+<td>epoch milliseconds</td>
+</tr>
+<tr>
+<td><code>TtlField</code></td>
+<td>epoch milliseconds (stored in seconds)</td>
+</tr>
+<tr>
+<td><code>BinaryField</code></td>
+<td><code>{ &quot;$binary&quot;: &quot;&lt;base64&gt;&quot; }</code></td>
+</tr>
+<tr>
+<td><code>StringSetField</code></td>
+<td>array of strings</td>
+</tr>
+<tr>
+<td><code>StringField</code>, <code>UlidField</code>, <code>RelatedField</code> (the id), <code>IntegerField</code>, <code>FloatField</code>, <code>CounterField</code>, <code>VersionField</code>, <code>BooleanField</code></td>
+<td>the stored value</td>
+</tr>
+<tr>
+<td>a custom field</td>
+<td>its stored value if that is JSON; otherwise the row is refused with a <code>CodecError</code> naming the model and field</td>
+</tr>
+</tbody>
+</table>
+<p><code>ObjectNotFound</code> encodes as <code>null</code>. A <code>Date</code>, <code>Map</code>, <code>Set</code>, <code>Buffer</code>, class
+instance, function, <code>undefined</code> in an array, <code>NaN</code>, <code>Infinity</code>, bigint,
+symbol-keyed object or cycle anywhere in a value throws <code>CodecError</code> with
+the path of the first one (<code>$.rows[2].resetAt: a Date is not JSON; send epoch milliseconds</code>). A <code>Date</code> in a result is always an error, because
+<code>JSON.stringify</code> would turn it into a string silently and a caller that
+calls <code>.getTime()</code> on it would break.</p>
+<p>In TypeScript, a caller sees <code>ok</code> as it arrives, not as <code>run</code> returned it.
+<code>call</code> resolves to <code>Outcome&lt;WireResult&lt;Result&gt;&gt;</code>: a model instance (anything
+with <code>save()</code>) in the result is typed as an <code>EncodedRow</code>, and a result of
+<code>undefined</code> as <code>null</code>. <code>defineProcedure</code> is a type error when its result can
+hold a <code>Date</code>, <code>Map</code>, <code>Set</code>, function, bigint, binary buffer or promise, so the
+plain-view rule is enforced where the procedure is written:</p>
+<pre class="prettyprint source lang-ts"><code>// error: run's result is not JSON: return epoch ms, not a Date, ...
+defineProcedure({ ..., async run() { return { resetAt: new Date() }; } });
+</code></pre>
+<p>By default the executor also encodes model instances found in a result.
+With <code>createExecutor({ plainReturns: true })</code> a model instance in a result
+is an error instead, so every row has to be encoded deliberately. Turn it on
+in tests.</p>
+<h3 id="detached-instances">Detached instances</h3>
+<p><code>Model.fromRemote(row)</code> hydrates a read-only instance from an encoded row.
+Getters work as on a loaded instance (dates come back as <code>Date</code>, sets as
+<code>Set</code>), and <code>isDetached()</code> is true. <code>save</code>, <code>update</code>, <code>delete</code>,
+<code>loadRelatedData</code> and <code>getOrLoadRelatedField</code> throw <code>DetachedInstanceError</code>,
+whose message points at the procedure API: a write belongs in a procedure.
+Static model methods are not guarded; the real boundary is that the caller's
+bundle holds no DynamoDB credentials.</p>
+<p><code>decodeRow(Model, row)</code> returns the stored representation <code>fromRemote</code>
+builds on. Fields the receiving model does not declare are dropped, so a row
+from a newer bundle still hydrates.</p>
+<h2 id="fresh-and-waituntil">fresh and waitUntil</h2>
+<p><code>ctx.fresh(fn)</code> runs <code>fn</code> in a nested batch context with its own loader
+cache, so its reads go to DynamoDB. When it settles, its capacity is added
+to the call's total, and rows it read or wrote replace the outer cache's
+entries (rows it deleted are evicted), so a later <code>find</code> in the call sees
+them. Use it to re-read after a lost conditional write. <code>fresh</code> is also
+exported for use outside procedures.</p>
+<p><code>ctx.waitUntil(promise)</code> keeps deferred work running next to DynamoDB after
+the response is sent. The executor hands it to the platform's
+<code>ExecutionContext.waitUntil</code>, caps each piece at 30 s, and logs failures
+through <code>ctx.logger</code> instead of throwing. Without a platform context (in
+Node tests), <code>await executor.drain()</code> waits for it.</p>
+<h2 id="testing">Testing</h2>
+<p>Procedure tests are plain function tests with <code>createContext</code>:</p>
+<pre class="prettyprint source lang-js"><code>const { createContext } = require(&quot;dynamo-bao/remote&quot;);
+const ctx = createContext({ tenant: appId, actor, models: { Note }, now: () => 1_700_000_000_000 });
+await runWithBatchContext(() =>
+  TenantContext.runWithTenant(appId, () => createNote.run(ctx, { noteId, text })),
+);
+</code></pre>
+<p>Caller tests use <code>inProcess(executor, { env, headers, ctx })</code>, a transport
+that runs the executor in the same isolate with no network. The request
+still goes through ingress, so pass the headers it expects. The procedure
+runs in its own tenant and batch context, not the caller's. <code>inProcess</code> runs
+under workerd as well as Node; <code>examples/cloudflare-remote-executor/test/</code>
+runs it with <code>@cloudflare/vitest-pool-workers</code>.</p>
+<h2 id="worked-example%3A-subscribing-to-a-document">Worked example: subscribing to a document</h2>
+<p>The WebSocket subscribe path in a document server checks a user's access to
+a document and records the connection. Run from a Durable Object near the
+user, that is several sequential DynamoDB round trips across a region. As a
+procedure it is one trip, and two rounds inside the data worker's region.</p>
+<pre class="prettyprint source lang-js"><code>const subscribeToDocument = defineProcedure({
+  name: &quot;document.subscribe&quot;,
+  version: 1,
+  scope: &quot;app&quot;,
+  replay: &quot;conditional&quot;,   // the mapping create is guarded
+  async run(ctx, { userId, documentId, connectionId, ttlMs }) {
+    const { Document, DocumentPermission, AppMembership, DocumentGroupPermission, ConnectionMapping } = ctx.models;
+    // One tick: the two finds coalesce into one BatchGetItem; the queries run beside it.
+    const [doc, direct, memberships, groups] = await Promise.all([
+      Document.find(documentId),
+      DocumentPermission.find({ documentId, userId }),
+      AppMembership.queryByIndex(&quot;membershipsForApp&quot;, ctx.tenant, { membershipKey: { $beginsWith: `${userId}#` } }),
+      DocumentGroupPermission.queryByIndex(&quot;groupPermissionsForDocument&quot;, documentId),
+    ]);
+    const level = selectLevel({ doc, direct, memberships, groups, systemAuthority: ctx.actor.systemAuthority });
+    if (!level) return { level: null };
+    try {
+      await ConnectionMapping.create({ connectionId, userId, documentId, appId: ctx.tenant, ttl: ctx.now() + ttlMs });
+    } catch (e) {
+      if (!(e instanceof ConditionalError)) throw e;   // already mapped: fine on a resend
+    }
+    return { level, routing: { shard: doc.shard } };   // a plain view, only what the caller uses
+  },
+});
+</code></pre>
+<p>The caller, in the Durable Object:</p>
+<pre class="prettyprint source lang-js"><code>const r = await data.call(subscribeToDocument, { userId, documentId, connectionId, ttlMs: 300_000 }, { tenant: appId });
+if (&quot;unknown&quot; in r) return retryLater();          // conditional: safe to resend
+if (&quot;error&quot; in r) return closeWithError(r.error.name);
+if (!r.ok.level) return refuse();
+accept(r.ok.level, r.ok.routing);                 // fan-out and socket replies stay here
+</code></pre>
+<p>Things to notice:</p>
+<ul>
+<li>Everything that touches DynamoDB for the operation is in one procedure.
+If a caller makes two calls where the second depends on the first, they
+are one procedure.</li>
+<li><code>selectLevel</code> is pure and reads authority from <code>ctx.actor</code>, not from a
+module global that the data worker would not have.</li>
+<li>The result is a plain view. The <code>Document</code> row does not cross; the
+routing fields the caller needs do.</li>
+<li>The replay class is <code>conditional</code> because the only write is a guarded
+create. A counter would make it <code>needs-ledger</code>.</li>
+<li>Socket replies, fan-out to peers and Durable Object storage stay on the
+caller. <code>ctx</code> has no Durable Object stubs or bindings by design.</li>
+</ul>
+</article>
+
+</section>
+
+    
+    
+</div>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 4.0.5</a> using the <a href="https://github.com/clenemt/docdash">docdash</a> theme.
+</footer>
+
+<script>prettyPrint();</script>
+<script src="scripts/polyfill.js"></script>
+<script src="scripts/linenumber.js"></script>
+
+<script src="scripts/search.js" defer></script>
+
+
+<script src="scripts/collapse.js" defer></script>
+
+
+    <link type="text/css" rel="stylesheet" href="dynamo-bao.css">
+    
+</body>
+</html>

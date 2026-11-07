@@ -60,17 +60,20 @@ handshake per concurrent read, which is why W4 needs the executor.
 
 Goal: a semver-minor release with nothing existing changing behavior.
 Test-first against the existing test table. Shapes are the ones the
-design doc fixed after Spike 6.
+design doc fixed after Spike 6. The consumer's requirements are issue #18
+(js-bao-wss, 2026-11-07); the rows below say which requirement each
+satisfies, and the release is done when `require.resolve('dynamo-bao/remote')`
+succeeds in the consumer's checkout and its pin-bump PR lands.
 
 | PR | Change | Acceptance |
 |---|---|---|
 | W2.1 `context.js` | `createContext`: tenant entry, batch context, `tenant` as a value, `now()`, logger bound to requestId and tenant, `fresh` with capacity merge and cache priming, `waitUntil` that is awaited past the response, `adminModels` built for the envelope's admin partition. Exports the `ProcedureContext`, `ContextResolver` and `Actor` types as the contract the application compiles against. | Unit tests for each field; `fresh` test asserts merged capacity and primed cache. The resolver's input and output are typed, not shown by example: a js-bao-wss resolver type-checks against `ContextResolver` with no cast. The library reads only `actor.appId`, to check it equals the call tenant; `kind`, `systemAuthority`, `preAuthenticated` and `adminPartition` pass through untouched and uninterpreted, and a test asserts the executor never branches on them. |
 | W2.2 `codec.js` and `fromRemote` | Encode and decode per field type; `StringSetField` to array and back (the only non-JSON field found across 81 models); dates as epoch ms; `Model.fromRemote` returning a detached instance whose guarded methods throw. | One test per field type; a detached instance refuses to save. |
-| W2.3 `procedures.js` | Registry: name, version, scope, replay class, arg schema; previous-version serving across a deploy window; unknown procedure and scope refusal. | Registry tests. |
+| W2.3 `procedures.js` | Registry: name, version, scope, replay class, arg schema; previous-version serving across a deploy window; unknown procedure and scope refusal; `manifest()` listing names, versions and arg schemas for the consumer's two-bundle manifest. | Registry tests. Previous-version serving is documented as the application's obligation: the registry serves `@1` beside `@2` only while the application keeps both descriptors registered, which the consumer's deploy script does for one edge deploy; the registry refuses a version gap. |
 | W2.4 `executor.js` | Envelope validation, actor check (actor app must equal the call tenant), multi-call isolation, tagged outcomes, capacity and placement echo, budget and ingress refusal, plain-view return rule enforced (a `Date` or model instance in a result is an error in tests). | In-process `Request`/`Response` tests; a throw in one call does not affect another. |
 | W2.5 `client.js` | `remote(transport, { actor })` and `inProcess`; `unknown` on transport failure; no auto-resend for `needs-ledger`. | Round trip through the executor in process. |
-| W2.6 Example and tutorial | `examples/cloudflare-remote-executor/` with a placed data worker and a binding; `tutorials/11-remote-procedures.md`. | Dry-run deploy bundles; tutorial walks the subscribe example. |
-| W2.7 Release | Changelog, tag. | Acceptance test from the design doc passes end to end. |
+| W2.6 Example and tutorial | `examples/cloudflare-remote-executor/` with a placed data worker, the self-binding, the placement line and the ingress secret; `tutorials/11-remote-procedures.md`. | Dry-run deploy bundles; tutorial walks the subscribe example. `inProcess(executor)` runs under workerd in the example's test with `@cloudflare/vitest-pool-workers`, not only under Node (issue #18 item 5). The tutorial freezes `ProcedureContext`, `Actor`, the outcome tags `ok` / `error` / `unknown` and the replay classes `idempotent` / `conditional` / `needs-ledger`; a later change to any of them is a consumer-side amendment (item 3). |
+| W2.7 Release | `exports` map gains `./remote` (today it has only the root and `./src/*`); `src/remote/index.d.ts` ships `ProcedureContext`, `ContextResolver`, `Actor`, the descriptor, outcome and replay types, since the consumer types this package by hand in its own `.d.ts` today; changelog; tag. | Acceptance test from the design doc passes end to end (item 4). Changelog names the entry point and every export and states whether any key-format code changed (items 1, 2). Release notes name any model shape the codec refuses (item 6). The Spike 6 audit's consumer-facing lists (the three `Date` or model-instance callers, the nine cache-invalidation sites, the two activity helpers) are posted on issue #18 at release (item 7). |
 
 ## W3: executor for Workflows (js-bao-wss)
 
@@ -102,20 +105,22 @@ mismatch between a long-lived DO and a new executor.
 
 ## Decisions to make in review
 
-1. Confirm the order: W1 before any executor consumer in js-bao-wss. The
-   alternative, shipping W3 first, delays the only win available to every
-   user today.
-2. W1.5: is turning the permission cache on acceptable, and with what
-   stale-allow window? It is the only lever that takes the per-message
-   check to zero from a far DO.
+1. Confirmed 2026-11-06 (js-bao-wss sponsor): W1 before any executor
+   consumer in js-bao-wss; W1 is the first fleet handoff there.
+2. Decided 2026-11-06: W1.5 turns the cache on in alpha after push
+   invalidation from the access-change `docMetadata` frame and never
+   caching a `null` level; the 4 s fresh / 5 s stale defaults stay as the
+   backstop. Accepted window: a revoked writer's own updates are accepted
+   for at most 5 s after a lost push, and not at all when the push lands.
 3. Should `ConnectionMapping` move into the room DO's SQLite before W4.2?
    It would remove the peer query and mapping create from the subscribe
    path regardless of the executor.
 4. W3 scope: reconcile and settlement only, or also the invoke-path rate
    limit and activity (W3.4)? The latter is small but touches the admin
    API's activity helpers.
-5. Who owns W1 and W3 in js-bao-wss, and whether W2 is one release or two
-   (context and codec first, executor and client second).
+5. Decided 2026-11-06: W2 is this repository's, by hand, as one release;
+   W1 and later W3 and W4 are js-bao-wss fleet handoffs. Consumer
+   requirements for W2 are issue #18.
 
 ## Risks
 

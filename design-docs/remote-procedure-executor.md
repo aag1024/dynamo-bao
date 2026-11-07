@@ -550,6 +550,12 @@ depends on the mutation-mixin internals, so it can proceed in parallel with
 the pending read-before-write work; the two meet only in that conditional
 writes without a pre-read make procedures shorter.
 
+The package `exports` map gains `./remote`, and `src/remote/index.d.ts`
+ships the `ProcedureContext`, `ContextResolver`, `Actor`, descriptor,
+outcome and replay types: js-bao-wss types this package by hand in its own
+declaration file today, and the remote contract must not be retyped there.
+The consumer's requirements on the release are dynamo-bao issue #18.
+
 Not in dynamo-bao: a `wrangler.toml`, a worker entry, placement settings,
 binding names, or ingress policy. Those are deployment decisions and belong
 in the example and in the application.

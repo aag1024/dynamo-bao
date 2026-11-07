@@ -31,7 +31,7 @@ function addCapacity(capacity) {
 
 /**
  * Wrap a transport as a client.
- * @param {{ fetch(request: Request): Promise<Response> }} transport - A
+ * @param {{fetch: function(Request): Promise<Response>}} transport - A
  *   service binding (`env.DATA`), `inProcess(executor)`, or anything with a
  *   compatible `fetch`.
  * @param {Object} [options]
@@ -151,8 +151,9 @@ function remote(transport, options = {}) {
      * Call one procedure.
      * @param {Object} procedure - A descriptor from defineProcedure.
      * @param {any} args - JSON arguments; model instances are encoded.
-     * @param {{ tenant: string, actor?: Object, operationId?: string, requestId?: string }} options
-     * @returns {Promise<{ok: any, capacity: Object, ms: number} | {error: Object, capacity?: Object, ms?: number} | {unknown: true, reason: string}>}
+     * @param {{tenant: string, actor: (Object|undefined), operationId: (string|undefined), requestId: (string|undefined)}} options
+     * @returns {Promise<Object>} One outcome: `{ok, capacity, ms}`,
+     *   `{error, capacity?, ms?}` or `{unknown: true, reason}`.
      */
     async call(procedure, args, { tenant, actor, operationId, requestId } = {}) {
       const entry = prepare({ id: "c0", procedure, args, tenant, actor }, 0);
@@ -163,8 +164,8 @@ function remote(transport, options = {}) {
     /**
      * Call several procedures in one envelope. They run concurrently and in
      * isolation on the executor.
-     * @param {{ id?: string, procedure: Object, args?: any, tenant: string, actor?: Object }[]} calls
-     * @param {{ operationId?: string, requestId?: string }} [options]
+     * @param {Array<Object>} calls - Each `{id?, procedure, args?, tenant, actor?}`.
+     * @param {{operationId: (string|undefined), requestId: (string|undefined)}} [options]
      * @returns {Promise<Object<string, Object>>} Outcomes by call id.
      */
     async batch(calls, options) {
@@ -186,11 +187,11 @@ function remote(transport, options = {}) {
  * A transport that runs the executor in this isolate with no network: for
  * tests and `wrangler dev`. The request still goes through the executor's
  * ingress check, so pass the headers it expects.
- * @param {{ fetch: Function }} executor - From createExecutor.
+ * @param {{fetch: Function}} executor - From createExecutor.
  * @param {Object} [options]
  * @param {any} [options.env] - Passed to the executor as `env`.
  * @param {Object<string,string>} [options.headers] - Added to every request.
- * @param {{ waitUntil(p: Promise<any>): void }} [options.ctx] - Passed as the
+ * @param {{waitUntil: function(Promise<*>)}} [options.ctx] - Passed as the
  *   execution context; without it deferred work is awaited by executor.drain().
  */
 function inProcess(executor, { env, headers = {}, ctx } = {}) {

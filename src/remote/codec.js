@@ -206,8 +206,8 @@ function nonJson({ path, found }) {
  * string sets as arrays). `Model.fromRemote` builds on this.
  * Fields the receiving model does not declare are dropped, so a row from a
  * newer bundle still hydrates.
- * @param {typeof import("../model").BaoModel} ModelClass
- * @param {{ $model: string, data: Object }} encoded
+ * @param {Function} ModelClass - A BaoModel subclass.
+ * @param {{$model: string, data: Object}} encoded
  * @returns {Object}
  * @throws {CodecError}
  */

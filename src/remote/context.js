@@ -45,7 +45,7 @@ class TrackingMap extends Map {
  * evicted), so a later `find` in the outer context sees them. This is the
  * "re-read after a lost conditional write" pattern.
  * @template T
- * @param {() => Promise<T>} fn
+ * @param {function(): Promise<T>} fn
  * @returns {Promise<T>}
  */
 function fresh(fn) {
@@ -76,8 +76,9 @@ function fresh(fn) {
  * rejects; settles to `{ value, capacity }` or `{ error, capacity }`, with
  * the capacity the call consumed either way.
  * @param {string} tenant
- * @param {() => Promise<any>} fn
- * @returns {Promise<{value?: any, error?: any, capacity: {read: number, write: number}}>}
+ * @param {function(): Promise<*>} fn
+ * @returns {Promise<Object>} `{value, capacity}` or `{error, capacity}`;
+ *   capacity is `{read, write}`.
  */
 function runInCall(tenant, fn) {
   return TenantContext.runWithTenant(tenant, () =>
@@ -206,8 +207,8 @@ function capped(promise, capMs, logger) {
  * @param {string} [options.operationId] - The envelope's replay unit.
  * @param {Object} [options.config] - Plain settings; deep-copied and frozen.
  * @param {Object} [options.logger] - Base logger with debug/info/warn/error.
- * @param {() => number} [options.now] - Clock; defaults to Date.now.
- * @param {(p: Promise<void>) => void} [options.waitUntil] - Sink for
+ * @param {function(): number} [options.now] - Clock; defaults to Date.now.
+ * @param {function(Promise<void>)} [options.waitUntil] - Sink for
  *   deferred work (the platform's ExecutionContext.waitUntil).
  * @param {number} [options.waitUntilCapMs=30000]
  * @returns {Readonly<Object>} The ProcedureContext.

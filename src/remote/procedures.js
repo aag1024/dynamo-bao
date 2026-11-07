@@ -39,7 +39,7 @@ const DESCRIPTORS = new WeakSet();
  * @param {"idempotent"|"conditional"|"needs-ledger"} spec.replay
  * @param {Object} [spec.args] - JSON description of the arguments (for
  *   example a JSON Schema). Not interpreted; published by `manifest()`.
- * @param {(ctx: Object, args: any) => Promise<any>} spec.run
+ * @param {function(Object, *): Promise<*>} spec.run
  * @returns {Readonly<Object>} The descriptor.
  */
 function defineProcedure(spec) {
@@ -168,7 +168,7 @@ class ProcedureRegistry {
   /**
    * Plain-JSON listing of every registered procedure, sorted by id, for a
    * build step that publishes argument schemas across bundles.
-   * @returns {{id: string, name: string, version: number, scope: string, replay: string, args: Object|null}[]}
+   * @returns {Array<{id: string, name: string, version: number, scope: string, replay: string, args: ?Object}>}
    */
   manifest() {
     return [...this._byId.values()]

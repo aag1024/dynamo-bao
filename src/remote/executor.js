@@ -163,19 +163,19 @@ function validateEnvelope(envelope, budget) {
  *   `(call, env) => ({ models, adminModels?, adminPartition?, config? })`,
  *   sync or async, called once per call inside the call's tenant and batch
  *   context.
- * @param {(request: Request, env: any) => boolean|Promise<boolean>} options.ingress -
+ * @param {function(Request, *): (boolean|Promise<boolean>)} options.ingress -
  *   Decides whether a request may use the executor at all (for example by
  *   checking a binding secret header). Required: there is no open default.
  * @param {Object} [options.budget] - `{ maxCalls, maxRequestBytes, maxResponseBytes }`;
  *   defaults 8, 1 MB, 1 MB.
  * @param {string} [options.region] - Echoed as `placement.region`.
  * @param {Object} [options.logger] - Base logger for `ctx.logger`.
- * @param {() => number} [options.now] - Clock for `ctx.now()`.
+ * @param {function(): number} [options.now] - Clock for `ctx.now()`.
  * @param {boolean} [options.plainReturns=false] - When true, a model instance
  *   in a result is an error: procedures must return plain views or
  *   explicitly encoded rows. Turn it on in tests.
  * @param {number} [options.waitUntilCapMs=30000]
- * @returns {{ fetch(request: Request, env?: any, ctx?: { waitUntil(p: Promise<any>): void }): Promise<Response>, drain(): Promise<void>, procedures: ProcedureRegistry, budget: Object }}
+ * @returns {{fetch: function(Request, *=, Object=): Promise<Response>, drain: function(): Promise<void>, procedures: ProcedureRegistry, budget: Object}}
  */
 function createExecutor(options = {}) {
   const {

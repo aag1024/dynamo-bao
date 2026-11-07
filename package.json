@@ -5,8 +5,19 @@
   "main": "src/index.js",
   "exports": {
     ".": "./src/index.js",
+    "./remote": {
+      "types": "./src/remote/index.d.ts",
+      "default": "./src/remote/index.js"
+    },
     "./src/*": "./src/*",
     "./package.json": "./package.json"
+  },
+  "typesVersions": {
+    "*": {
+      "remote": [
+        "src/remote/index.d.ts"
+      ]
+    }
   },
   "scripts": {
     "test": "LOG_LEVEL=OFF jest",

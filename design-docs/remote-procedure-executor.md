@@ -1029,9 +1029,10 @@ folded into the context and actor sections above:
   is safe because the conditional write bounds it, but `clearActivityEntry`
   and `storedActivityFields` in `admin-api.ts` read the same map and must
   become procedures with it. The memberships SWR cache is invalidated from
-  nine controller sites per isolate; in the executor those invalidations
-  only land if those mutations are procedures too, so the design names
-  them.
+  nine controller sites per isolate when audited (eighteen at js-bao-wss
+  `9afdb78e6`, four outside the controllers); in the executor those
+  invalidations only land if those mutations are procedures too, so the
+  design names them.
 - **Two of the five do not move whole.** Reconcile interleaves DynamoDB
   with Workflow-binding `status()` and `terminate()`, a DO notify, Analytics
   Engine and R2, exactly what `ctx` excludes: it splits into a read
@@ -1138,7 +1139,10 @@ off. The full PR-by-PR plan is `design-docs/executor-implementation-plan.md`.
    a replay test that sends the same `operationId` twice.
 4. **Rate limit and app activity** as procedures, called from the function
    invoke path where it runs remotely. Small, self-contained, replay
-   `conditional`.
+   `conditional`. The limiter's counter is not keyed by `operationId`, so
+   a resend after `unknown` may count one phantom invocation per lost
+   response; the consumer accepted that on 2026-11-07 and documents it
+   with the rate limit rather than make this `needs-ledger`.
 5. **`DocumentPermissionService` takes `ctx`.** The constructor change
    described above, with `systemAuthorityFor` replaced by `ctx.actor`. No
    behavior change; existing tests pass. This is the prerequisite for the

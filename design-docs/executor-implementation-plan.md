@@ -73,7 +73,7 @@ succeeds in the consumer's checkout and its pin-bump PR lands.
 | W2.4 `executor.js` | Envelope validation, actor check (actor app must equal the call tenant), multi-call isolation, tagged outcomes, capacity and placement echo, budget and ingress refusal, plain-view return rule enforced (a `Date` or model instance in a result is an error in tests). | In-process `Request`/`Response` tests; a throw in one call does not affect another. |
 | W2.5 `client.js` | `remote(transport, { actor })` and `inProcess`; `unknown` on transport failure; no auto-resend for `needs-ledger`. | Round trip through the executor in process. |
 | W2.6 Example and tutorial | `examples/cloudflare-remote-executor/` with a placed data worker, the self-binding, the placement line and the ingress secret; `tutorials/11-remote-procedures.md`. | Dry-run deploy bundles; tutorial walks the subscribe example. `inProcess(executor)` runs under workerd in the example's test with `@cloudflare/vitest-pool-workers`, not only under Node (issue #18 item 5). The tutorial freezes `ProcedureContext`, `Actor`, the outcome tags `ok` / `error` / `unknown` and the replay classes `idempotent` / `conditional` / `needs-ledger`; a later change to any of them is a consumer-side amendment (item 3). |
-| W2.7 Release | `exports` map gains `./remote` (today it has only the root and `./src/*`); `src/remote/index.d.ts` ships `ProcedureContext`, `ContextResolver`, `Actor`, the descriptor, outcome and replay types, since the consumer types this package by hand in its own `.d.ts` today; changelog; tag. | Acceptance test from the design doc passes end to end (item 4). Changelog names the entry point and every export and states whether any key-format code changed (items 1, 2). Release notes name any model shape the codec refuses (item 6). The Spike 6 audit's consumer-facing lists (the three `Date` or model-instance callers, the nine cache-invalidation sites, the two activity helpers) are posted on issue #18 at release (item 7). |
+| W2.7 Release | `exports` map gains `./remote` (today it has only the root and `./src/*`); `src/remote/index.d.ts` ships `ProcedureContext`, `ContextResolver`, `Actor`, the descriptor, outcome and replay types, since the consumer types this package by hand in its own `.d.ts` today; changelog; tag. | Acceptance test from the design doc passes end to end (item 4). Changelog names the entry point and every export and states whether any key-format code changed (items 1, 2). Release notes name any model shape the codec refuses (item 6). The Spike 6 audit's consumer-facing lists (the three `Date` or model-instance callers, the nine cache-invalidation sites, the two activity helpers) were posted on issue #18 on 2026-11-07 at the consumer's request, refreshed against js-bao-wss `9afdb78e6` (eighteen invalidation sites by then, nine when audited); the release notes refresh them again if the lines move (item 7). |
 
 ## W3: executor for Workflows (js-bao-wss)
 
@@ -85,7 +85,7 @@ already measured at the far-colo rate. Each PR is one procedure, measured.
 | W3.1 Foundation | Upgrade dynamo-bao; empty registry in `src/procedures/`; `src/remote-executor.ts` with the context resolver (actor from the gateway's pre-authenticated store, admin partition from `adminIdentityPartition`) and ingress check; `/_data/call` route; `DATA` self-binding and secret; ESLint restriction at warning level; `inProcess` in test setup; a probe procedure returning its colo. | Probe through `inProcess` in tests; a deployed call from a Workflow on alpha returns `SEA`. |
 | W3.2 Reconcile, split | `workflowRun.reconcileRead@1` (row, slice summary, newest invocation record, as plain views) and `workflowRun.reconcileSettle@1` (`needs-ledger`: settle row, claim slice, close step rows). The probe, terminate and DO notify stay in the dispatch DO between them. `ReconcileResult.row` becomes `fromRemote` input. | Existing reconcile tests pass through `inProcess`; per-reconcile DynamoDB wall time drops by rounds times the Spike 1 hop. |
 | W3.3 Run-row settlement | `functionRun.settle@1`, `needs-ledger`, with the caller doing the R2 put and passing `storedOutput` fields in; terminal notify stays caller-side on the `settled` outcome. | Settlement tests through `inProcess`; a replay test sends the same `operationId` twice. |
-| W3.4 Rate limit and activity | `rateLimit.reserve@1` / `release@1` and `app.recordActivity@1` with the gate helpers `clearActivityEntry` and `storedActivityFields` moved alongside; `resetAt` as epoch ms with the one caller fixed. | Invoke path tests pass; admin-API tests for the activity fields pass. |
+| W3.4 Rate limit and activity | `rateLimit.reserve@1` / `release@1` and `app.recordActivity@1` with the gate helpers `clearActivityEntry` and `storedActivityFields` moved alongside; `resetAt` as epoch ms with the one caller fixed. `rateLimit.reserve@1` stays `conditional` (decided 2026-11-07 with the consumer): a resend after `unknown` may count one phantom invocation per lost response, which the consumer accepts and documents with the rate limit rather than pay a ledger write on every invoke. | Invoke path tests pass; admin-API tests for the activity fields pass; the rate-limit docs state the phantom-count window. |
 
 ## W4: two-bundle split and unpinning (js-bao-wss)
 
@@ -131,8 +131,9 @@ mismatch between a long-lived DO and a new executor.
 - Plain-view return values touch three callers that use `Date` or model
   instances today; each is listed in the Spike 6 audit.
 - Per-isolate gates and cache invalidations that stay behind silently stop
-  working; the audit lists the nine invalidation sites and the two
-  activity helpers.
+  working; the audit lists the invalidation sites (nine when audited,
+  eighteen at js-bao-wss `9afdb78e6`, four of them outside the two
+  controllers) and the two activity helpers.
 - W4's fresh-DO cost through the executor is about 250 ms, the floor; it
   will not go lower without a caller-side cache.
 

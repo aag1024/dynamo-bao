@@ -241,3 +241,17 @@ All four confirmed at the lines cited in the table.
   `clearActivityEntry`, `storedActivityFields`) so they move together; two
   of the three are called from `admin-api.ts`, not from the recorder's own
   call sites.
+
+## Consumer hand-over (2026-11-07)
+
+The three lists the consumer needs (callers receiving a `Date` or a model
+instance, memberships-cache invalidation sites, activity-gate helpers) were
+re-derived against js-bao-wss `main` at `9afdb78e6` (2026-11-06) and posted
+on dynamo-bao issue #18. Lines above are as of 2026-10-28 and have moved:
+`admin-api.ts` sites are now `:890`, `:4569-4577`, `:9150`; the reconcile row
+consumer is `functions-controller.ts:3048`; `invalidateCachedMemberships`
+has eighteen callers, the nine controller sites plus
+`auth/resolve-deferred-grants.ts:115,149` and
+`services/role-migration-io.ts:230,262`. The consumer decided
+`rateLimit.reserve@1` stays `conditional` and accepts one phantom count per
+lost response.
